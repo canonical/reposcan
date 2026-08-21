@@ -21,7 +21,7 @@ from repo_scanner.cli_kit import flag, option, positional
 from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
-from repo_scanner.scans import output
+from repo_scanner.scans import ignore, output
 from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation, ToolResult
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.run import run_scan
@@ -61,6 +61,10 @@ class ScanAction(Action):
         convert=int,
         help="Maximum lines one row in a table may wrap across.",
     )
+    ignore_file: str | None = option(
+        help=f"reposcan ignorefile (default: {ignore.DEFAULT_IGNORE_FILE}).",
+    )
+    no_ignore_file: bool = flag(help="Do not read any reposcan ignorefile.")
 
     def invocations(self, target: str) -> list[ToolInvocation]:
         """The tool invocations to run against `target`, in run order."""
@@ -93,6 +97,17 @@ class ScanAction(Action):
         if error is not None:
             logger.warning("%s", error)
             return 2
+        # Resolve the ignorefile: an explicit --ignore-file, else the default in the
+        # repo when present, unless --no-ignore-file disables it. Malformed lines warn.
+        ignore_path = self.ignore_file
+        if not self.no_ignore_file and ignore_path is None:
+            default = os.path.join(path, ignore.DEFAULT_IGNORE_FILE)
+            ignore_path = default if os.path.isfile(default) else None
+        ignore_rules: list[ignore.IgnoreRule] = []
+        if ignore_path is not None and not self.no_ignore_file:
+            ignore_rules, errors = ignore.load(ignore_path)
+            for message in errors:
+                logger.warning("%s", message)
         user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
         with start_session(
             self.backend,
@@ -115,6 +130,10 @@ class ScanAction(Action):
             if isinstance(artifact, Failure):
                 logger.error(artifact.reason)
                 return 1
+
+            removed = ignore.apply(artifact, ignore_rules, session.target)
+            if removed:
+                logger.info("ignored %d finding(s) via %s", removed, ignore_path)
 
             failure = output.emit(
                 artifact, output=self.output, fmt=fmt, limit=self.limit, wrap=self.wrap

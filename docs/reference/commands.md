@@ -77,6 +77,10 @@ scan's tools, artifact, and options. Common options:
 - `-n, --limit <N>`: maximum table rows shown (default 20).
 - `--wrap <N>`: maximum lines a long table cell may wrap across (default 4; `1`
   keeps each cell to a single clipped line).
+- `--ignore-file <FILE>`: reposcan ignorefile for false positives (default
+  `.reposcan-ignore`). See
+  [ignore false positives](../how-to/ignore-findings.md).
+- `--no-ignore-file`: do not read any reposcan ignorefile.
 - `--allow-code-execution`: for `sbom` and `sca` only, let dependency resolution
   build source packages, which runs untrusted code (off by default). See
   [SBOM generation](../explanation/sbom-generation.md).

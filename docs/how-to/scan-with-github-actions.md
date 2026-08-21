@@ -76,6 +76,10 @@ be written to:
    and code scanning enabled).
 1. A pull-request comment (needs `pull-requests: write`).
 
+On a pull request from a fork, the `GITHUB_TOKEN` is always read-only,
+regardless of the `permissions` block. Neither the code-scanning upload nor the
+pull-request comment will work in this case.
+
 ## Inputs
 
 | Input           | Default        | Meaning                                                       |
