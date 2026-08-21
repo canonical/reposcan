@@ -82,6 +82,8 @@ runs:
   steps:
     - name: Set up uv
       uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        enable-cache: false
 
     - name: Run scans
       id: scan
@@ -221,7 +223,7 @@ runs:
     - name: Upload SARIF to code scanning
       if: inputs.code-scanning == 'true' && steps.scan.outputs.sarif-present == 'true'
       continue-on-error: true
-      uses: github/codeql-action/upload-sarif@d6317709a54fd87078d323eeb0e48ec331c8e621  # v3
+      uses: github/codeql-action/upload-sarif@4c0873ef8656cb3c50b3f42fb63bc1ade0cfa827  # v4
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-dir }}
         token: ${{ inputs.token }}

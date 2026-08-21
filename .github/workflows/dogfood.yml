@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0 # full history so the secrets scan (history mode) has commits
+          persist-credentials: false
       - uses: ./
         with:
           fail-on: warning

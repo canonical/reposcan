@@ -22,7 +22,9 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0 # full history so the secrets scan (history mode) has commits
-      - uses: canonical/repo-scanner@main
+          persist-credentials: false
+
+      - uses: canonical/repo-scanner@main  # zizmor: ignore[unpinned-uses]  (first-party)
         with:
           fail-on: warning
           pr-comment: true
