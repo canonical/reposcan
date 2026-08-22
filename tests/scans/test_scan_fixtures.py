@@ -29,9 +29,9 @@ from repo_scanner.backends import DockerBackend, start_session
 from repo_scanner.execution.context import host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
+from repo_scanner.scans.command import SCANS
 from repo_scanner.scans.model import Artifact
-from repo_scanner.scans.registry import ScanGroup
 from repo_scanner.scans.run import run_scan
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ _FIXTURES_DIR = Path(__file__).parent / "fixtures"
 class _FixtureModule(Protocol):
     """The contract every fixture file under fixtures/ provides."""
 
-    SCAN: ScanAction
+    SCAN: Scan
     plant: Callable[[Path], None]
     verify: Callable[[Artifact], None]
 
@@ -70,9 +70,9 @@ def _discover_scan_names() -> set[str]:
         module = importlib.import_module(f"{scans_pkg.__name__}.{info.name}")
         for obj in vars(module).values():
             # A concrete scan defined in this module (not imported, not a base): a
-            # ScanAction subclass that sets its own `name` (the bases do not).
+            # Scan subclass that sets its own `name`.
             defined_here = isinstance(obj, type) and obj.__module__ == module.__name__
-            if defined_here and issubclass(obj, ScanAction) and hasattr(obj, "name"):
+            if defined_here and issubclass(obj, Scan) and hasattr(obj, "name"):
                 names.add(obj.name)
     return names
 
@@ -85,8 +85,8 @@ def test_every_scan_has_a_fixture() -> None:
     assert not missing, f"scan types with no fixture: {sorted(missing)}"
     orphan = fixtures - scans
     assert not orphan, f"fixtures for unknown scans: {sorted(orphan)}"
-    registered = {scan.name for scan in ScanGroup.subcommands}
-    assert registered == scans, "the scan group is out of sync with the scan modules"
+    registered = set(SCANS)
+    assert registered == scans, "the scan registry is out of sync with the scan modules"
 
 
 def _run_fixture(name: str, fixture: _FixtureModule) -> None:

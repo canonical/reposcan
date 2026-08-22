@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation
 from repo_scanner.scans.run import run_scan
 
@@ -47,7 +47,7 @@ class _FakeContext:
         return None
 
 
-class _FakeScan(ScanAction):
+class _FakeScan(Scan):
     # Invokes one real registered tool so installed-path lookup resolves.
     name = "faux"
 
@@ -61,7 +61,7 @@ class _FakeScan(ScanAction):
         return sarif.SarifDocument({"runs": [{"results": []}]})
 
 
-class _Scan(ScanAction):
+class _Scan(Scan):
     # A scan running the given invocations; records each ExecResult it parses.
     name = "faux"
 

@@ -289,13 +289,16 @@ def merge(documents: Sequence[Artifact]) -> SarifDocument:
     driver: dict[str, Any] = {"name": "reposcan"}
     if rules:
         driver["rules"] = rules
-    return SarifDocument(
-        {
-            "$schema": SCHEMA,
-            "version": "2.1.0",
-            "runs": [{"tool": {"driver": driver}, "results": results}],
-        }
-    )
+    run: dict[str, Any] = {"tool": {"driver": driver}, "results": results}
+    invocations = [
+        invocation
+        for document in documents
+        for source in document.to_dict().get("runs", [])
+        for invocation in source.get("invocations", [])
+    ]
+    if invocations:
+        run["invocations"] = invocations
+    return SarifDocument({"$schema": SCHEMA, "version": "2.1.0", "runs": [run]})
 
 
 # --- normalization: turn raw tool results into reposcan's canonical shape ---

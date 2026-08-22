@@ -34,19 +34,38 @@ def _query(path: str, sql: str) -> list[tuple]:
         connection.close()
 
 
+def _sarif() -> sarif.SarifDocument:
+    return sarif.SarifDocument.from_results(
+        "t",
+        "1.0",
+        [sarif.SarifResult.build("R1", "boom", "a.py", 3, "t", "", level="error")],
+    )
+
+
 def test_write_then_read_reconstructs_the_whole_artifact() -> None:
     artifact = _bom()
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.db")
-        reportdb.write(artifact, path)
+        reportdb.write([artifact], path)
+        (restored,) = reportdb.read(path)
+        assert restored.to_dict() == artifact.to_dict()
+
+
+def test_write_then_read_round_trips_both_a_sarif_and_a_cyclonedx_together() -> None:
+    findings, sbom = _sarif(), _bom()
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "r.db")
+        reportdb.write([findings, sbom], path)
         restored = reportdb.read(path)
-        assert restored is not None and restored.to_dict() == artifact.to_dict()
+    by_kind = {artifact.kind: artifact for artifact in restored}
+    assert by_kind[findings.kind].to_dict() == findings.to_dict()
+    assert by_kind[sbom.kind].to_dict() == sbom.to_dict()
 
 
 def test_sbom_gets_a_queryable_components_table() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.db")
-        reportdb.write(_bom(), path)
+        reportdb.write([_bom()], path)
         rows = _query(
             path, "SELECT name, version, type, purl, scanners FROM components"
         )
@@ -54,14 +73,9 @@ def test_sbom_gets_a_queryable_components_table() -> None:
 
 
 def test_findings_get_a_queryable_findings_table_with_split_location() -> None:
-    artifact = sarif.SarifDocument.from_results(
-        "t",
-        "1.0",
-        [sarif.SarifResult.build("R1", "boom", "a.py", 3, "t", "", level="error")],
-    )
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.db")
-        reportdb.write(artifact, path)
+        reportdb.write([_sarif()], path)
         rows = _query(path, "SELECT rule, level, uri, line, message FROM findings")
     assert rows == [("R1", "error", "a.py", "3", "boom")]
 
@@ -69,7 +83,7 @@ def test_findings_get_a_queryable_findings_table_with_split_location() -> None:
 def test_each_row_keeps_its_raw_json_and_metadata_holds_the_rest() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.db")
-        reportdb.write(_bom(), path)
+        reportdb.write([_bom()], path)
         (component_json,) = _query(path, "SELECT document FROM components")[0]
         (kind, shell_json) = _query(path, "SELECT kind, document FROM metadata")[0]
     assert json.loads(component_json)["name"] == "flask"  # per-row reconstruction
@@ -79,11 +93,11 @@ def test_each_row_keeps_its_raw_json_and_metadata_holds_the_rest() -> None:
     assert shell["components"] == []  # entries live only in the components table
 
 
-def test_read_returns_none_for_a_non_report_database() -> None:
+def test_read_returns_empty_for_a_non_report_database() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "other.db")
         connection = sqlite3.connect(path)
         connection.execute("CREATE TABLE unrelated (a TEXT)")
         connection.commit()
         connection.close()
-        assert reportdb.read(path) is None
+        assert reportdb.read(path) == []

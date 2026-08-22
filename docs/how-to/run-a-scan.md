@@ -1,7 +1,7 @@
 # Run a scan
 
-`reposcan scan <type> <path>` runs one scan type against a repository directory.
-The scan catalog and each scan's tools are in the
+`reposcan scan <types> <path>` runs one or more scan types against a repository
+directory. The scan catalog and each scan's tools are in the
 [scans reference](../reference/scans.md).
 
 ## Choose a scan type
@@ -15,8 +15,24 @@ reposcan scan sca      ./repo    # dependency vulnerabilities (trivy, grype, gov
 reposcan scan sbom     ./repo    # software bill of materials (trivy, syft, cdxgen)
 ```
 
-Run `reposcan scan --help` for the list, or `reposcan scan <type> --help` for a
-scan's own options.
+Run `reposcan scan --help` for the option list.
+
+## Run several scans at once
+
+Give more than one scan type, comma-separated, to run them in a single backend
+session and consolidate the results:
+
+```
+reposcan scan sast,secrets,iac ./repo        # three findings scans, one report
+reposcan scan sast,sbom ./repo -o report.db
+```
+
+Findings scans (everything but `sbom`) merge into a single SARIF report;
+duplicate findings are deduped and annotated with each tool that reported them.
+`sbom` produces a separate CycloneDX SBOM. A run that produces both (a findings
+scan plus `sbom`) prints both tables to stdout; to write both to one file, use
+the `sqlite` output format. The exit code is `3` if any findings scan reported
+something, else `0`.
 
 ## Read the exit code
 

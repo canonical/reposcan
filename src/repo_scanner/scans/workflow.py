@@ -11,11 +11,11 @@ from typing import ClassVar
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 
 
-class WorkflowScan(ScanAction):
+class WorkflowScan(Scan):
     """Audit a repository's CI/CD workflow definitions with zizmor and poutine."""
 
     name = "workflow"

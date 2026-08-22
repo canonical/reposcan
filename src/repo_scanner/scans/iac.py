@@ -14,12 +14,12 @@ from typing import ClassVar
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 from repo_scanner.tools.registry import TOOLS
 
 
-class IacScan(ScanAction):
+class IacScan(Scan):
     """Scan a repository's infrastructure-as-code for misconfigurations."""
 
     name = "iac"

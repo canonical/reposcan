@@ -52,6 +52,6 @@ class Action(_Action):
     )
     image: str | None = option(
         convert=_parse_image,
-        help="The container image to use: 'canonical' (default, the published "
-        "image), 'build' (build locally instead of pulling), or an OCI reference.",
+        help="The container image to use: 'canonical' (the official "
+        "image), 'build', or an OCI reference.",
     )

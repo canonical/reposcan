@@ -6,18 +6,13 @@
 import logging
 import os
 import sys
-from collections.abc import Sequence
 from typing import Any
 
 from repo_scanner import settings
 from repo_scanner.actions.base import Action
 from repo_scanner.app import Reposcan, main
 from repo_scanner.cli_kit import Group, option, parse
-from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.logging import LOG_LEVELS
-from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import Artifact, ToolInvocation
 
 
 def _resolve_isolated(scope, cli_values, env):
@@ -93,22 +88,19 @@ def test_an_invalid_env_value_is_ignored_not_fatal() -> None:
 # --- scan options resolve like any other --------------------------------------
 
 
-class _FauxScan(ScanAction):
-    """A test-only scan fixture."""
+class _FauxScan(Action):
+    """A test-only command for exercising option resolution."""
 
     name = "faux"
-    help = "A fake scan for testing resolution."
+    help = "A fake command for testing resolution."
 
     flavor: str = option(choices=("plain", "rich"), default="plain", help="the flavor")
     level: int | None = option(
         convert=int, requires={"flavor": "rich"}, help="detail level"
     )
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
-        return []
-
-    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
-        return sarif.SarifDocument({"runs": []})
+    def run(self) -> int:
+        return 0
 
 
 def _fake_scan_tree() -> type[Group]:
@@ -124,9 +116,9 @@ def _resolved_scan(argv: list[str]) -> dict[str, Any]:
 
 
 def test_scan_options_resolve_like_any_other() -> None:
-    assert _resolved_scan(["faux", "/repo"])["flavor"] == "plain"  # default
-    assert _resolved_scan(["faux", "/repo", "--flavor", "rich"])["flavor"] == "rich"
-    assert _resolved_scan(["faux", "/repo", "--level", "3"])["level"] == 3  # converted
+    assert _resolved_scan(["faux"])["flavor"] == "plain"  # default
+    assert _resolved_scan(["faux", "--flavor", "rich"])["flavor"] == "rich"
+    assert _resolved_scan(["faux", "--level", "3"])["level"] == 3  # converted
 
 
 def test_a_boolean_scan_flag_resolves_from_cli_env_and_default() -> None:

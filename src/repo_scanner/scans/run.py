@@ -23,13 +23,13 @@ from repo_scanner.scans.resolve import resolve_dependencies
 from repo_scanner.tools.registry import TOOLS
 
 if TYPE_CHECKING:
-    from repo_scanner.scans.base import ScanAction
+    from repo_scanner.scans.base import Scan
 
 logger = logging.getLogger(__name__)
 
 
 def run_scan(
-    scan: ScanAction,
+    scan: Scan,
     ctx: ExecutionContext,
     target: str,
     tool_root: str,

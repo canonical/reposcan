@@ -11,7 +11,7 @@ from repo_scanner.actions.image import ImageGroup
 from repo_scanner.actions.render import RenderAction
 from repo_scanner.actions.tools import ToolsAction
 from repo_scanner.cli_kit import Cli, Group
-from repo_scanner.scans.registry import ScanGroup
+from repo_scanner.scans.command import ScanCommand
 from repo_scanner.settings import resolve
 
 
@@ -25,7 +25,7 @@ class Reposcan(Group):
         RenderAction,
         ImageGroup,
         ConfigGroup,
-        ScanGroup,
+        ScanCommand,
     )
 
 

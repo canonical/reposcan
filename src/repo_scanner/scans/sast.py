@@ -11,11 +11,11 @@ from typing import ClassVar
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 
 
-class SastScan(ScanAction):
+class SastScan(Scan):
     """Scan a repository's source for security issues with semgrep."""
 
     name = "sast"

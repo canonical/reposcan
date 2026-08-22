@@ -204,10 +204,17 @@ def merge(documents: Sequence[Artifact]) -> CycloneDxDocument:
             copied = copy.deepcopy(component)
             by_key[key] = copied
             order.append(key)
-    return CycloneDxDocument(
-        {
-            "bomFormat": "CycloneDX",
-            "specVersion": "1.5",
-            "components": [by_key[key] for key in order],
-        }
-    )
+    content: dict[str, Any] = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "components": [by_key[key] for key in order],
+    }
+    # Carry every input's recorded formulation (tool provenance) onto the merged SBOM.
+    formulation = [
+        entry
+        for document in documents
+        for entry in document.to_dict().get("formulation", [])
+    ]
+    if formulation:
+        content["formulation"] = formulation
+    return CycloneDxDocument(content)

@@ -14,7 +14,7 @@ from typing import Any, ClassVar
 from repo_scanner.cli_kit import option
 from repo_scanner.execution.process import ExecResult
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
+from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 from repo_scanner.tools.registry import TRUFFLEHOG
 
@@ -22,7 +22,7 @@ from repo_scanner.tools.registry import TRUFFLEHOG
 _COMMON_ARGS = ["--json", "--no-update"]
 
 
-class SecretsScan(ScanAction):
+class SecretsScan(Scan):
     """Scan a repository for secrets with trufflehog.
 
     `mode` selects what trufflehog reads: "history" scans the full git history
@@ -38,12 +38,12 @@ class SecretsScan(ScanAction):
     mode: str = option(
         choices=("history", "filesystem"),
         default="history",
-        help="Scan git history (default) or just the working-tree files.",
+        help="For secrets: scan git history (default) or just the working tree.",
     )
     depth: int | None = option(
         convert=int,
         requires={"mode": "history"},
-        help="In history mode, scan only the most recent N commits (default: all).",
+        help="For secrets history mode: scan only the most recent N commits.",
     )
 
     def invocations(self, target: str) -> list[ToolInvocation]:
