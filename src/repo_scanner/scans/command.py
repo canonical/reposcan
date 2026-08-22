@@ -60,18 +60,23 @@ def _scan_names(raw: str) -> list[str]:
     """The scan-type names in comma-separated `raw`, validated and deduped in order.
 
     Used as the `scans` positional's converter, so an empty or unknown type is a usage
-    error before anything runs.
+    error before anything runs. The meta-name `all` expands to every scan type.
     """
     names: list[str] = []
     for token in raw.split(","):
         name = token.strip()
         if not name:
             continue
-        if name not in SCANS:
-            valid = ", ".join(SCANS)
+        if name == "all":
+            selected = list(SCANS)
+        elif name in SCANS:
+            selected = [name]
+        else:
+            valid = ", ".join([*SCANS, "all"])
             raise ValueError(f"unknown scan type {name!r} (choose from: {valid})")
-        if name not in names:
-            names.append(name)
+        for chosen in selected:
+            if chosen not in names:
+                names.append(chosen)
     if not names:
         raise ValueError("give at least one scan type")
     return names
@@ -109,8 +114,8 @@ class ScanCommand(Action):
 
     scans: list[str] = positional(
         convert=_scan_names,
-        help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, sbom "
-        "(e.g. sast,secrets).",
+        help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, sbom, "
+        "or all (e.g. sast,secrets).",
     )
     path: str = positional(help="Path to the repository to scan.")
     output: str | None = option(

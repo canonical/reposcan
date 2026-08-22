@@ -25,7 +25,10 @@ session and consolidate the results:
 ```
 reposcan scan sast,secrets,iac ./repo        # three findings scans, one report
 reposcan scan sast,sbom ./repo -o report.db
+reposcan scan all ./repo                      # every scan type
 ```
+
+The meta-name `all` expands to every scan type.
 
 Findings scans (everything but `sbom`) merge into a single SARIF report;
 duplicate findings are deduped and annotated with each tool that reported them.

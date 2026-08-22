@@ -188,6 +188,13 @@ def test_scan_names_splits_dedups_strips_and_rejects() -> None:
             command._scan_names(bad)
 
 
+def test_scan_names_all_expands_to_every_scan() -> None:
+    # `all` expands to every scan type, deduping against any also named explicitly.
+    assert command._scan_names("all") == list(SCANS)
+    rest = [name for name in SCANS if name != "sast"]
+    assert command._scan_names("sast,all") == ["sast", *rest]
+
+
 def test_scan_command_aggregates_scan_options_with_requires() -> None:
     # Every scan's own options are aggregated onto the command (so they parse and
     # populate self.<name>), and each requires the scan(s) that declare it to be among

@@ -69,8 +69,9 @@ directory and maps the outcome to an exit code. `<types>` is a scan type or
 several comma-separated (`reposcan scan sast,secrets ./repo`); they run in one
 backend session and their results are consolidated into at most one SARIF report
 (findings) and one CycloneDX SBOM. Types are `secrets`, `sast`, `iac`,
-`workflow`, `sca`, and `sbom`; see the [scans reference](scans.md) for each
-scan's tools, artifact, and options. Common options:
+`workflow`, `sca`, and `sbom`, or `all` to run every type; see the
+[scans reference](scans.md) for each scan's tools, artifact, and options. Common
+options:
 
 - `-o, --output <FILE>`: write the report to a file instead of stdout. A run
   that produces both a SARIF report and a CycloneDX SBOM must use the `sqlite`
