@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any, ClassVar
 
 from repo_scanner.cli_kit import flag, params_of
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation
@@ -32,8 +33,12 @@ class Scan:
         for param in params:
             setattr(self, param.name, values.get(param.name, param.default))
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
-        """The tool invocations to run against `target`, in run order."""
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+        """The tool invocations to run against `target`, in run order.
+
+        `ctx` is the started execution context, so a scan whose commands depend on the
+        target's state can check it.
+        """
         raise NotImplementedError
 
     def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:

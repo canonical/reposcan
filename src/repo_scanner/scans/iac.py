@@ -12,6 +12,7 @@ real error rather than findings.
 import json
 from typing import ClassVar
 
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import Scan
@@ -26,10 +27,11 @@ class IacScan(Scan):
     help = "Infrastructure-as-code checks with checkov."
     artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The single checkov invocation for `target`.
 
         Args:
+            ctx: The started context (unused).
             target: The repository path as seen in the execution context.
 
         Returns:

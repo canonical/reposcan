@@ -67,7 +67,7 @@ def run_scan(
             resolved_parent,
             allow_code_execution=getattr(scan, "allow_code_execution", False),
         )
-    invocations = scan.invocations(target)
+    invocations = scan.invocations(ctx, target)
     ignored = IgnoredPaths.from_context(ctx, target)
     artifacts: list[Artifact] = []
     provenance: list[ToolInvocationRecord] = []

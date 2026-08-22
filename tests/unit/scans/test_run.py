@@ -5,6 +5,7 @@
 
 from collections.abc import Mapping, Sequence
 
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import Scan
@@ -51,7 +52,7 @@ class _FakeScan(Scan):
     # Invokes one real registered tool so installed-path lookup resolves.
     name = "faux"
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
     def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
@@ -70,7 +71,7 @@ class _Scan(Scan):
         self._invocations = invocations
         self.seen: list[ExecResult] = []
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         return self._invocations
 
     def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:

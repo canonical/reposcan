@@ -14,6 +14,7 @@ stays optional: if it fails, trivy + syft still produce the SBOM.
 
 from typing import ClassVar
 
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import cyclonedx
 from repo_scanner.scans.base import DependencyResolvingScan
@@ -30,10 +31,11 @@ class SbomScan(DependencyResolvingScan):
     help = "Software bill of materials (trivy, syft, cdxgen)."
     artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The trivy, syft, and cdxgen invocations for `target`.
 
         Args:
+            ctx: The started context (unused).
             target: The repository path as seen in the execution context.
 
         Returns:

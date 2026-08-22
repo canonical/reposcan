@@ -13,8 +13,9 @@ Scans run via `reposcan scan` and exit `0` (no findings), `3` (findings), `1`
 
 Leaked credentials, via trufflehog. Emits SARIF. Options:
 
-- `--mode <history|filesystem>`: scan the git history (default) or only the
-  working-tree files.
+- `--mode <history|filesystem>`: scan the git history or only the working-tree
+  files. When unset, it uses history for a git repository and the filesystem
+  otherwise (so a non-git directory is scanned rather than failing).
 - `--depth <N>`: in history mode, scan only the most recent N commits (default:
   all).
 

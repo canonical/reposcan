@@ -66,7 +66,9 @@ To convert a report you already saved, use
 ## Pass scan-specific options
 
 Some scans take their own options. The `secrets` scan, for example, chooses
-between git-history and working-tree mode and can limit the history depth:
+between git-history and working-tree mode and can limit the history depth. With no
+`--mode`, it scans the git history for a git repository and the working tree
+otherwise:
 
 ```
 reposcan scan secrets ./repo --mode filesystem

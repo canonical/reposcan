@@ -4,11 +4,16 @@
 """Tests for the SBOM scan (repo_scanner.scans.sbom) and CycloneDX merge."""
 
 import json
+from typing import cast
 
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans.cyclonedx import CycloneDxDocument
 from repo_scanner.scans.model import ToolInvocationRecord
 from repo_scanner.scans.sbom import SbomScan
+
+# The SBOM scan ignores the context when building its invocations.
+_NO_CTX = cast(ExecutionContext, None)
 
 
 def _cyclonedx(components: list[dict]) -> str:
@@ -41,7 +46,8 @@ def test_consolidate_merges_dedups_by_purl_and_annotates_scanners() -> None:
 
 def test_include_dev_dependencies_steers_each_tool() -> None:
     by_tool = {
-        i.tool: i for i in SbomScan(include_dev_dependencies=True).invocations("/x")
+        i.tool: i
+        for i in SbomScan(include_dev_dependencies=True).invocations(_NO_CTX, "/x")
     }
     assert "--include-dev-deps" in by_tool["trivy"].args  # trivy: CLI flag
     syft_env = by_tool["syft"].env or {}
@@ -52,7 +58,7 @@ def test_include_dev_dependencies_steers_each_tool() -> None:
 
 
 def test_dev_dependencies_are_excluded_by_default() -> None:
-    by_tool = {i.tool: i for i in SbomScan().invocations("/x")}
+    by_tool = {i.tool: i for i in SbomScan().invocations(_NO_CTX, "/x")}
     assert "--include-dev-deps" not in by_tool["trivy"].args
     assert "SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES" not in (by_tool["syft"].env or {})
     assert "--required-only" in by_tool["cdxgen"].args  # cdxgen otherwise includes dev

@@ -12,7 +12,8 @@ import json
 from typing import Any, ClassVar
 
 from repo_scanner.cli_kit import option
-from repo_scanner.execution.process import ExecResult
+from repo_scanner.execution.context import ExecutionContext
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import Scan
 from repo_scanner.scans.model import ArtifactKind, ToolInvocation
@@ -21,14 +22,18 @@ from repo_scanner.tools.registry import TRUFFLEHOG
 # trufflehog flags common to both modes: machine-readable output, no self-update.
 _COMMON_ARGS = ["--json", "--no-update"]
 
+# mode default. `invocations` resolves it to "history" for a git repo else "filesystem"
+_AUTO = "auto"
+
 
 class SecretsScan(Scan):
     """Scan a repository for secrets with trufflehog.
 
     `mode` selects what trufflehog reads: "history" scans the full git history
-    (catching secrets later removed); "filesystem" scans only the working tree.
-    `depth` limits a history scan to the most recent N commits, or None for all;
-    it applies only in history mode.
+    (catching secrets later removed); "filesystem" scans only the working tree. When it
+    is not chosen, `invocations` picks 'history' for a git repository and 'filesystem'
+    otherwise. `depth` limits a history scan to the most recent N commits, or None for
+    all; it applies only in history mode.
     """
 
     name = "secrets"
@@ -37,8 +42,8 @@ class SecretsScan(Scan):
 
     mode: str = option(
         choices=("history", "filesystem"),
-        default="history",
-        help="For secrets: scan git history (default) or just the working tree.",
+        default=_AUTO,
+        help="For secrets: scan git history or just the working tree.",
     )
     depth: int | None = option(
         convert=int,
@@ -46,21 +51,31 @@ class SecretsScan(Scan):
         help="For secrets history mode: scan only the most recent N commits.",
     )
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
-        """The single trufflehog invocation for `target` in the selected mode.
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+        """The single trufflehog invocation for `target` in the resolved mode.
 
         Args:
+            ctx: The started context, used to detect a git repository when `mode` was
+                not chosen (see `_resolve_mode`).
             target: The repository path as seen in the execution context.
 
         Returns:
             One trufflehog invocation.
         """
-        if self.mode == "filesystem":
-            args = ["filesystem", target, *_COMMON_ARGS]
-        else:
-            args = ["git", f"file://{target}", *_COMMON_ARGS]
-            if self.depth is not None:
-                args += ["--max-depth", str(self.depth)]
+        mode = self.mode
+        if self.mode == _AUTO:
+            result = ctx.run(["git", "-C", target, "rev-parse", "--git-dir"])
+            is_git_repo = not isinstance(result, Failure) and result.exit_code == 0
+            mode = "history" if is_git_repo else "filesystem"
+        match mode:
+            case "filesystem":
+                args = ["filesystem", target, *_COMMON_ARGS]
+            case "history":
+                args = ["git", f"file://{target}", *_COMMON_ARGS]
+                if self.depth is not None:
+                    args += ["--max-depth", str(self.depth)]
+            case _:
+                raise ValueError("Unexpected execution mode")
         return [ToolInvocation("trufflehog", args)]
 
     def parse(self, tool: str, output: ExecResult, target: str) -> sarif.SarifDocument:

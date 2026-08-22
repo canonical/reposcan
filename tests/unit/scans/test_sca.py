@@ -4,10 +4,15 @@
 """Tests for the SCA scan (repo_scanner.scans.sca), including govulncheck parsing."""
 
 import json
+from typing import cast
 
+from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.sca import ScaScan
+
+# The SCA scan ignores the context when building its invocations.
+_NO_CTX = cast(ExecutionContext, None)
 
 
 def test_govulncheck_stream_becomes_sarif() -> None:
@@ -40,10 +45,11 @@ def test_govulncheck_stream_becomes_sarif() -> None:
 def test_include_dev_dependencies_adds_the_trivy_flag_only() -> None:
     # Only trivy honors it; grype and govulncheck have no dev/production toggle.
     with_dev = {
-        i.tool: i for i in ScaScan(include_dev_dependencies=True).invocations("/x")
+        i.tool: i
+        for i in ScaScan(include_dev_dependencies=True).invocations(_NO_CTX, "/x")
     }
     assert "--include-dev-deps" in with_dev["trivy"].args
-    default = {i.tool: i for i in ScaScan().invocations("/x")}
+    default = {i.tool: i for i in ScaScan().invocations(_NO_CTX, "/x")}
     assert "--include-dev-deps" not in default["trivy"].args
 
 
