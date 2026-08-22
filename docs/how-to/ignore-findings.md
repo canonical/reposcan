@@ -58,9 +58,12 @@ poutine  github_action_from_unverified_creator_used  .github/workflows/*.yml  "u
 
 A finding is dropped if it matches a rule. Each rule has the following fields:
 
-- `tool`: the scanner that reported the finding, as shown in the report, or `*`
-  for any.
-- `ruleId`: the finding's rule id.
+- `tool`: the scanner that reported the finding, as shown in the report. A glob
+  with alternation: `*` matches any, `?` a single character, and `|` separates
+  alternatives (e.g. `poutine|zizmor`).
+- `ruleId`: the finding's rule id, matched the same way (e.g. `CKV_AWS_*`). Any
+  character other than `*`, `?`, or `|` is literal, so a dotted rule id such as
+  `python.lang.security.audit.foo` matches as written.
 - `path-glob`: a repository-root-relative glob. `*` matches within one path
   segment, `**` across segments, and `?` matches a single character.
 - `content-regex` (optional): a regular expression matched against the offending

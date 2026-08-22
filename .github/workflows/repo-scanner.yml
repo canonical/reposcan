@@ -1,4 +1,4 @@
-name: repo-scan
+name: repo-scanner
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   pull-requests: write # post the results summary as a PR comment
 
 concurrency:
-  group: repo-scan-${{ github.ref }}
+  group: repo-scanner-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0 # full history so the secrets scan (history mode) has commits
           persist-credentials: false
 
-      - uses: canonical/repo-scanner@main  # zizmor: ignore[unpinned-uses]  (first-party)
+      - uses: canonical/repo-scanner@main
         with:
           fail-on: warning
           pr-comment: true

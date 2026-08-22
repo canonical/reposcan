@@ -8,9 +8,12 @@ findings. Each non-blank, non-comment line has exactly three or four fields:
 
     <tool>  <ruleId>  <path-glob>  [content-regex]
 
-`tool` is the scanner that reported the finding, or `*` for any; `ruleId` is the SARIF
-rule id shown in the finding; and `path-glob` is a repository-root-relative glob (`*`
-within a path segment, `**` across segments, `?` one character).
+`tool` is the scanner that reported the finding and `ruleId` is the SARIF rule id shown
+in the finding; both are globs with alternation (`*` matches any run of characters, `?`
+one, `|` separates alternatives), so `*` matches any and `poutine|zizmor` either. Every
+other character is literal, so a dotted semgrep rule id matches as written. `path-glob`
+is a repository-root-relative glob (`*` within a path segment, `**` across segments, `?`
+one character).
 
 Fields are whitespace-separated, and a `#` begins a comment. A field may be wrapped in
 single or double quotes to include whitespace or a `#`; the quotes are removed.
@@ -45,19 +48,21 @@ class IgnoreRule:
         self.rule_id = rule_id
         self.path_glob = path_glob
         self.content_pattern = content_pattern
+        self._tool = _field_to_regex(tool)
+        self._rule = _field_to_regex(rule_id)
         self._pattern = _glob_to_regex(path_glob)
         self._content = re.compile(content_pattern) if content_pattern else None
 
     def matches(self, finding: sarif.SarifResult, root: str = "") -> bool:
         """Whether this rule ignores `finding`.
 
-        Checks the tool, rule id, and path; then, if the rule carries a content
+        Checks the rule id, tool, and path; then, if the rule carries a content
         pattern, that it matches the finding's offending content (read from `root`).
         Content that cannot be read fails the match, so the finding is kept.
         """
-        if finding.rule_id != self.rule_id:
+        if self._rule.match(finding.rule_id) is None:
             return False
-        if self.tool != "*" and self.tool not in finding.scanners:
+        if not any(self._tool.match(scanner) for scanner in finding.scanners):
             return False
         if self._pattern.match(finding.uri) is None:
             return False
@@ -175,6 +180,27 @@ def _offending_content(root: str, finding: sarif.SarifResult) -> str | None:
     if finding.line > len(lines):
         return None
     return lines[finding.line - 1]
+
+
+def _field_to_regex(field: str) -> re.Pattern[str]:
+    """A tool/ruleId glob (with `|` alternation) compiled to an anchored regex.
+
+    `*` matches any run of characters, `?` matches one, and `|` separates alternatives;
+    every other character is matched literally (so a dotted semgrep rule id matches as
+    written). `*` alone therefore matches any value.
+    """
+    alternatives = []
+    for alternative in field.split("|"):
+        out = []
+        for ch in alternative:
+            if ch == "*":
+                out.append(".*")
+            elif ch == "?":
+                out.append(".")
+            else:
+                out.append(re.escape(ch))
+        alternatives.append("".join(out))
+    return re.compile("^(?:" + "|".join(alternatives) + ")$")
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:

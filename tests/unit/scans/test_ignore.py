@@ -64,7 +64,7 @@ def test_parse_reads_entries_and_reports_malformed_lines() -> None:
     assert len(errors) == 4
     assert "line 6" in errors[0]  # too few fields (2)
     assert "line 7" in errors[1]  # too many fields (5)
-    assert "line 8" in errors[2] and "content pattern" in errors[2]  # bad regex
+    assert "line 8" in errors[2]  # bad regex (carries re's message)
     assert "line 9" in errors[3] and "quote" in errors[3]  # unterminated quote
 
 
@@ -81,6 +81,24 @@ def test_double_star_crosses_segments_including_none() -> None:
     assert rule.matches(_finding("R", "main.tf"))  # zero leading directories
     assert rule.matches(_finding("R", "a/b/c/main.tf"))  # any depth
     assert not rule.matches(_finding("R", "main.tfvars"))
+
+
+def test_tool_and_rule_fields_glob_and_alternate() -> None:
+    # `*`/`?` wildcards in the rule id, and `|` alternation over the reporting tool.
+    rule = ignore.IgnoreRule("poutine|zizmor", "CKV_AWS_*", "**/*.tf")
+    assert rule.matches(_finding("CKV_AWS_18", "a/main.tf", ["zizmor"]))
+    assert rule.matches(_finding("CKV_AWS_20", "main.tf", ["poutine"]))
+    # the rule id is outside the CKV_AWS_* glob
+    assert not rule.matches(_finding("CKV_GCP_1", "main.tf", ["poutine"]))
+    # the reporting tool is not among the alternatives
+    assert not rule.matches(_finding("CKV_AWS_18", "main.tf", ["checkov"]))
+
+
+def test_field_special_characters_are_literal_not_regex() -> None:
+    # a dotted semgrep-style rule id: the dots match literally, not "any character".
+    rule = ignore.IgnoreRule("*", "python.lang.foo", "**/*.py")
+    assert rule.matches(_finding("python.lang.foo", "a.py", ["semgrep"]))
+    assert not rule.matches(_finding("pythonXlangXfoo", "a.py", ["semgrep"]))
 
 
 def test_apply_drops_only_the_matching_findings() -> None:

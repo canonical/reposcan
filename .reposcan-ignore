@@ -10,3 +10,7 @@ trufflehog AWS tests/scans/fixtures/*
 # treat the following as verified action creators
 poutine  github_action_from_unverified_creator_used  **  "uses: canonical/"
 poutine  github_action_from_unverified_creator_used  **  "uses: astral-sh/"
+
+# silence zizmor and semgrep warnings about unpinned tag on first-party action
+zizmor   zizmor/unpinned-uses  .github/workflows/*.yml  "uses: canonical/repo-scanner@main"
+semgrep  *mutable-action-tag   .github/workflows/*.yml  "uses: canonical/repo-scanner@main"
