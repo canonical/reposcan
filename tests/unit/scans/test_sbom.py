@@ -64,6 +64,20 @@ def test_dev_dependencies_are_excluded_by_default() -> None:
     assert "--required-only" in by_tool["cdxgen"].args  # cdxgen otherwise includes dev
 
 
+def test_parse_drops_the_scanned_root_component() -> None:
+    # Directory scans list a component named "." (or "./") for the scanned root; it is
+    # the source, not a dependency, so parse drops it while keeping real packages.
+    output = _cyclonedx(
+        [
+            {"type": "file", "name": "."},
+            {"type": "library", "name": "flask", "purl": "pkg:pypi/flask@3.0.0"},
+        ]
+    )
+    result = SbomScan().parse("syft", ExecResult(0, output, ""), "/scan/acme")
+    assert not isinstance(result, Failure)
+    assert [c["name"] for c in result.components()] == ["flask"]
+
+
 def test_parse_fails_on_non_cyclonedx_output() -> None:
     result = SbomScan().parse("syft", ExecResult(0, "not cyclonedx", ""), "/scan/acme")
     assert isinstance(result, Failure)

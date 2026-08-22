@@ -47,6 +47,8 @@ class SbomScan(DependencyResolvingScan):
         # exclude them.
         trivy_args = ["fs", "--skip-version-check", "--format", "cyclonedx"]
         syft_env = {
+            # see https://github.com/anchore/syft/wiki/file-selection
+            "SYFT_FILE_METADATA_SELECTION": "none",
             "SYFT_CHECK_FOR_APP_UPDATE": "false",
             # Capture requirements.txt entries that carry a version constraint but no
             # exact pin (e.g. "flask>=2.0"); syft drops them otherwise. Note: no SBOM
@@ -54,6 +56,14 @@ class SbomScan(DependencyResolvingScan):
             # docs/explanation/sbom-generation.md.
             "SYFT_PYTHON_GUESS_UNPINNED_REQUIREMENTS": "true",
         }
+        syft_args = [
+            f"dir:{target}",
+            "-o",
+            "cyclonedx-json",
+            # Broaden beyond syft's default directory catalogers
+            "--override-default-catalogers",
+            "all",
+        ]
         # --no-install-deps (and the pre-build lifecycle) keep cdxgen to static
         # manifest/lockfile parsing, so it never runs the repo's setup.py/build backend.
         cdxgen_args = ["--no-install-deps", "--lifecycle", "pre-build", "--no-banner"]
@@ -69,18 +79,7 @@ class SbomScan(DependencyResolvingScan):
             ToolInvocation("trivy", trivy_args),
             ToolInvocation(
                 tool="syft",
-                args=[
-                    f"dir:{target}",
-                    "-o",
-                    "cyclonedx-json",
-                    # Broaden beyond syft's default directory catalogers: costs some
-                    # performance but can catch extra packages (e.g. a bare
-                    # package.json, via an installed-only cataloger that is off on a
-                    # directory scan by default). See
-                    # docs/explanation/sbom-generation.md.
-                    "--override-default-catalogers",
-                    "all",
-                ],
+                args=syft_args,
                 env=syft_env,
             ),
             ToolInvocation(

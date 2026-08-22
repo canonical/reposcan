@@ -128,6 +128,15 @@ def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
         return None
     if not isinstance(document, dict) or document.get("bomFormat") != "CycloneDX":
         return None
+    # syft always lists a component named "." (or "./") for the scanned
+    # directory, which is the source, not a dependency.
+    components = document.get("components")
+    if isinstance(components, list):
+        document["components"] = [
+            component
+            for component in components
+            if str(component.get("name", "")) not in (".", "./")
+        ]
     sbom = CycloneDxDocument(document)
     if scanner is not None:
         for component in sbom.components():

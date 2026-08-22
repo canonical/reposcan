@@ -55,8 +55,7 @@ class SecretsScan(Scan):
         """The single trufflehog invocation for `target` in the resolved mode.
 
         Args:
-            ctx: The started context, used to detect a git repository when `mode` was
-                not chosen (see `_resolve_mode`).
+            ctx: The started context, used to detect a git repository.
             target: The repository path as seen in the execution context.
 
         Returns:
