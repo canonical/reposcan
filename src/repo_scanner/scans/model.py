@@ -1,33 +1,19 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The scan data model: the tool-invocation and artifact types a scan works with.
-
-These are the data records exchanged while running a scan: what to run
-(`ToolInvocation`), what came back (`ToolResult`), the provenance of each executed
-command (`ToolInvocationRecord`), and the consolidated output (`Artifact`). The driver
-that runs a scan lives in `scans/run.py`; the scan base in `scans/base.py`.
-"""
+"""The scan data model/types."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar, Protocol
 
-from repo_scanner.execution.process import ExecResult
 from repo_scanner.ioutil.sqlitedb import Table
-
-
-class ArtifactKind(str, Enum):
-    """The kind of document a scan produces."""
-
-    SARIF = "sarif"
-    CYCLONEDX = "cyclonedx"
 
 
 @dataclass(frozen=True)
 class ToolInvocation:
-    """One tool run a scan needs: the tool, its args, and how to run/judge it.
+    """A tool invocation: the tool, its args, and how to run/judge it.
 
     Some tools exit non-zero to signal findings rather than an error (e.g.
     govulncheck exits 3); `ok_codes` lists the exit codes that mean success, so
@@ -66,12 +52,11 @@ class ToolInvocationRecord(ToolInvocation):
     successful: bool = False
 
 
-@dataclass(frozen=True)
-class ToolResult:
-    """The outcome of one tool invocation, paired with the tool's name."""
+class ArtifactKind(str, Enum):
+    """Scan artifact types."""
 
-    tool: str
-    output: ExecResult
+    SARIF = "sarif"
+    CYCLONEDX = "cyclonedx"
 
 
 class Artifact(Protocol):

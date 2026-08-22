@@ -9,12 +9,13 @@ target -- the git history by default, or the working-tree files in filesystem mo
 """
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from repo_scanner.cli_kit import option
+from repo_scanner.execution.process import ExecResult
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import ToolInvocation, ToolResult
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 from repo_scanner.tools.registry import TRUFFLEHOG
 
 # trufflehog flags common to both modes: machine-readable output, no self-update.
@@ -32,6 +33,7 @@ class SecretsScan(ScanAction):
 
     name = "secrets"
     help = "Scan for leaked secrets with trufflehog."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     mode: str = option(
         choices=("history", "filesystem"),
@@ -61,22 +63,22 @@ class SecretsScan(ScanAction):
                 args += ["--max-depth", str(self.depth)]
         return [ToolInvocation("trufflehog", args)]
 
-    def consolidate(self, results: list[ToolResult]) -> sarif.SarifDocument:
-        """Turn every trufflehog result's JSONL findings into a SARIF artifact.
+    def parse(self, tool: str, output: ExecResult, target: str) -> sarif.SarifDocument:
+        """Turn one trufflehog run's JSONL findings into a normalized SARIF artifact.
 
         Args:
-            results: The results of this scan's tool invocations.
+            tool: The scanner that produced `output` (trufflehog).
+            output: The tool's result (JSONL findings on stdout).
+            target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A SARIF artifact listing every finding across all results.
+            A SARIF artifact listing the run's findings.
         """
-        sarif_results = []
-        for result in results:
-            for finding in _parse_findings(result.output.stdout):
-                sarif_results.append(_to_result(finding))
-        return sarif.SarifDocument.from_results(
-            "trufflehog", TRUFFLEHOG.version, sarif_results
-        )
+        findings = [
+            _to_result(finding, tool, target)
+            for finding in _parse_findings(output.stdout)
+        ]
+        return sarif.SarifDocument.from_results(tool, TRUFFLEHOG.version, findings)
 
 
 def _parse_findings(stdout: str) -> list[dict[str, Any]]:
@@ -95,14 +97,16 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
     return findings
 
 
-def _to_result(finding: dict[str, Any]) -> sarif.SarifResult:
-    """Build a SARIF result from one trufflehog finding."""
+def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.SarifResult:
+    """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
     uri, line = _finding_location(finding)
     message = f"{detector} secret detected" + (" (verified)" if verified else "")
     level = "error" if verified else "warning"
-    return sarif.SarifResult(detector, message, uri, line, level=level)
+    return sarif.SarifResult.build(
+        detector, message, uri, line, scanner, target, level=level
+    )
 
 
 def _finding_location(finding: dict[str, Any]) -> tuple[str, int]:

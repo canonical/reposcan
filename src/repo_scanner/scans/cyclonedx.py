@@ -11,116 +11,15 @@ component with which scanners reported it (via CycloneDX `properties`).
 import copy
 import json
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from repo_scanner.ioutil.sqlitedb import Table
-from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
-
-
-def parse(text: str) -> "CycloneDxDocument | None":
-    """The CycloneDX document a tool printed, or None if `text` is not one.
-
-    Args:
-        text: A tool's stdout, expected to be a CycloneDX JSON document.
-
-    Returns:
-        A CycloneDxDocument if `text` is a CycloneDX JSON object, else None.
-    """
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if isinstance(document, dict) and document.get("bomFormat") == "CycloneDX":
-        return CycloneDxDocument(document)
-    return None
-
-
-def _component_key(component: dict[str, Any]) -> str:
-    """A dedup key for a component: its package URL, else type/name/version."""
-    purl = component.get("purl")
-    if purl:
-        return f"purl:{purl}"
-    type_ = component.get("type", "")
-    name = component.get("name", "")
-    version = component.get("version", "")
-    return f"nv:{type_}:{name}:{version}"
-
-
-def _record_scanner(component: dict[str, Any], scanner: str) -> None:
-    """Add `scanner` to the component's properties (no duplicates)."""
-    properties = component.setdefault("properties", [])
-    for existing in properties:
-        if (
-            existing.get("name") == SCANNER_PROPERTY
-            and existing.get("value") == scanner
-        ):
-            return
-    properties.append({"name": SCANNER_PROPERTY, "value": scanner})
-
-
-def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
-    """A CycloneDX formulation workflow for one executed tool command."""
-    workflow: dict[str, Any] = {
-        "bom-ref": f"reposcan-{inv.tool}-{index}",
-        "uid": f"{inv.tool}-{index}",
-        "name": f"{inv.tool} {inv.version}",
-        "taskTypes": ["scan"],
-        "steps": [
-            {"name": inv.tool, "commands": [{"executed": shlex.join(inv.command)}]}
-        ],
-        "properties": [
-            {"name": "reposcan:workingDirectory", "value": inv.working_directory},
-            {"name": "reposcan:exitCode", "value": str(inv.exit_code)},
-            {"name": "reposcan:successful", "value": str(inv.successful).lower()},
-        ],
-    }
-    if inv.environment:
-        workflow["inputs"] = [
-            {
-                "environmentVars": [
-                    {"name": key, "value": value}
-                    for key, value in inv.environment.items()
-                ]
-            }
-        ]
-    return workflow
-
-
-def merge(sources: list[tuple[str, "CycloneDxDocument"]]) -> "CycloneDxDocument":
-    """Merge CycloneDX documents from several scanners into one deduped SBOM.
-
-    Components with the same package URL (or type/name/version) are merged into
-    one, each annotated with a `reposcan:scanner` property per contributing tool.
-
-    Args:
-        sources: (scanner_name, CycloneDxDocument) pairs.
-
-    Returns:
-        A single CycloneDxDocument (CycloneDX 1.5).
-    """
-    by_key: dict[str, dict[str, Any]] = {}
-    order: list[str] = []
-    for scanner, document in sources:
-        for component in document.components():
-            key = _component_key(component)
-            if key in by_key:
-                _record_scanner(by_key[key], scanner)
-                continue
-            copied = copy.deepcopy(component)
-            _record_scanner(copied, scanner)
-            by_key[key] = copied
-            order.append(key)
-    return CycloneDxDocument(
-        {
-            "bomFormat": "CycloneDX",
-            "specVersion": "1.5",
-            "components": [by_key[key] for key in order],
-        }
-    )
 
 
 @dataclass(frozen=True)
@@ -197,3 +96,118 @@ class CycloneDxDocument:
         self.content.setdefault("formulation", []).append(
             {"bom-ref": "reposcan-scan", "workflows": workflows}
         )
+
+
+def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
+    """The CycloneDX document in `text`, or None if `text` is not CycloneDX.
+
+    Pass `scanner` to annotate every component with the reposcan:scanner property.
+
+    Args:
+        text: JSON text expected to be a CycloneDX document.
+        scanner: The scanner that produced the SBOM, to annotate its components; None
+            to read the document back unchanged.
+
+    Returns:
+        A CycloneDxDocument if `text` is a CycloneDX JSON object, else None.
+    """
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(document, dict) or document.get("bomFormat") != "CycloneDX":
+        return None
+    sbom = CycloneDxDocument(document)
+    if scanner is not None:
+        for component in sbom.components():
+            _record_scanner(component, scanner)
+    return sbom
+
+
+def _component_key(component: dict[str, Any]) -> str:
+    """A dedup key for a component: its package URL, else type/name/version."""
+    purl = component.get("purl")
+    if purl:
+        return f"purl:{purl}"
+    type_ = component.get("type", "")
+    name = component.get("name", "")
+    version = component.get("version", "")
+    return f"nv:{type_}:{name}:{version}"
+
+
+def _record_scanner(component: dict[str, Any], scanner: str) -> None:
+    """Add `scanner` to the component's properties (no duplicates)."""
+    properties = component.setdefault("properties", [])
+    for existing in properties:
+        if (
+            existing.get("name") == SCANNER_PROPERTY
+            and existing.get("value") == scanner
+        ):
+            return
+    properties.append({"name": SCANNER_PROPERTY, "value": scanner})
+
+
+def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
+    """A CycloneDX formulation workflow for one executed tool command."""
+    workflow: dict[str, Any] = {
+        "bom-ref": f"reposcan-{inv.tool}-{index}",
+        "uid": f"{inv.tool}-{index}",
+        "name": f"{inv.tool} {inv.version}",
+        "taskTypes": ["scan"],
+        "steps": [
+            {"name": inv.tool, "commands": [{"executed": shlex.join(inv.command)}]}
+        ],
+        "properties": [
+            {"name": "reposcan:workingDirectory", "value": inv.working_directory},
+            {"name": "reposcan:exitCode", "value": str(inv.exit_code)},
+            {"name": "reposcan:successful", "value": str(inv.successful).lower()},
+        ],
+    }
+    if inv.environment:
+        workflow["inputs"] = [
+            {
+                "environmentVars": [
+                    {"name": key, "value": value}
+                    for key, value in inv.environment.items()
+                ]
+            }
+        ]
+    return workflow
+
+
+def _merge_scanners(into: dict[str, Any], other: dict[str, Any]) -> None:
+    """Union `other`'s reposcan:scanner properties into `into` (no duplicates)."""
+    for prop in other.get("properties", []):
+        if prop.get("name") == SCANNER_PROPERTY:
+            _record_scanner(into, str(prop.get("value", "")))
+
+
+def merge(documents: Sequence[Artifact]) -> CycloneDxDocument:
+    """Consolidate one or more normalized CycloneDX SBOMs into one deduped SBOM.
+
+    Components with the same package URL (or type/name/version) are deduped.
+
+    Args:
+        documents: The normalized CycloneDX artifacts to combine.
+
+    Returns:
+        A single CycloneDxDocument (CycloneDX 1.5).
+    """
+    by_key: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for document in documents:
+        for component in document.to_dict().get("components", []):
+            key = _component_key(component)
+            if key in by_key:
+                _merge_scanners(by_key[key], component)
+                continue
+            copied = copy.deepcopy(component)
+            by_key[key] = copied
+            order.append(key)
+    return CycloneDxDocument(
+        {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "components": [by_key[key] for key in order],
+        }
+    )

@@ -7,7 +7,7 @@ import json
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans.cyclonedx import CycloneDxDocument
-from repo_scanner.scans.model import ToolInvocationRecord, ToolResult
+from repo_scanner.scans.model import ToolInvocationRecord
 from repo_scanner.scans.sbom import SbomScan
 
 
@@ -22,13 +22,13 @@ def test_consolidate_merges_dedups_by_purl_and_annotates_scanners() -> None:
     trivy = _cyclonedx([shared, {"name": "a", "purl": "pkg:npm/a@1"}])
     syft = _cyclonedx([shared, {"name": "b", "purl": "pkg:npm/b@1"}])
 
-    result = SbomScan().consolidate(
-        [
-            ToolResult("trivy", ExecResult(0, trivy, "")),
-            ToolResult("syft", ExecResult(0, syft, "")),
-        ]
-    )
-    assert not isinstance(result, Failure)
+    scan = SbomScan()
+    trivy_doc = scan.parse("trivy", ExecResult(0, trivy, ""), "/scan/acme")
+    syft_doc = scan.parse("syft", ExecResult(0, syft, ""), "/scan/acme")
+    assert not isinstance(trivy_doc, Failure)
+    assert not isinstance(syft_doc, Failure)
+    result = scan.consolidate([trivy_doc, syft_doc])
+    assert isinstance(result, CycloneDxDocument)
     by_purl = {c["purl"]: c for c in result.components()}
     assert len(by_purl) == 3  # the shared component is deduped by purl
     scanners = [
@@ -58,10 +58,8 @@ def test_dev_dependencies_are_excluded_by_default() -> None:
     assert "--required-only" in by_tool["cdxgen"].args  # cdxgen otherwise includes dev
 
 
-def test_consolidate_fails_on_non_cyclonedx_output() -> None:
-    result = SbomScan().consolidate(
-        [ToolResult("syft", ExecResult(0, "not cyclonedx", ""))]
-    )
+def test_parse_fails_on_non_cyclonedx_output() -> None:
+    result = SbomScan().parse("syft", ExecResult(0, "not cyclonedx", ""), "/scan/acme")
     assert isinstance(result, Failure)
 
 

@@ -55,7 +55,9 @@ def test_sbom_gets_a_queryable_components_table() -> None:
 
 def test_findings_get_a_queryable_findings_table_with_split_location() -> None:
     artifact = sarif.SarifDocument.from_results(
-        "t", "1.0", [sarif.SarifResult("R1", "boom", "a.py", 3, level="error")]
+        "t",
+        "1.0",
+        [sarif.SarifResult.build("R1", "boom", "a.py", 3, "t", "", level="error")],
     )
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.db")

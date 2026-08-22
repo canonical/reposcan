@@ -12,14 +12,12 @@ cdxgen interleaves progress logs on stdout, so stdout is not a reliable channel.
 stays optional: if it fails, trivy + syft still produce the SBOM.
 """
 
-import logging
+from typing import ClassVar
 
-from repo_scanner.execution.process import Failure
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import cyclonedx
 from repo_scanner.scans.base import DependencyResolvingScan
-from repo_scanner.scans.model import ToolInvocation, ToolResult
-
-logger = logging.getLogger(__name__)
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 
 # Where cdxgen writes its BOM inside the (ephemeral) scan container; run_scan reads it.
 _CDXGEN_OUTPUT = "/tmp/cdxgen-sbom.json"
@@ -30,6 +28,7 @@ class SbomScan(DependencyResolvingScan):
 
     name = "sbom"
     help = "Software bill of materials (trivy, syft, cdxgen)."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
 
     def invocations(self, target: str) -> list[ToolInvocation]:
         """The trivy, syft, and cdxgen invocations for `target`.
@@ -93,25 +92,22 @@ class SbomScan(DependencyResolvingScan):
             ),
         ]
 
-    def consolidate(
-        self, results: list[ToolResult]
+    def parse(
+        self, tool: str, output: ExecResult, target: str
     ) -> cyclonedx.CycloneDxDocument | Failure:
-        """Merge each tool's CycloneDX output into one deduped SBOM.
+        """Parse one tool's CycloneDX output into a normalized SBOM artifact.
 
         Args:
-            results: The results of the invocations that ran (cdxgen may be absent).
+            tool: The scanner that produced `output`.
+            output: The tool's result (CycloneDX JSON on stdout, or read from a file).
+            target: The scan root (unused: an SBOM inventories components, not located
+                findings, so it has no uris to make relative).
 
         Returns:
-            A CycloneDX artifact, or a Failure if a tool produced no usable output.
+            A normalized CycloneDX artifact, or a Failure if the output was not
+            CycloneDX.
         """
-        sources = []
-        tool_optional = {i.tool: i.optional for i in self.invocations("dummy-target")}
-        for result in results:
-            document = cyclonedx.parse(result.output.stdout)
-            if document is None:
-                if tool_optional[result.tool]:
-                    logger.warning("%s did not produce CycloneDX output", result.tool)
-                    continue
-                return Failure(reason=f"{result.tool} did not produce CycloneDX output")
-            sources.append((result.tool, document))
-        return cyclonedx.merge(sources)
+        document = cyclonedx.parse(output.stdout, tool)
+        if document is None:
+            return Failure(reason=f"{tool} did not produce CycloneDX output")
+        return document

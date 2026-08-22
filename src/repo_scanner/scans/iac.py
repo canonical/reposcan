@@ -10,11 +10,12 @@ real error rather than findings.
 """
 
 import json
+from typing import ClassVar
 
-from repo_scanner.execution.process import Failure
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import ToolInvocation, ToolResult
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 from repo_scanner.tools.registry import TOOLS
 
 
@@ -23,6 +24,7 @@ class IacScan(ScanAction):
 
     name = "iac"
     help = "Infrastructure-as-code checks with checkov."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     def invocations(self, target: str) -> list[ToolInvocation]:
         """The single checkov invocation for `target`.
@@ -38,25 +40,26 @@ class IacScan(ScanAction):
         args = ["-d", target, "-o", "json", "--quiet", "--soft-fail"]
         return [ToolInvocation("checkov", args)]
 
-    def consolidate(self, results: list[ToolResult]) -> sarif.SarifDocument | Failure:
-        """Convert each checkov JSON report to SARIF and merge into one artifact.
+    def parse(
+        self, tool: str, output: ExecResult, target: str
+    ) -> sarif.SarifDocument | Failure:
+        """Convert one checkov JSON report into a normalized SARIF artifact.
 
         Args:
-            results: The checkov invocation results.
+            tool: The scanner that produced `output` (checkov).
+            output: The tool's result (a JSON report on stdout).
+            target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A SARIF artifact, or a Failure if a result did not produce JSON.
+            A normalized SARIF artifact, or a Failure if the output was not JSON.
         """
-        docs = []
-        for result in results:
-            document = _checkov_sarif(result.output.stdout)
-            if document is None:
-                return Failure(reason=f"{result.tool} did not produce JSON output")
-            docs.append((result.tool, document))
-        return sarif.merge(docs)
+        document = _checkov_sarif(output.stdout, target)
+        if document is None:
+            return Failure(reason=f"{tool} did not produce JSON output")
+        return document
 
 
-def _checkov_sarif(stdout: str) -> sarif.SarifDocument | None:
+def _checkov_sarif(stdout: str, target: str) -> sarif.SarifDocument | None:
     """Convert checkov's JSON report into a SARIF document.
 
     checkov emits either one report object or, across several frameworks, a list
@@ -65,6 +68,7 @@ def _checkov_sarif(stdout: str) -> sarif.SarifDocument | None:
 
     Args:
         stdout: checkov's `-o json` output.
+        target: The scan root, used to normalize finding uris at ingestion.
 
     Returns:
         A SarifDocument, or None if `stdout` is not checkov JSON.
@@ -84,7 +88,9 @@ def _checkov_sarif(stdout: str) -> sarif.SarifDocument | None:
             uri = str(check.get("file_path", "")).lstrip("/")
             line_range = check.get("file_line_range") or [0]
             start = int(line_range[0]) if line_range else 0
-            results.append(sarif.SarifResult(rule, message, uri, start))
+            results.append(
+                sarif.SarifResult.build(rule, message, uri, start, "checkov", target)
+            )
     return sarif.SarifDocument.from_results(
         "checkov", TOOLS["checkov"].version, results
     )

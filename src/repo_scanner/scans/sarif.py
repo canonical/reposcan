@@ -1,180 +1,146 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Build minimal SARIF 2.1.0 documents from scan findings.
-
-SARIF is the common output format for scans. A scan turns each tool finding into a
-SarifResult and wraps them in a SarifDocument; `to_dict()` renders the JSON structure.
-"""
+"""Build/parse SARIF 2.1.0 documents from scan findings."""
 
 import copy
 import json
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from repo_scanner.ioutil.sqlitedb import Table
-from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
 
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 
-
-def _result_key(result: dict[str, Any]) -> tuple[str, str, int]:
-    """A dedup key for a SARIF result: its rule and primary location."""
-    rule = str(result.get("ruleId", ""))
-    locations = result.get("locations") or []
-    physical = locations[0].get("physicalLocation", {}) if locations else {}
-    uri = str(physical.get("artifactLocation", {}).get("uri", ""))
-    line = physical.get("region", {}).get("startLine", 0)
-    return (rule, uri, line if isinstance(line, int) else 0)
-
-
-def _record_scanner(result: dict[str, Any], scanner: str) -> None:
-    """Add `scanner` to the result's properties.scanners list (no duplicates)."""
-    scanners = result.setdefault("properties", {}).setdefault("scanners", [])
-    if scanner not in scanners:
-        scanners.append(scanner)
-
-
-def merge(sources: list[tuple[str, "SarifDocument"]]) -> "SarifDocument":
-    """Merge SARIF documents from several scanners into one deduped document.
-
-    Each result is annotated with a properties.scanners list naming the scanners
-    that reported it; results with the same rule and primary location are merged
-    into one (their scanner lists combined) rather than duplicated. The original
-    rules for each result are carried onto the merged driver, so their metadata
-    is not lost.
-
-    Args:
-        sources: (scanner_name, SarifDocument) pairs.
-
-    Returns:
-        A single SarifDocument under a "reposcan" driver.
-    """
-    by_key: dict[tuple[str, str, int], dict[str, Any]] = {}
-    order: list[tuple[str, str, int]] = []
-    rules_by_id: dict[str, dict[str, Any]] = {}
-    for scanner, document in sources:
-        for run in document.to_dict().get("runs", []):
-            for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
-                rule_id = str(rule.get("id", ""))
-                if rule_id and rule_id not in rules_by_id:
-                    rules_by_id[rule_id] = rule
-            for result in run.get("results", []):
-                key = _result_key(result)
-                if key in by_key:
-                    _record_scanner(by_key[key], scanner)
-                    continue
-                copied = copy.deepcopy(result)
-                # ruleIndex points into one run's rule list; results also reference
-                # rules by id, so drop the now-meaningless index after combining runs.
-                copied.pop("ruleIndex", None)
-                _record_scanner(copied, scanner)
-                by_key[key] = copied
-                order.append(key)
-    results = [by_key[key] for key in order]
-    referenced = {str(result.get("ruleId", "")) for result in results}
-    rules = [rules_by_id[rule_id] for rule_id in rules_by_id if rule_id in referenced]
-    driver: dict[str, Any] = {"name": "reposcan"}
-    if rules:
-        driver["rules"] = rules
-    return SarifDocument(
-        {
-            "$schema": SCHEMA,
-            "version": "2.1.0",
-            "runs": [{"tool": {"driver": driver}, "results": results}],
-        }
-    )
-
-
-def parse(text: str) -> "SarifDocument | None":
-    """The SARIF document a tool printed, or None if `text` is not a SARIF document.
-
-    Each result's effective level is standardized onto the result at ingestion (see
-    `_standardize_levels`), so downstream the level always lives in one place.
-
-    Args:
-        text: A tool's stdout, expected to be a SARIF JSON document.
-
-    Returns:
-        A SarifDocument if `text` is a JSON object with a `runs` list, else None.
-    """
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if isinstance(document, dict) and isinstance(document.get("runs"), list):
-        _standardize_levels(document)
-        return SarifDocument(document)
-    return None
+# SARIF severity levels from most to least severe; unlisted levels sort last.
+_LEVEL_RANK = {"error": 0, "warning": 1, "note": 2, "none": 3}
 
 
 @dataclass(frozen=True)
 class SarifResult:
-    """A single SARIF result for one finding.
+    """A SARIF result.
 
-    Attributes:
-        rule_id: The rule that produced the finding (e.g. the detector name).
-        message: A human-readable description of the finding.
-        uri: The file the finding is in, relative to the scanned repository.
-        start_line: The 1-based line of the finding, or 0 if unknown.
-        level: The SARIF level ("error", "warning", "note"); defaults to the SARIF
-            default of "warning" when a finding's severity is not set.
+    `build` creates a normalized finding from fields; the plain `SarifResult(dict)`
+    constructor is a view over a dict that is already normalized (from `build`, `parse`,
+    or a `merge` of those). Normalized results include: a properties.scanners
+    annotation, a repository-root-relative uri on every location, and a level.
     """
 
-    rule_id: str
-    message: str
-    uri: str
-    start_line: int
-    level: str = "warning"
+    result: dict[str, Any]
 
-    def to_dict(self) -> dict[str, Any]:
-        """Render this result as a SARIF result object."""
-        physical: dict[str, Any] = {"artifactLocation": {"uri": self.uri}}
-        if self.start_line:
-            physical["region"] = {"startLine": self.start_line}
-        return {
-            "ruleId": self.rule_id,
-            "level": self.level,
-            "message": {"text": self.message},
+    @classmethod
+    def build(
+        cls,
+        rule_id: str,
+        message: str,
+        uri: str,
+        start_line: int,
+        scanner: str,
+        target: str,
+        level: str = "warning",
+    ) -> "SarifResult":
+        """Build a finding from fields.
+
+        Args:
+            rule_id: The rule that produced the finding (e.g. the detector name).
+            message: A human-readable description of the finding.
+            uri: The file the finding is in, as the tool reported it.
+            start_line: The 1-indexed line of the finding, or 0 if unknown.
+            scanner: The scanner that reported the finding (its properties.scanners).
+            target: The scan root, used to make `uri` repository-root-relative.
+            level: The SARIF level ("error", "warning", "note").
+        """
+        physical: dict[str, Any] = {"artifactLocation": {"uri": uri}}
+        if start_line:
+            physical["region"] = {"startLine": start_line}
+        result = {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": message},
             "locations": [{"physicalLocation": physical}],
         }
+        _normalize_result(result, scanner, target)
+        return cls(result)
+
+    @property
+    def rule_id(self) -> str:
+        """The id of the rule that produced the finding."""
+        return str(self.result.get("ruleId", ""))
+
+    @property
+    def level(self) -> str:
+        """The finding's SARIF level, defaulting to "warning"."""
+        return str(self.result.get("level") or "warning")
+
+    @property
+    def message(self) -> str:
+        """The finding's human-readable message text."""
+        return str(self.result.get("message", {}).get("text", ""))
+
+    @property
+    def uri(self) -> str:
+        """The repo-relative file uri of the finding's primary location, or ''."""
+        return str(self._physical_location().get("artifactLocation", {}).get("uri", ""))
+
+    @property
+    def line(self) -> int:
+        """The 1-indexed start line of the finding's primary location, or 0."""
+        line = self._physical_location().get("region", {}).get("startLine")
+        return line if isinstance(line, int) else 0
+
+    @property
+    def location(self) -> str:
+        """The 'uri:line' of the primary location, or just the uri when lineless."""
+        return f"{self.uri}:{self.line}" if self.line else self.uri
+
+    @property
+    def scanners(self) -> list[str]:
+        """The scanner(s) that reported the finding, from its normalized annotation."""
+        scanners = self.result.get("properties", {}).get("scanners")
+        if isinstance(scanners, list) and scanners:
+            return [str(scanner) for scanner in scanners]
+        return []
+
+    @property
+    def key(self) -> tuple[str, str, int]:
+        """A dedup key: the finding's rule and primary location."""
+        return (self.rule_id, self.uri, self.line)
+
+    def _physical_location(self) -> dict[str, Any]:
+        """The primary location's physicalLocation dict, or an empty one."""
+        locations = self.result.get("locations") or []
+        return locations[0].get("physicalLocation", {}) if locations else {}
 
 
 @dataclass(frozen=True)
 class SarifDocument:
-    """A SARIF 2.1.0 document artifact.
-
-    Wraps the rendered SARIF `content`. Build one from Result findings under a
-    single tool driver with `from_results`, or from an already-rendered document
-    (a tool's SARIF output, or a `merge`) with the plain constructor.
-    """
+    """A SARIF 2.1.0 document."""
 
     kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
     content: dict[str, Any]
 
     @classmethod
     def from_results(
-        cls, driver_name: str, driver_version: str, results: list[SarifResult]
+        cls, scanner: str, version: str, results: list[SarifResult]
     ) -> "SarifDocument":
-        """Build a document from findings under a single tool driver.
+        """Assemble findings into a document.
 
         Args:
-            driver_name: The tool that produced the results.
-            driver_version: The tool's version.
-            results: The findings the run reports.
-
-        Returns:
-            The rendered SarifDocument.
+            scanner: The scanner that produced the findings.
+            version: The scanner's version.
+            results: The normalized findings the run reports.
         """
-        driver = {"name": driver_name, "version": driver_version}
+        driver = {"name": scanner, "version": version}
         content = {
             "$schema": SCHEMA,
             "version": "2.1.0",
             "runs": [
                 {
                     "tool": {"driver": driver},
-                    "results": [result.to_dict() for result in results],
+                    "results": [finding.result for finding in results],
                 }
             ],
         }
@@ -184,10 +150,10 @@ class SarifDocument:
         """The artifact as a SARIF 2.1.0 document object."""
         return self.content
 
-    def results(self) -> list[dict[str, Any]]:
-        """Every SARIF result object, flattened across all runs."""
+    def results(self) -> list[SarifResult]:
+        """Every finding as a SarifResult, flattened across all runs."""
         return [
-            result
+            SarifResult(result)
             for run in self.content.get("runs", [])
             for result in run.get("results", [])
         ]
@@ -197,30 +163,27 @@ class SarifDocument:
         return len(self.results())
 
     def rows(self) -> tuple[list[str], list[list[str]]]:
-        """A table of findings, most severe first: level, rule, location, message.
-
-        A result's level is standardized onto it at ingestion (see
-        `_standardize_levels`); the default guards results built another way.
-        """
-        headers = ["LEVEL", "RULE", "LOCATION", "MESSAGE"]
-        findings = [
+        """A table of findings for presentation, most severe first."""
+        headers = ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
+        rows = [
             [
-                str(result.get("level") or "warning"),
-                str(result.get("ruleId", "")),
-                _location(result),
-                str(result.get("message", {}).get("text", "")),
+                finding.level,
+                ", ".join(finding.scanners),
+                finding.rule_id,
+                finding.location,
+                finding.message,
             ]
-            for result in self.results()
+            for finding in self.results()
         ]
-        findings.sort(key=lambda finding: _level_rank(finding[0]))
-        return headers, findings
+        rows.sort(key=lambda row: _LEVEL_RANK.get(row[0], len(_LEVEL_RANK)))
+        return headers, rows
 
     def records(self) -> Table:
-        """The findings as a `findings` table for querying and reconstruction.
+        """The findings as a `findings` db table for querying and reconstruction.
 
-        Parsed columns (location split into `uri`/`line`, the merge's
-        `properties.scanners`) plus `run` (the result's run index) and `document` (the
-        result's raw JSON, so a single finding reconstructs). In document order.
+        Columns split the location into `uri`/`line`, join the merge's
+        `properties.scanners`, and keep each result's raw JSON in `document` (so a
+        single finding reconstructs) alongside its `run` index. In document order.
         """
         columns = (
             "rule",
@@ -235,16 +198,15 @@ class SarifDocument:
         findings = []
         for index, run in enumerate(self.content.get("runs", [])):
             for result in run.get("results", []):
-                physical = _physical(result)
-                line = physical.get("region", {}).get("startLine")
+                finding = SarifResult(result)
                 findings.append(
                     (
-                        str(result.get("ruleId", "")),
-                        str(result.get("level") or "warning"),
-                        str(physical.get("artifactLocation", {}).get("uri", "")),
-                        str(line) if line else "",
-                        str(result.get("message", {}).get("text", "")),
-                        ",".join(result.get("properties", {}).get("scanners", [])),
+                        finding.rule_id,
+                        finding.level,
+                        finding.uri,
+                        str(finding.line) if finding.line else "",
+                        finding.message,
+                        ",".join(finding.scanners),
                         str(index),
                         json.dumps(result),
                     )
@@ -263,13 +225,110 @@ class SarifDocument:
         runs[0]["invocations"] = [_invocation_object(inv) for inv in invocations]
 
 
-# SARIF severity levels from most to least severe; unlisted levels sort last.
-_LEVEL_RANK = {"error": 0, "warning": 1, "note": 2, "none": 3}
+def parse(
+    text: str, scanner: str | None = None, target: str = ""
+) -> SarifDocument | None:
+    """The SARIF document in `text`, or None if `text` is not SARIF.
+
+    Pass `scanner` (and `target`) to normalize a tool's raw output at ingestion; omit
+    `scanner` to read an already-normalized report back unchanged.
+
+    Args:
+        text: JSON text expected to be a SARIF document.
+        scanner: The scanner that produced the SARIF, to normalize its results; None
+            to read the document back unchanged.
+        target: The scan root, used to make finding uris repository-root-relative
+            (only when `scanner` is given).
+    """
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not (isinstance(document, dict) and isinstance(document.get("runs"), list)):
+        return None
+    if scanner is not None:
+        _normalize(document, scanner, target)
+    return SarifDocument(document)
 
 
-def _level_rank(level: str) -> int:
-    """The sort rank of a SARIF level: lower is more severe, so it sorts first."""
-    return _LEVEL_RANK.get(level, len(_LEVEL_RANK))
+def merge(documents: Sequence[Artifact]) -> SarifDocument:
+    """Consolidate one or more normalized SARIF documents into one "reposcan" doc.
+
+    Results with the same rule and primary location are deduped, their scanner lists
+    unioned. The rules referenced by surviving results are carried onto the merged
+    driver so their metadata is not lost.
+
+    Args:
+        documents: The normalized SARIF artifacts to combine.
+    """
+    by_key: dict[tuple[str, str, int], dict[str, Any]] = {}
+    order: list[tuple[str, str, int]] = []
+    rules_by_id: dict[str, dict[str, Any]] = {}
+    for document in documents:
+        for run in document.to_dict().get("runs", []):
+            for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
+                rule_id = str(rule.get("id", ""))
+                if rule_id and rule_id not in rules_by_id:
+                    rules_by_id[rule_id] = rule
+            for result in run.get("results", []):
+                finding = SarifResult(result)
+                key = finding.key
+                if key in by_key:
+                    for scanner in finding.scanners:
+                        _record_scanner(by_key[key], scanner)
+                    continue
+                copied = copy.deepcopy(result)
+                # ruleIndex points into one run's rule list; results also reference
+                # rules by id, so drop the now-meaningless index after combining runs.
+                copied.pop("ruleIndex", None)
+                by_key[key] = copied
+                order.append(key)
+    results = [by_key[key] for key in order]
+    referenced = {str(result.get("ruleId", "")) for result in results}
+    rules = [rules_by_id[rule_id] for rule_id in rules_by_id if rule_id in referenced]
+    driver: dict[str, Any] = {"name": "reposcan"}
+    if rules:
+        driver["rules"] = rules
+    return SarifDocument(
+        {
+            "$schema": SCHEMA,
+            "version": "2.1.0",
+            "runs": [{"tool": {"driver": driver}, "results": results}],
+        }
+    )
+
+
+# --- normalization: turn raw tool results into reposcan's canonical shape ---
+
+
+def _normalize(document: dict[str, Any], scanner: str, target: str) -> None:
+    """Normalize every result in a raw SARIF document, in place (used by `parse`)."""
+    for run in document.get("runs", []):
+        rule_levels = _rule_levels(run)
+        for result in run.get("results", []):
+            _normalize_result(result, scanner, target, rule_levels)
+
+
+def _normalize_result(
+    result: dict[str, Any],
+    scanner: str,
+    target: str,
+    rule_levels: dict[str, str] | None = None,
+) -> None:
+    """Normalize one SARIF result in place.
+
+    Sets an explicit level, records `scanner` in properties.scanners, and relativizes
+    every location's uri against `target`.
+    """
+    if not result.get("level"):
+        result["level"] = (rule_levels or {}).get(
+            str(result.get("ruleId", "")), "warning"
+        )
+    _record_scanner(result, scanner)
+    for location in result.get("locations") or []:
+        artifact = location.get("physicalLocation", {}).get("artifactLocation")
+        if isinstance(artifact, dict) and artifact.get("uri"):
+            artifact["uri"] = _relative_uri(str(artifact["uri"]), target)
 
 
 def _rule_levels(run: dict[str, Any]) -> dict[str, str]:
@@ -283,21 +342,27 @@ def _rule_levels(run: dict[str, Any]) -> dict[str, str]:
     return levels
 
 
-def _standardize_levels(document: dict[str, Any]) -> None:
-    """Set each result's effective SARIF level explicitly on the result, in place.
+def _record_scanner(result: dict[str, Any], scanner: str) -> None:
+    """Add `scanner` to the result's properties.scanners list (no duplicates)."""
+    scanners = result.setdefault("properties", {}).setdefault("scanners", [])
+    if scanner not in scanners:
+        scanners.append(scanner)
 
-    A result may carry its level directly (zizmor, our own findings) or inherit it
-    from the rule's configuration (semgrep); one with neither takes the SARIF default
-    of "warning". Resolving it once here keeps the level in one place -- on the
-    result -- for every reader, and it survives a later merge unchanged.
+
+def _relative_uri(uri: str, target: str) -> str:
+    """`uri` made relative to the scan root `target`, matching how git reports paths.
+
+    Drops a `file://` scheme and the `target` prefix; a uri already relative (not
+    under `target`) is returned unchanged apart from a leading `./`.
     """
-    for run in document.get("runs", []):
-        rule_levels = _rule_levels(run)
-        for result in run.get("results", []):
-            if not result.get("level"):
-                result["level"] = rule_levels.get(
-                    str(result.get("ruleId", "")), "warning"
-                )
+    path = uri.removeprefix("file://")
+    root = target.rstrip("/")
+    if root and (path == root or path.startswith(root + "/")):
+        path = path[len(root) :].lstrip("/")
+    return path.removeprefix("./")
+
+
+# --- rendering ---
 
 
 def _invocation_object(inv: ToolInvocationRecord) -> dict[str, Any]:
@@ -314,17 +379,3 @@ def _invocation_object(inv: ToolInvocationRecord) -> dict[str, Any]:
     if inv.environment:
         invocation["environmentVariables"] = dict(inv.environment)
     return invocation
-
-
-def _physical(result: dict[str, Any]) -> dict[str, Any]:
-    """A result's primary physicalLocation object, or an empty dict if it has none."""
-    locations = result.get("locations") or []
-    return locations[0].get("physicalLocation", {}) if locations else {}
-
-
-def _location(result: dict[str, Any]) -> str:
-    """The 'uri:line' of a result's primary location, or '' if it has none."""
-    physical = _physical(result)
-    uri = str(physical.get("artifactLocation", {}).get("uri", ""))
-    line = physical.get("region", {}).get("startLine")
-    return f"{uri}:{line}" if line else uri

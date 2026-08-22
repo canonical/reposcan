@@ -12,6 +12,7 @@ via `run_scan`, emitting the report, and choosing the exit code.
 
 import logging
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,10 +20,10 @@ from repo_scanner.actions.base import Action
 from repo_scanner.backends import start_session
 from repo_scanner.cli_kit import flag, option, positional
 from repo_scanner.execution.context import RunUser, host_user
-from repo_scanner.execution.process import Failure
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
-from repo_scanner.scans import ignore, output
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation, ToolResult
+from repo_scanner.scans import cyclonedx, ignore, output, sarif
+from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.run import run_scan
 
@@ -38,12 +39,11 @@ class ScanAction(Action):
     """Base for every scan: shared target/report options and the run/emit flow.
 
     A concrete scan subclasses this, sets `name`/`help`, declares any scan-specific
-    options, and implements `invocations`/`consolidate`. A scan is a value-object like
-    any other action: `SecretsScan(mode="filesystem")` builds one with the rest
-    defaulted.
+    options, and implements `invocations`/`parse`.
     """
 
     resolves_dependencies: ClassVar[bool] = False
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     path: str = positional(help="Path to the repository to scan.")
     output: str | None = option(
@@ -70,9 +70,19 @@ class ScanAction(Action):
         """The tool invocations to run against `target`, in run order."""
         raise NotImplementedError
 
-    def consolidate(self, results: list[ToolResult]) -> Artifact | Failure:
-        """Merge the tool outputs into one artifact, or a Failure."""
+    def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
+        """Parse and normalize a tool invocation's raw output into an Artifact.
+
+        Called once per executed tool. `tool` is the scanner that produced `output`;
+        `target` is the scan root, used to make finding uris repository-root-relative.
+        """
         raise NotImplementedError
+
+    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
+        """Merge the per-tool Artifacts."""
+        if self.artifact_kind is ArtifactKind.CYCLONEDX:
+            return cyclonedx.merge(artifacts)
+        return sarif.merge(artifacts)
 
     def run(self) -> int:
         """Run the scan end to end and return an exit code.
@@ -131,7 +141,7 @@ class ScanAction(Action):
                 logger.error(artifact.reason)
                 return 1
 
-            removed = ignore.apply(artifact, ignore_rules, session.target)
+            removed = ignore.apply(artifact, ignore_rules)
             if removed:
                 logger.info("ignored %d finding(s) via %s", removed, ignore_path)
 

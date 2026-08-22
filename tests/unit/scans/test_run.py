@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation, ToolResult
+from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation
 from repo_scanner.scans.run import run_scan
 
 
@@ -54,24 +54,30 @@ class _FakeScan(ScanAction):
     def invocations(self, target: str) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
-    def consolidate(self, results: list[ToolResult]) -> Artifact | Failure:
+    def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
+        return sarif.SarifDocument({"runs": [{"results": []}]})
+
+    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
         return sarif.SarifDocument({"runs": [{"results": []}]})
 
 
 class _Scan(ScanAction):
-    # A scan running the given invocations; records the results it consolidates.
+    # A scan running the given invocations; records each ExecResult it parses.
     name = "faux"
 
     def __init__(self, invocations: list[ToolInvocation]) -> None:
         super().__init__()
         self._invocations = invocations
-        self.seen: list[ToolResult] = []
+        self.seen: list[ExecResult] = []
 
     def invocations(self, target: str) -> list[ToolInvocation]:
         return self._invocations
 
-    def consolidate(self, results: list[ToolResult]) -> Artifact | Failure:
-        self.seen = results
+    def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
+        self.seen.append(output)
+        return sarif.SarifDocument({"runs": [{"results": []}]})
+
+    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
         return sarif.SarifDocument({"runs": [{"results": []}]})
 
 
@@ -80,7 +86,8 @@ def test_run_scan_runs_each_tool_at_its_installed_path_and_consolidates() -> Non
     artifact = run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan")
     assert not isinstance(artifact, Failure)
     assert artifact.kind is ArtifactKind.SARIF
-    assert ctx.commands[0][0] == "/opt/reposcan/bin/trufflehog"
+    assert ctx.commands[0][:2] == ["git", "ls-files"]  # the git-ignored-path lookup
+    assert ctx.commands[1][0] == "/opt/reposcan/bin/trufflehog"
 
 
 def test_run_scan_reports_a_nonzero_tool_exit_as_a_failure() -> None:
@@ -93,9 +100,9 @@ def test_run_scan_reports_a_nonzero_tool_exit_as_a_failure() -> None:
 def test_run_scan_streams_tool_progress_but_not_its_stdout() -> None:
     ctx = _FakeContext(ExecResult(0, "", ""))
     run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan", stream=True)
-    # (stream_stdout, stream_stderr): the tool's stderr (progress) streams, its
-    # stdout (results) is captured but not echoed.
-    assert ctx.streamed == [(False, True)]
+    # The git ls-files lookup streams nothing; the tool's stderr (progress) streams
+    # while its stdout (results) is captured but not echoed.
+    assert ctx.streamed == [(False, False), (False, True)]
 
 
 def test_run_scan_cwd_and_exclusions_per_invocation() -> None:
@@ -137,5 +144,5 @@ def test_run_scan_reads_output_file_and_passes_env() -> None:
     )
     scan = _Scan([inv])
     run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
-    assert scan.seen[0].output.stdout == "FILE-BOM"
+    assert scan.seen[0].stdout == "FILE-BOM"
     assert {"K": "V"} in ctx.envs and ["cat", "/out.json"] in ctx.commands

@@ -63,45 +63,21 @@ def test_apply_drops_only_the_matching_findings() -> None:
                 {
                     "tool": {"driver": {"name": "reposcan"}},
                     "results": [
-                        # dropped: tool, rule, and path all match (uri under target)
+                        # dropped: tool, rule, and path all match
                         _result(
-                            "SentryToken",
-                            "/scan/repo/tools/locks/checkov.txt",
-                            ["trufflehog"],
+                            "SentryToken", "tools/locks/checkov.txt", ["trufflehog"]
                         ),
                         # kept: same rule and path, but a different tool
-                        _result(
-                            "SentryToken",
-                            "/scan/repo/tools/locks/other.txt",
-                            ["semgrep"],
-                        ),
+                        _result("SentryToken", "tools/locks/other.txt", ["semgrep"]),
                         # dropped: the `*` tool rule matches any scanner, at any depth
-                        _result(
-                            "CKV_AWS_18", "/scan/repo/infra/deep/main.tf", ["checkov"]
-                        ),
+                        _result("CKV_AWS_18", "infra/deep/main.tf", ["checkov"]),
                         # kept: a rule that no entry ignores
-                        _result("CKV_AWS_20", "/scan/repo/infra/main.tf", ["checkov"]),
+                        _result("CKV_AWS_20", "infra/main.tf", ["checkov"]),
                     ],
                 }
             ],
         }
     )
-    removed = ignore.apply(doc, rules, "/scan/repo")
+    removed = ignore.apply(doc, rules)
     assert removed == 2
-    assert [r["ruleId"] for r in doc.results()] == ["SentryToken", "CKV_AWS_20"]
-
-
-def test_apply_uses_the_run_driver_when_a_result_has_no_scanner_property() -> None:
-    # A single-tool scan (secrets) names the tool on the run driver, not per result.
-    rules, _ = ignore.parse("trufflehog SentryToken tools/locks/*.txt\n")
-    doc = sarif.SarifDocument.from_results(
-        "trufflehog",
-        "1.0",
-        [
-            sarif.SarifResult(
-                "SentryToken", "hash near sentry", "tools/locks/checkov.txt", 5
-            )
-        ],
-    )
-    assert ignore.apply(doc, rules, "/scan/repo") == 1
-    assert doc.count() == 0
+    assert [r.rule_id for r in doc.results()] == ["SentryToken", "CKV_AWS_20"]

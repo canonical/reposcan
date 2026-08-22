@@ -7,10 +7,12 @@ Both tools emit SARIF; their results are merged into one document, annotated wit
 which scanner reported each finding (see scans/sarif.py `merge`).
 """
 
-from repo_scanner.execution.process import Failure
+from typing import ClassVar
+
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import ToolInvocation, ToolResult
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 
 
 class WorkflowScan(ScanAction):
@@ -18,6 +20,7 @@ class WorkflowScan(ScanAction):
 
     name = "workflow"
     help = "Audit CI/CD workflows with zizmor and poutine."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     def invocations(self, target: str) -> list[ToolInvocation]:
         """The zizmor and poutine invocations for `target`.
@@ -38,19 +41,20 @@ class WorkflowScan(ScanAction):
             ),
         ]
 
-    def consolidate(self, results: list[ToolResult]) -> sarif.SarifDocument | Failure:
-        """Merge each tool's SARIF into one annotated, deduped document.
+    def parse(
+        self, tool: str, output: ExecResult, target: str
+    ) -> sarif.SarifDocument | Failure:
+        """Parse and normalize tool output.
 
         Args:
-            results: The zizmor and poutine invocation results.
+            tool: The scanner that produced `output` (zizmor or poutine).
+            output: The tool's result (SARIF on stdout).
+            target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A merged SARIF artifact, or a Failure if any tool did not emit SARIF.
+            A normalized SARIF artifact, or a Failure if the output was not SARIF.
         """
-        sources = []
-        for result in results:
-            document = sarif.parse(result.output.stdout)
-            if document is None:
-                return Failure(reason=f"{result.tool} did not produce SARIF output")
-            sources.append((result.tool, document))
-        return sarif.merge(sources)
+        document = sarif.parse(output.stdout, tool, target)
+        if document is None:
+            return Failure(reason=f"{tool} did not produce SARIF output")
+        return document

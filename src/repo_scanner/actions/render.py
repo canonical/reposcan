@@ -97,7 +97,9 @@ def _load(input_path: str) -> Artifact | None:
         artifact = reportdb.read(input_path)
     else:
         text = data.decode("utf-8", "replace")
-        artifact = sarif.parse(text) or cyclonedx.parse(text)
+        artifact = sarif.parse(text)
+        if artifact is None:
+            artifact = cyclonedx.parse(text)
     if artifact is None:
         logger.error("%s is not a SARIF, CycloneDX, or sqlite report", input_path)
     return artifact

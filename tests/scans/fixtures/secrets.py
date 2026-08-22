@@ -37,11 +37,10 @@ def verify(artifact: sarif.SarifDocument) -> None:
     # trufflehog found the planted AWS key pair, reported in config.env by its AWS
     # detector. The key is non-real so it stays unverified (level "warning").
     results = artifact.results()
-    rules = [result["ruleId"] for result in results]
-    aws = [result for result in results if result["ruleId"] == "AWS"]
+    rules = [result.rule_id for result in results]
+    aws = [result for result in results if result.rule_id == "AWS"]
     assert aws, f"expected an AWS finding, got rules {rules}"
-    location = aws[0]["locations"][0]["physicalLocation"]["artifactLocation"]
-    assert location["uri"].endswith("config.env"), location["uri"]
+    assert aws[0].uri.endswith("config.env"), aws[0].uri
 
 
 def _git(repo: Path, *args: str) -> None:

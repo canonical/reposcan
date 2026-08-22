@@ -28,8 +28,7 @@ def verify(artifact: sarif.SarifDocument) -> None:
     # semgrep flags the shell=True subprocess call (subprocess-shell-true) and the
     # eval() (eval-detected), both in the planted app.py. The rule id is a dotted
     # path ending in the rule's short name.
-    by_name = {result["ruleId"].split(".")[-1]: result for result in artifact.results()}
+    by_name = {result.rule_id.split(".")[-1]: result for result in artifact.results()}
     for name in ("subprocess-shell-true", "eval-detected"):
         assert name in by_name, f"expected {name}, got {sorted(by_name)}"
-        location = by_name[name]["locations"][0]["physicalLocation"]["artifactLocation"]
-        assert location["uri"].endswith("app.py"), location["uri"]
+        assert by_name[name].uri.endswith("app.py"), by_name[name].uri

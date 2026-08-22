@@ -6,7 +6,7 @@
 import json
 
 from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.model import ToolResult
+from repo_scanner.scans import sarif
 from repo_scanner.scans.sca import ScaScan
 
 
@@ -28,15 +28,13 @@ def test_govulncheck_stream_becomes_sarif() -> None:
             json.dumps({"progress": {"message": "scanning"}}),
         ]
     )
-    result = ScaScan().consolidate(
-        [ToolResult("govulncheck", ExecResult(3, stream, ""))]
-    )
+    result = ScaScan().parse("govulncheck", ExecResult(3, stream, ""), "/scan/acme")
     assert not isinstance(result, Failure)
     assert result.count() == 1  # only the source-reaching finding
     finding = result.results()[0]
-    assert finding["ruleId"] == "GO-2024-1"
-    assert finding["message"]["text"] == "bad thing"  # the OSV summary
-    assert finding["properties"]["scanners"] == ["govulncheck"]
+    assert finding.rule_id == "GO-2024-1"
+    assert finding.message == "bad thing"  # the OSV summary
+    assert finding.scanners == ["govulncheck"]
 
 
 def test_include_dev_dependencies_adds_the_trivy_flag_only() -> None:
@@ -74,19 +72,19 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
             }
         }
     )
-    result = ScaScan().consolidate(
-        [
-            ToolResult("trivy", ExecResult(0, trivy, "")),
-            ToolResult("govulncheck", ExecResult(3, govulncheck, "")),
-        ]
+    scan = ScaScan()
+    trivy_doc = scan.parse("trivy", ExecResult(0, trivy, ""), "/scan/acme")
+    govulncheck_doc = scan.parse(
+        "govulncheck", ExecResult(3, govulncheck, ""), "/scan/acme"
     )
-    assert not isinstance(result, Failure)
-    rules = {r["ruleId"] for r in result.results()}
+    assert not isinstance(trivy_doc, Failure)
+    assert not isinstance(govulncheck_doc, Failure)
+    result = scan.consolidate([trivy_doc, govulncheck_doc])
+    assert isinstance(result, sarif.SarifDocument)
+    rules = {r.rule_id for r in result.results()}
     assert rules == {"CVE-1", "GO-1"}
 
 
-def test_consolidate_fails_when_a_sarif_tool_output_is_unusable() -> None:
-    result = ScaScan().consolidate(
-        [ToolResult("grype", ExecResult(0, "not sarif", ""))]
-    )
+def test_parse_fails_when_a_sarif_tool_output_is_unusable() -> None:
+    result = ScaScan().parse("grype", ExecResult(0, "not sarif", ""), "/scan/acme")
     assert isinstance(result, Failure)

@@ -1,26 +1,14 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Exclude gitignored paths from filesystem-walking scanners.
+"""Filter git-ignored paths."""
 
-SBOM tools (trivy, syft, cdxgen) and SCA tools (trivy, grype) catalog a repo by
-walking its working tree, so they descend into git-ignored directories (.venv,
-.tox, node_modules) and report packages that are not part of the project. No tool
-honors .gitignore natively; each takes a manual exclude flag with its own glob
-dialect.
-"""
-
-import logging
 from dataclasses import dataclass
 
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult
-
-logger = logging.getLogger(__name__)
-
-# Tools whose scan walks the filesystem and so accepts path exclusions. A scan that
-# invokes none of these skips the (otherwise pointless) git lookup entirely.
-EXCLUDABLE_TOOLS = frozenset({"trivy", "syft", "grype", "cdxgen"})
+from repo_scanner.scans import sarif
+from repo_scanner.scans.model import Artifact
 
 
 @dataclass(frozen=True)
@@ -71,40 +59,62 @@ class IgnoredPaths:
                 files.append(entry)
         return cls(tuple(dirs), tuple(files))
 
+    def contains(self, path: str) -> bool:
+        """Whether repo-relative `path` is git-ignored (a file or under a dir)."""
+        return path in self.files or any(
+            path == directory or path.startswith(f"{directory}/")
+            for directory in self.dirs
+        )
 
-def build_exclude_flags(tool: str, ignored: IgnoredPaths) -> list[str]:
-    """tool-specific CLI flags that make `tool` skip `ignored`'s paths.
+    def exclude_flags(self, tool: str) -> list[str]:
+        """tool-specific CLI flags that make `tool` skip the ignored paths.
 
-    Args:
-        tool: The tool the flags are for.
-        ignored: The paths to exclude, relative to the repository root.
+        Args:
+            tool: The tool the flags are for.
 
-    Returns:
-        The flags to append to the tool's arguments, or an empty list.
-    """
-    if tool == "trivy":
-        flags: list[str] = []
-        for directory in ignored.dirs:
-            flags += ["--skip-dirs", directory]
-        for path in ignored.files:
-            flags += ["--skip-files", path]
-        return flags
-    if tool in ("syft", "grype"):
-        # grype reuses syft's directory-source exclusion, so the dialect matches:
-        # patterns anchor to the scan root and must begin with "./".
-        flags = []
-        for directory in ignored.dirs:
-            flags += ["--exclude", f"./{directory}/**"]
-        for path in ignored.files:
-            flags += ["--exclude", f"./{path}"]
-        return flags
-    if tool == "cdxgen":
-        # cdxgen globs run with nodir:true, so a directory is excluded by matching
-        # the files under it ("<dir>/**"); patterns resolve against the scan root.
-        flags = []
-        for directory in ignored.dirs:
-            flags += ["--exclude", f"{directory}/**"]
-        for path in ignored.files:
-            flags += ["--exclude", path]
-        return flags
-    return []
+        Returns:
+            The flags to append to the tool's arguments, or an empty list.
+        """
+        if tool == "trivy":
+            flags: list[str] = []
+            for directory in self.dirs:
+                flags += ["--skip-dirs", directory]
+            for path in self.files:
+                flags += ["--skip-files", path]
+            return flags
+        if tool in ("syft", "grype"):
+            # grype reuses syft's directory-source exclusion, so the dialect matches:
+            # patterns anchor to the scan root and must begin with "./".
+            flags = []
+            for directory in self.dirs:
+                flags += ["--exclude", f"./{directory}/**"]
+            for path in self.files:
+                flags += ["--exclude", f"./{path}"]
+            return flags
+        if tool == "cdxgen":
+            # cdxgen globs run with nodir:true, so a directory is excluded by matching
+            # the files under it ("<dir>/**"); patterns resolve against the scan root.
+            flags = []
+            for directory in self.dirs:
+                flags += ["--exclude", f"{directory}/**"]
+            for path in self.files:
+                flags += ["--exclude", path]
+            return flags
+        return []
+
+    def filter_findings(self, artifact: Artifact) -> int:
+        """Drop findings under an ignored path."""
+        if not isinstance(artifact, sarif.SarifDocument):
+            return 0
+        if not self.dirs and not self.files:
+            return 0
+        removed = 0
+        for run in artifact.content.get("runs", []):
+            kept = []
+            for result in run.get("results", []):
+                if self.contains(sarif.SarifResult(result).uri):
+                    removed += 1
+                else:
+                    kept.append(result)
+            run["results"] = kept
+        return removed

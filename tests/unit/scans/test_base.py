@@ -26,7 +26,10 @@ from repo_scanner.scans.secrets import SecretsScan
 
 
 def _sarif_artifact(findings: int) -> Artifact:
-    results = [sarif.SarifResult("AWS", "secret", "f.py", 1) for _ in range(findings)]
+    results = [
+        sarif.SarifResult.build("AWS", "secret", "f.py", 1, "trufflehog", "/scan/x")
+        for _ in range(findings)
+    ]
     return sarif.SarifDocument.from_results("trufflehog", "3.95.8", results)
 
 

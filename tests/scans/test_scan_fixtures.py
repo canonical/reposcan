@@ -28,6 +28,7 @@ import repo_scanner.scans as scans_pkg
 from repo_scanner.backends import DockerBackend, start_session
 from repo_scanner.execution.context import host_user
 from repo_scanner.execution.process import Failure
+from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
 from repo_scanner.scans.model import Artifact
 from repo_scanner.scans.registry import ScanGroup
@@ -111,6 +112,24 @@ def _run_fixture(name: str, fixture: _FixtureModule) -> None:
             )
             assert not isinstance(artifact, Failure), f"{name}: {artifact}"
             fixture.verify(artifact)
+            _assert_normalized_sarif(name, artifact)
+
+
+def _assert_normalized_sarif(name: str, artifact: Artifact) -> None:
+    """Enforce SARIF normalization.
+
+    A scan should always produce a single run with the "reposcan" driver, and every
+    result should include properties.scanners.
+    """
+    if not isinstance(artifact, sarif.SarifDocument):
+        return
+    runs = artifact.to_dict()["runs"]
+    assert len(runs) == 1, f"{name}: expected one run, got {len(runs)}"
+    assert runs[0]["tool"]["driver"]["name"] == "reposcan", (
+        f"{name}: driver not reposcan"
+    )
+    for result in artifact.results():
+        assert result.scanners, f"{name}: result {result.rule_id!r} names no scanners"
 
 
 def test_docker_scan_fixtures_report_findings() -> None:

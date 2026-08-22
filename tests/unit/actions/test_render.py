@@ -23,7 +23,9 @@ def _write(directory: str, name: str, content: str) -> str:
 
 def _sarif_doc() -> dict:
     return sarif.SarifDocument.from_results(
-        "tool", "1.0", [sarif.SarifResult("X", "boom", "a.py", 3, level="error")]
+        "tool",
+        "1.0",
+        [sarif.SarifResult.build("X", "boom", "a.py", 3, "tool", "", level="error")],
     ).to_dict()
 
 

@@ -17,7 +17,6 @@ A finding is dropped when all three match.
 import logging
 import re
 from pathlib import Path
-from typing import Any
 
 from repo_scanner.scans import sarif
 from repo_scanner.scans.model import Artifact
@@ -75,62 +74,24 @@ def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
     return parse(text)
 
 
-def apply(artifact: Artifact, rules: list[IgnoreRule], target: str) -> int:
-    """Drop ignored findings from `artifact` in place; return the number removed.
-
-    Only SARIF findings can be ignored; a non-SARIF artifact (an SBOM) is untouched.
-    `target` is the scan root, used to make a finding's path relative before matching.
-    """
+def apply(artifact: Artifact, rules: list[IgnoreRule]) -> int:
+    """Drop ignored findings from `artifact` in place; return the number removed."""
     if not rules or not isinstance(artifact, sarif.SarifDocument):
         return 0
     removed = 0
     for run in artifact.content.get("runs", []):
-        driver = run.get("tool", {}).get("driver", {}).get("name", "")
         kept = []
         for result in run.get("results", []):
-            if _is_ignored(result, driver, rules, target):
+            finding = sarif.SarifResult(result)
+            if any(
+                rule.matches(finding.rule_id, finding.uri, finding.scanners)
+                for rule in rules
+            ):
                 removed += 1
             else:
                 kept.append(result)
         run["results"] = kept
     return removed
-
-
-def _is_ignored(
-    result: dict[str, Any], driver: str, rules: list[IgnoreRule], target: str
-) -> bool:
-    rule_id = str(result.get("ruleId", ""))
-    uri = _relative_uri(_result_uri(result), target)
-    tools = _result_tools(result, driver)
-    return any(rule.matches(rule_id, uri, tools) for rule in rules)
-
-
-def _result_uri(result: dict[str, Any]) -> str:
-    """The file uri of a SARIF result's first physical location, or ''."""
-    for location in result.get("locations", []):
-        uri = (
-            location.get("physicalLocation", {}).get("artifactLocation", {}).get("uri")
-        )
-        if uri:
-            return str(uri)
-    return ""
-
-
-def _result_tools(result: dict[str, Any], driver: str) -> list[str]:
-    """The scanners that reported `result`: its merge annotation, or the run driver."""
-    scanners = result.get("properties", {}).get("scanners")
-    if isinstance(scanners, list) and scanners:
-        return [str(scanner) for scanner in scanners]
-    return [driver] if driver else []
-
-
-def _relative_uri(uri: str, target: str) -> str:
-    """`uri` made relative to the scan root `target`, for matching against a glob."""
-    path = uri.removeprefix("file://")
-    root = target.rstrip("/")
-    if root and (path == root or path.startswith(root + "/")):
-        path = path[len(root) :].lstrip("/")
-    return path.removeprefix("./")
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:

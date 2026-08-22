@@ -6,6 +6,7 @@
 import logging
 import os
 import sys
+from collections.abc import Sequence
 from typing import Any
 
 from repo_scanner import settings
@@ -16,7 +17,7 @@ from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.logging import LOG_LEVELS
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import Artifact, ToolInvocation, ToolResult
+from repo_scanner.scans.model import Artifact, ToolInvocation
 
 
 def _resolve_isolated(scope, cli_values, env):
@@ -106,7 +107,7 @@ class _FauxScan(ScanAction):
     def invocations(self, target: str) -> list[ToolInvocation]:
         return []
 
-    def consolidate(self, results: list[ToolResult]) -> Artifact | Failure:
+    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
         return sarif.SarifDocument({"runs": []})
 
 
