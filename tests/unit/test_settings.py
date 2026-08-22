@@ -122,12 +122,11 @@ def test_scan_options_resolve_like_any_other() -> None:
 
 
 def test_a_boolean_scan_flag_resolves_from_cli_env_and_default() -> None:
-    # --include-dev-dependencies is a real, env-settable flag on both sbom and sca.
-    for scan in ("sbom", "sca"):
-        assert _resolved(["scan", scan, "."])["include_dev_dependencies"] is False
-        with_cli = _resolved(["scan", scan, ".", "--include-dev-dependencies"])
+    # --include-dev-dependencies is a real, env-settable flag on the sca scan and the
+    # sbom command.
+    for argv in (["scan", "sca", "."], ["sbom", "."]):
+        assert _resolved(argv)["include_dev_dependencies"] is False
+        with_cli = _resolved([*argv, "--include-dev-dependencies"])
         assert with_cli["include_dev_dependencies"] is True
-        with_env = _resolved(
-            ["scan", scan, "."], {"REPOSCAN_INCLUDE_DEV_DEPENDENCIES": "1"}
-        )
+        with_env = _resolved(argv, {"REPOSCAN_INCLUDE_DEV_DEPENDENCIES": "1"})
         assert with_env["include_dev_dependencies"] is True

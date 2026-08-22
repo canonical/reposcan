@@ -12,7 +12,6 @@ reposcan scan sast     ./repo    # static analysis (semgrep)
 reposcan scan iac      ./repo    # infrastructure-as-code (checkov)
 reposcan scan workflow ./repo    # CI/CD workflows (zizmor, poutine)
 reposcan scan sca      ./repo    # dependency vulnerabilities (trivy, grype, govulncheck)
-reposcan scan sbom     ./repo    # software bill of materials (trivy, syft, cdxgen)
 ```
 
 Run `reposcan scan --help` for the option list.
@@ -23,19 +22,13 @@ Give more than one scan type, comma-separated, to run them in a single backend
 session and consolidate the results:
 
 ```
-reposcan scan sast,secrets,iac ./repo        # three findings scans, one report
-reposcan scan sast,sbom ./repo -o report.db
-reposcan scan all ./repo                      # every scan type
+reposcan scan sast,secrets,iac ./repo        # three scans, one report
+reposcan scan all ./repo                     # every scan type
 ```
 
-The meta-name `all` expands to every scan type.
-
-Findings scans (everything but `sbom`) merge into a single SARIF report;
-duplicate findings are deduped and annotated with each tool that reported them.
-`sbom` produces a separate CycloneDX SBOM. A run that produces both (a findings
-scan plus `sbom`) prints both tables to stdout; to write both to one file, use
-the `sqlite` output format. The exit code is `3` if any findings scan reported
-something, else `0`.
+The meta-name `all` expands to every scan type. All findings merge into a single
+SARIF report; duplicate findings are deduped and annotated with each tool that
+reported them. The exit code is `3` if any scan reported something, else `0`.
 
 ## Read the exit code
 
@@ -48,9 +41,6 @@ pipelines:
 - `2`: a usage error (unknown scan, bad path, or an output file that already
   exists).
 
-The `sbom` scan is an inventory rather than a pass/fail check, so it exits `0`
-whenever it runs.
-
 ## Choose the output format
 
 By default reposcan prints a concise table to stdout, capped at a row limit.
@@ -60,12 +50,10 @@ Override the format with `--format` and the destination with `-o`:
 reposcan scan sast ./repo                        # table on stdout
 reposcan scan sast ./repo --format json          # SARIF JSON on stdout
 reposcan scan sast ./repo --format json -o out.sarif
-reposcan scan sbom ./repo --format sqlite -o sbom.db
 ```
 
-Findings scans emit SARIF; `sbom` emits CycloneDX. The `sqlite` format is
-queryable and fully reconstructable, and it requires a file (`-o`). Two table
-options tune the stdout view:
+Scans emit SARIF. The `sqlite` format is queryable and fully reconstructable, and
+it requires a file (`-o`). Two table options tune the stdout view:
 
 - `--limit N` (`-n`) sets the maximum rows shown (the rest are counted in a log
   line).

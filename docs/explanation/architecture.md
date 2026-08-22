@@ -51,17 +51,19 @@ the host by `bootstrap`.
 
 A scan is a set of tool invocations over a target plus a rule for consolidating
 their outputs. The relationship between scans and tools is many-to-many: a scan
-may drive several tools (the `sbom` scan runs three), and a tool may serve
-several scans (trivy serves both `sbom` and `sca`). A scan translates its own
-options into each tool's flags, and its consolidation step merges the tools'
+may drive several tools (the SBOM runs three), and a tool may be used by several
+scans (trivy is used by SBOM and `sca`). A scan translates reposcan's parameters
+into each tool's native flags, and its consolidation step merges the tools'
 outputs into one artifact.
 
-Findings scans produce SARIF; the `sbom` scan produces a CycloneDX inventory.
-When several tools contribute, their results are merged and de-duplicated -- by
-rule and location for SARIF, by package URL for CycloneDX -- and each entry is
-annotated with the tools that reported it. Because the tools disagree on exit
-conventions, `scan` presents uniform exit codes rather than passing a tool's
-code through (see [scans](../reference/scans.md)).
+Findings scans produce SARIF; the SBOM produces a CycloneDX inventory. The
+findings scans are exposed through the `scan` command and the SBOM through the
+`sbom` command, though both use the same internal scan model. When several tools
+contribute to one scan, their outputs are merged and de-duplicated.
+De-duplication is performed by rule and location for SARIF and by package URL
+for CycloneDX. Each entry is annotated with the tools that reported it. Because
+the tools disagree on exit conventions, the commands present uniform exit codes
+rather than passing a tool's code through.
 
 The driver also handles two cross-cutting concerns for every scan so the scan
 modules stay simple: it excludes git-ignored paths from filesystem-walking tools
@@ -70,7 +72,7 @@ as provenance in the report.
 
 ## Dependency resolution
 
-The `sbom` and `sca` scans see a full transitive dependency tree only from a
+The SBOM and the `sca` scan see a full transitive dependency tree only from a
 committed lockfile. When the scan has network access, a resolution pre-step runs
 each ecosystem's package manager in resolve-only mode to generate the missing
 lockfiles before the tools run. It runs no untrusted code by default and copies

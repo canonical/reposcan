@@ -57,10 +57,8 @@ class DependencyResolvingScan(Scan):
     resolves_dependencies: ClassVar[bool] = True
 
     include_dev_dependencies: bool = flag(
-        help="For sbom/sca: resolve development dependencies too (production-only "
-        "default)."
+        help="For sca: resolve development dependencies."
     )
     allow_code_execution: bool = flag(
-        help="For sbom/sca: let dependency resolution build source packages "
-        "(off by default)"
+        help="For sca: let dependency resolution build source packages (off by default)"
     )

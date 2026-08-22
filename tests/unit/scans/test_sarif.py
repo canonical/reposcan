@@ -6,6 +6,7 @@
 import json
 
 from repo_scanner.scans import sarif
+from repo_scanner.scans.model import ToolInvocationRecord
 
 
 def test_build_creates_a_finding_normalized_at_construction() -> None:
@@ -112,3 +113,32 @@ def test_parse_relativizes_every_location_not_just_the_primary() -> None:
 
 def test_parse_returns_none_for_non_sarif_text() -> None:
     assert sarif.parse("not json", "semgrep", "/scan/repo") is None
+
+
+def test_merge_dedups_findings_unions_scanners_and_keeps_invocations() -> None:
+    # Two scans report the same finding (same rule and location) plus a unique one;
+    # merge dedups the shared finding, unions its scanner list, and preserves both
+    # scans' recorded tool invocations.
+    shared_a = sarif.SarifResult.build("AWS", "k", "/r/app.py", 1, "trivy", "/r")
+    unique = sarif.SarifResult.build("GCP", "k", "/r/other.py", 2, "trivy", "/r")
+    shared_b = sarif.SarifResult.build("AWS", "k", "/r/app.py", 1, "grype", "/r")
+    first = sarif.SarifDocument.from_results("trivy", "1.0", [shared_a, unique])
+    second = sarif.SarifDocument.from_results("grype", "1.0", [shared_b])
+    first.record_invocations(
+        [ToolInvocationRecord(tool="trivy", args=[], command=("trivy",))]
+    )
+    second.record_invocations(
+        [ToolInvocationRecord(tool="grype", args=[], command=("grype",))]
+    )
+
+    merged = sarif.merge([first, second])
+
+    results = merged.results()
+    assert len(results) == 2  # the shared finding is deduped
+    (shared,) = [result for result in results if result.rule_id == "AWS"]
+    assert sorted(shared.scanners) == ["grype", "trivy"]  # scanner lists unioned
+    tools = [
+        invocation["properties"]["tool"]
+        for invocation in merged.to_dict()["runs"][0]["invocations"]
+    ]
+    assert tools == ["trivy", "grype"]  # both scans' invocations preserved

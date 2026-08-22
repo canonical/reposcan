@@ -151,14 +151,16 @@ runs:
           fi
           if [ "${scan}" = "sbom" ]; then
             out="${results}/sbom.cdx.json"
+            args=(sbom "${scan_path}" -o "${out}")
           else
             out="${sarif_dir}/${scan}.sarif"
+            args=(scan "${scan}" "${scan_path}" -o "${out}")
           fi
 
           echo "::group::reposcan ${scan}"
           uv run --project "${GITHUB_ACTION_PATH}" reposcan \
             --backend "${INPUT_BACKEND}" --image "${INPUT_IMAGE}" \
-            scan "${scan}" "${scan_path}" -o "${out}" 2>&1 | tee "${log_dir}/${scan}.log"
+            "${args[@]}" 2>&1 | tee "${log_dir}/${scan}.log"
           rc=${PIPESTATUS[0]}
           echo "::endgroup::"
 

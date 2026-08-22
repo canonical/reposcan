@@ -67,15 +67,12 @@ The image to run scans in. Not supported for backend=local. See
 `reposcan scan <types> <path>` runs one or more scans against a repository
 directory and maps the outcome to an exit code. `<types>` is a scan type or
 several comma-separated (`reposcan scan sast,secrets ./repo`); they run in one
-backend session and their results are consolidated into at most one SARIF report
-(findings) and one CycloneDX SBOM. Types are `secrets`, `sast`, `iac`,
-`workflow`, `sca`, and `sbom`, or `all` to run every type; see the
-[scans reference](scans.md) for each scan's tools, artifact, and options. Common
-options:
+backend session and their findings are consolidated into a single SARIF report.
+Types are `secrets`, `sast`, `iac`, `workflow`, and `sca`, or `all` to run every
+type; see the [scans reference](scans.md) for each scan's tools and options.
+Common options:
 
-- `-o, --output <FILE>`: write the report to a file instead of stdout. A run
-  that produces both a SARIF report and a CycloneDX SBOM must use the `sqlite`
-  output format, as it is the only output format supporting both report types.
+- `-o, --output <FILE>`: write the report to a file instead of stdout.
 - `-f, --format <fmt>`: `table` (default, stdout), `json`, or `sqlite`. When
   writing to a file with no `--format`, the format is inferred from the file's
   suffix (`.json`/`.sarif`, `.sqlite`/`.sqlite3`/`.db`, `.txt`); an unrecognized
@@ -87,20 +84,31 @@ options:
   `.reposcan-ignore`). See
   [ignore false positives](../how-to/ignore-findings.md).
 - `--no-ignore-file`: do not read any reposcan ignorefile.
-- `--include-dev-dependencies`: for `sbom` and `sca` only, resolve development
-  dependencies too (production-only otherwise).
-- `--allow-code-execution`: for `sbom` and `sca` only, let dependency resolution
-  build source packages, which runs untrusted code (off by default). See
-  [SBOM generation](../explanation/sbom-generation.md).
+- `--include-dev-dependencies`: for `sca` only, resolve development
+  dependencies.
+- `--allow-code-execution`: for `sca` only, let dependency resolution build
+  source packages, which may run untrusted code (off by default).
 - `--mode <history|filesystem>`, `--depth <N>`: for `secrets` only; see the
   [scans reference](scans.md).
 
 A scan-specific option applies only when its scan is among the requested types;
-passing one otherwise (for example `--depth` without `secrets`) is a usage error.
+passing one otherwise (for example `--depth` without `secrets`) is a usage
+error.
 
 Exit codes: `0` ran with no findings, `3` findings, `1` scan or tool error, `2`
-usage error (including an output format that cannot hold the results). The
-`sbom` inventory always exits `0` when it runs.
+usage error.
+
+## sbom
+
+`reposcan sbom <path>` builds a CycloneDX software bill of materials for a
+repository. An SBOM is an inventory rather than a pass/fail check, so it always
+exits `0` when it runs. It shares the `-o/--output`, `-f/--format`,
+`-n/--limit`, and `--wrap` options with `scan`, and takes
+`--include-dev-dependencies` and `--allow-code-execution`. See the
+[Generate an SBOM](../how-to/generate-an-sbom.md) guide and
+[SBOM generation](../explanation/sbom-generation.md).
+
+Exit codes: `0` on success, `1` on a tool or write error, `2` usage error.
 
 ## render
 

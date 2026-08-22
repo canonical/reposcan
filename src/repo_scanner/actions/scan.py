@@ -1,18 +1,16 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan scan` command: run one or more scan types and consolidate.
+"""The `reposcan scan` command: run one or more findings scans and consolidate.
 
 `reposcan scan <types> <path>` runs each requested scan type against a repository in
-one backend session, then consolidates their artifacts by kind -- at most one SARIF
-document (findings) and one CycloneDX document (SBOM). `<types>` is one scan type or
-several, comma-separated: `reposcan scan sast,secrets ./repo`.
+one backend session, then consolidates their findings into a single SARIF report.
+`<types>` is one scan type or several, comma-separated -- or `all` for every type.
 
-The scan types' own options (secrets' `--mode`/`--depth`, sbom/sca's
-`--include-dev-dependencies`/`--allow-code-execution`) are declared once on the scan
-classes and aggregated onto this command via `extra_options`; each carries a `requires`
-that its scan be among the selected types, so an option for an unselected scan is a
-usage error rather than silently ignored.
+Each scan's options (secrets' `--mode`/`--depth`, sca's
+`--include-dev-dependencies`/`--allow-code-execution`) are declared on the scan classes
+and aggregated onto this command via `extra_options`; each carries a `requires` that its
+scan be among the selected types, so an option for an unselected scan is a usage error.
 """
 
 import copy
@@ -26,17 +24,12 @@ from repo_scanner.cli_kit import Param, flag, option, params_of, positional
 from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
-from repo_scanner.scans import cyclonedx, ignore, output, sarif
+from repo_scanner.scans import ignore, output, sarif
 from repo_scanner.scans.base import Scan
-from repo_scanner.scans.iac import IacScan
-from repo_scanner.scans.model import Artifact, ArtifactKind
+from repo_scanner.scans.model import Artifact
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
+from repo_scanner.scans.registry import SCANS
 from repo_scanner.scans.run import run_scan
-from repo_scanner.scans.sast import SastScan
-from repo_scanner.scans.sbom import SbomScan
-from repo_scanner.scans.sca import ScaScan
-from repo_scanner.scans.secrets import SecretsScan
-from repo_scanner.scans.workflow import WorkflowScan
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +37,6 @@ FORMATS = tuple(f.value for f in Format)
 
 # Exit code when a scan completes and reports one or more findings.
 FINDINGS_EXIT_CODE = 3
-
-# Every scan type, keyed by its command-line name, in help/run order.
-SCANS: dict[str, type[Scan]] = {
-    "secrets": SecretsScan,
-    "sast": SastScan,
-    "iac": IacScan,
-    "workflow": WorkflowScan,
-    "sca": ScaScan,
-    "sbom": SbomScan,
-}
 
 
 def _scan_names(raw: str) -> list[str]:
@@ -114,7 +97,7 @@ class ScanCommand(Action):
 
     scans: list[str] = positional(
         convert=_scan_names,
-        help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, sbom, "
+        help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
     )
     path: str = positional(help="Path to the repository to scan.")
@@ -144,8 +127,8 @@ class ScanCommand(Action):
         """Run the requested scans and return an exit code.
 
         Exit codes:
-            0 when no findings scan reported anything (an SBOM-only run always ends 0)
-            3 when any findings scan reported something
+            0 when no scan reported anything
+            3 when any scan reported something
             2 for a usage error
             1 on a scan/tool error or a write failure
         """
@@ -221,9 +204,9 @@ class ScanCommand(Action):
                     )
                 artifacts.append(artifact)
 
-            consolidated = _consolidate(artifacts)
+            report = sarif.merge(artifacts)
             failure = output.emit_all(
-                consolidated,
+                [report],
                 output=self.output,
                 fmt=fmt,
                 limit=self.limit,
@@ -232,35 +215,6 @@ class ScanCommand(Action):
             if isinstance(failure, Failure):
                 logger.error(failure.reason)
                 return 1
-            return _report(consolidated)
-
-
-def _consolidate(artifacts: list[Artifact]) -> list[Artifact]:
-    """The per-scan artifacts merged by kind: at most one SARIF and one CycloneDX.
-
-    A single artifact of a kind is kept as-is (preserving its recorded invocations);
-    several of a kind are merged. SARIF leads CycloneDX in the returned list.
-    """
-    by_kind = (
-        (ArtifactKind.SARIF, sarif.merge),
-        (ArtifactKind.CYCLONEDX, cyclonedx.merge),
-    )
-    consolidated: list[Artifact] = []
-    for kind, merge in by_kind:
-        of_kind = [artifact for artifact in artifacts if artifact.kind is kind]
-        if not of_kind:
-            continue
-        consolidated.append(of_kind[0] if len(of_kind) == 1 else merge(of_kind))
-    return consolidated
-
-
-def _report(artifacts: list[Artifact]) -> int:
-    """Log a per-artifact summary and return the exit code (3 on any SARIF finding)."""
-    findings = 0
-    for artifact in artifacts:
-        if artifact.kind is ArtifactKind.CYCLONEDX:
-            logger.info("sbom complete: %d component(s)", artifact.count())
-        else:
-            findings += artifact.count()
-            logger.info("scan complete: %d finding(s)", artifact.count())
-    return FINDINGS_EXIT_CODE if findings else 0
+            count = report.count()
+            logger.info("scan complete: %d finding(s)", report.count())
+            return FINDINGS_EXIT_CODE if count else 0

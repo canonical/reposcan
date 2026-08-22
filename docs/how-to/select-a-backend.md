@@ -1,4 +1,4 @@
-# Choose a backend
+# Select a backend
 
 A backend is where the tools run. reposcan supports three: `docker` and `lxd`
 run each scan in an ephemeral container. `local` runs the tools directly on the
@@ -45,7 +45,7 @@ untrusted repository code cannot run as root. Override the UID when a repository
 has files that user cannot read; the local backend ignores it and runs as you.
 
 ```
-reposcan --uid 1000 scan sbom ./repo
+reposcan --uid 1000 sbom ./repo
 ```
 
 Like the backend, the UID resolves from `--uid`, then `REPOSCAN_UID`, then the
