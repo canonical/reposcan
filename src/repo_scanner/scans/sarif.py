@@ -10,10 +10,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from repo_scanner.ioutil.sqlitedb import Table
+from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
 
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
+
+# db schema for findings table
+FINDINGS = TableSchema(
+    name="findings",
+    columns=("rule", "level", "uri", "line", "message", "scanners", "run", "document"),
+    create=(
+        "CREATE TABLE findings (rule TEXT, level TEXT, uri TEXT, line TEXT, "
+        "message TEXT, scanners TEXT, run TEXT, document TEXT)"
+    ),
+    insert="INSERT INTO findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    select="SELECT * FROM findings ORDER BY rowid",
+)
 
 # SARIF severity levels from most to least severe; unlisted levels sort last.
 _LEVEL_RANK = {"error": 0, "warning": 1, "note": 2, "none": 3}
@@ -179,22 +191,12 @@ class SarifDocument:
         return headers, rows
 
     def records(self) -> Table:
-        """The findings as a `findings` db table for querying and reconstruction.
+        """The findings as a `FINDINGS` table, for querying and reconstruction.
 
-        Columns split the location into `uri`/`line`, join the merge's
-        `properties.scanners`, and keep each result's raw JSON in `document` (so a
-        single finding reconstructs) alongside its `run` index. In document order.
+        Each row splits the location into `uri`/`line`, joins the merge's
+        `properties.scanners`, and keeps the result's raw JSON in `document` (so a
+        single finding reconstructs) alongside its `run` index.
         """
-        columns = (
-            "rule",
-            "level",
-            "uri",
-            "line",
-            "message",
-            "scanners",
-            "run",
-            "document",
-        )
         findings = []
         for index, run in enumerate(self.content.get("runs", [])):
             for result in run.get("results", []):
@@ -211,7 +213,7 @@ class SarifDocument:
                         json.dumps(result),
                     )
                 )
-        return Table("findings", columns, findings)
+        return Table(FINDINGS, findings)
 
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
         """Record each executed tool command under the run's SARIF `invocations`.

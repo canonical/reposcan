@@ -15,11 +15,23 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from repo_scanner.ioutil.sqlitedb import Table
+from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
+
+# db schema for components table
+COMPONENTS = TableSchema(
+    name="components",
+    columns=("name", "version", "type", "purl", "scanners", "document"),
+    create=(
+        "CREATE TABLE components (name TEXT, version TEXT, type TEXT, purl TEXT, "
+        "scanners TEXT, document TEXT)"
+    ),
+    insert="INSERT INTO components VALUES (?, ?, ?, ?, ?, ?)",
+    select="SELECT * FROM components ORDER BY rowid",
+)
 
 
 @dataclass(frozen=True)
@@ -58,13 +70,12 @@ class CycloneDxDocument:
         return headers, rows
 
     def records(self) -> Table:
-        """The components as a `components` table for querying and reconstruction.
+        """The components as a `COMPONENTS` table, for querying and reconstruction.
 
-        Parsed columns (package URL, the merge's contributing scanners from the
-        `reposcan:scanner` properties) plus `document` (the component's raw JSON, so a
-        single component reconstructs). In document order.
+        Each row has parsed columns (package URL, the merge's contributing scanners
+        from the `reposcan:scanner` properties) plus `document` (the component's raw
+        JSON, so a single component reconstructs).
         """
-        columns = ("name", "version", "type", "purl", "scanners", "document")
         components = [
             (
                 str(component.get("name", "")),
@@ -80,7 +91,7 @@ class CycloneDxDocument:
             )
             for component in self.components()
         ]
-        return Table("components", columns, components)
+        return Table(COMPONENTS, components)
 
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
         """Record each executed tool command in the SBOM's CycloneDX `formulation`.

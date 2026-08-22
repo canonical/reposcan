@@ -23,9 +23,19 @@ import json
 from collections.abc import Sequence
 
 from repo_scanner.ioutil import sqlitedb
-from repo_scanner.ioutil.sqlitedb import Table
+from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import Artifact, ArtifactKind
+
+# db schema for metadata table: one row per artifact, holding its kind and its
+# emptied document shell.
+_METADATA = TableSchema(
+    name="metadata",
+    columns=("kind", "document"),
+    create="CREATE TABLE metadata (kind TEXT, document TEXT)",
+    insert="INSERT INTO metadata VALUES (?, ?)",
+    select="SELECT * FROM metadata ORDER BY rowid",
+)
 
 
 def write(artifacts: Sequence[Artifact], path: str) -> None:
@@ -35,12 +45,12 @@ def write(artifacts: Sequence[Artifact], path: str) -> None:
     its own entry table (`findings` for SARIF, `components` for CycloneDX). A report
     holds at most one artifact per kind, so those entry-table names never collide.
     """
-    metadata = Table(
-        "metadata",
-        ("kind", "document"),
-        [(artifact.kind.value, json.dumps(_shell(artifact))) for artifact in artifacts],
-    )
-    sqlitedb.write(path, [metadata, *(artifact.records() for artifact in artifacts)])
+    metadata_rows = [
+        (artifact.kind.value, json.dumps(_shell(artifact))) for artifact in artifacts
+    ]
+    sqlitedb.write(path, Table(_METADATA, metadata_rows))
+    for artifact in artifacts:
+        sqlitedb.write(path, artifact.records())
 
 
 def read(path: str) -> list[Artifact]:
@@ -48,19 +58,19 @@ def read(path: str) -> list[Artifact]:
 
     Empty if `path` is not a reposcan report database (no `metadata` table).
     """
-    metadata = sqlitedb.read(path, "metadata")
+    metadata = sqlitedb.read(path, _METADATA)
     if metadata is None:
         return []
     artifacts: list[Artifact] = []
     for kind, shell_json in metadata.rows:
         shell = json.loads(shell_json)
         if kind == ArtifactKind.SARIF.value:
-            findings = sqlitedb.read(path, "findings")
+            findings = sqlitedb.read(path, sarif.FINDINGS)
             for run, document in _column(findings, "run", "document"):
                 shell["runs"][int(run)]["results"].append(json.loads(document))
             artifacts.append(sarif.SarifDocument(shell))
         elif kind == ArtifactKind.CYCLONEDX.value:
-            components = sqlitedb.read(path, "components")
+            components = sqlitedb.read(path, cyclonedx.COMPONENTS)
             shell["components"] = [
                 json.loads(doc) for (doc,) in _column(components, "document")
             ]
@@ -69,10 +79,10 @@ def read(path: str) -> list[Artifact]:
 
 
 def _column(table: Table | None, *names: str) -> list[tuple[str, ...]]:
-    """Retrieve the named columns from each row of `table`."""
+    """The named columns of each row, looked up by position in the table's schema."""
     if table is None:
         return []
-    indexes = [table.columns.index(name) for name in names]
+    indexes = [table.schema.columns.index(name) for name in names]
     return [tuple(row[index] for index in indexes) for row in table.rows]
 
 
