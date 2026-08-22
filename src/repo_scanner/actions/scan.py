@@ -197,7 +197,7 @@ class ScanCommand(Action):
                 if isinstance(artifact, Failure):
                     logger.error("%s scan failed: %s", name, artifact.reason)
                     return 1
-                removed = ignore.apply(artifact, ignore_rules)
+                removed = ignore.apply(artifact, ignore_rules, path)
                 if removed:
                     logger.info(
                         "ignored %d %s finding(s) via %s", removed, name, ignore_path

@@ -6,3 +6,7 @@ trufflehog  SentryToken  src/repo_scanner/tools/locks/*.txt
 
 # test fixtures
 trufflehog AWS tests/scans/fixtures/*
+
+# treat the following as verified action creators
+poutine  github_action_from_unverified_creator_used  **  "uses: canonical/"
+poutine  github_action_from_unverified_creator_used  **  "uses: astral-sh/"

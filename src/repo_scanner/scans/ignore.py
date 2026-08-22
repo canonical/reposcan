@@ -4,14 +4,22 @@
 """reposcan ignorefile.
 
 A repository may carry a `.reposcan-ignore` file whose entries suppress classes of
-findings. Each non-blank, non-comment line is three whitespace-separated fields:
+findings. Each non-blank, non-comment line has exactly three or four fields:
 
-    <tool>  <ruleId>  <path-glob>
+    <tool>  <ruleId>  <path-glob>  [content-regex]
 
 `tool` is the scanner that reported the finding, or `*` for any; `ruleId` is the SARIF
 rule id shown in the finding; and `path-glob` is a repository-root-relative glob (`*`
-within a path segment, `**` across segments, `?` one character). A `#` starts a comment.
-A finding is dropped when all three match.
+within a path segment, `**` across segments, `?` one character).
+
+Fields are whitespace-separated, and a `#` begins a comment. A field may be wrapped in
+single or double quotes to include whitespace or a `#`; the quotes are removed.
+
+The optional fourth field is a regular expression. When present, a finding is dropped
+only if -- in addition to the tool, rule, and path matching -- the offending content
+matches the regex. The offending content is the finding's line (or the whole file when
+the finding has no line); if it cannot be read, the finding is kept. Quote the regex
+(e.g. `"uses: creator/"`) when it contains spaces or a `#`.
 """
 
 import logging
@@ -28,21 +36,35 @@ DEFAULT_IGNORE_FILE = ".reposcan-ignore"
 
 
 class IgnoreRule:
-    """One ignorefile entry: suppress findings matching a tool, rule id, and path."""
+    """One ignorefile entry: a tool, rule id, path glob, and optional content regex."""
 
-    def __init__(self, tool: str, rule_id: str, path_glob: str) -> None:
+    def __init__(
+        self, tool: str, rule_id: str, path_glob: str, content_pattern: str = ""
+    ) -> None:
         self.tool = tool
         self.rule_id = rule_id
         self.path_glob = path_glob
+        self.content_pattern = content_pattern
         self._pattern = _glob_to_regex(path_glob)
+        self._content = re.compile(content_pattern) if content_pattern else None
 
-    def matches(self, rule_id: str, uri: str, tools: list[str]) -> bool:
-        """Whether a finding (`rule_id`, `uri`, reporting `tools`) is ignored."""
-        if rule_id != self.rule_id:
+    def matches(self, finding: sarif.SarifResult, root: str = "") -> bool:
+        """Whether this rule ignores `finding`.
+
+        Checks the tool, rule id, and path; then, if the rule carries a content
+        pattern, that it matches the finding's offending content (read from `root`).
+        Content that cannot be read fails the match, so the finding is kept.
+        """
+        if finding.rule_id != self.rule_id:
             return False
-        if self.tool != "*" and self.tool not in tools:
+        if self.tool != "*" and self.tool not in finding.scanners:
             return False
-        return self._pattern.match(uri) is not None
+        if self._pattern.match(finding.uri) is None:
+            return False
+        if self._content is None:
+            return True
+        content = _offending_content(root, finding)
+        return content is not None and self._content.search(content) is not None
 
 
 def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
@@ -50,19 +72,60 @@ def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
     rules: list[IgnoreRule] = []
     errors: list[str] = []
     for number, raw in enumerate(text.splitlines(), start=1):
-        line = raw.split("#", 1)[0].strip()
-        if not line:
+        try:
+            fields = _split_fields(raw)
+        except ValueError as exc:
+            errors.append(f"ignorefile line {number}: {exc}")
             continue
-        fields = line.split()
-        if len(fields) != 3:
+        if not fields:  # blank or comment-only line
+            continue
+        if len(fields) not in (3, 4):
             errors.append(
-                f"ignorefile line {number}: expected 3 fields (tool ruleId path), "
-                f"got {len(fields)}"
+                f"ignorefile line {number}: expected 3 or 4 fields, got {len(fields)}"
             )
             continue
-        tool, rule_id, path_glob = fields
-        rules.append(IgnoreRule(tool, rule_id, path_glob))
+        try:
+            rules.append(IgnoreRule(*fields))
+        except re.error as exc:
+            errors.append(f"ignorefile line {number}: {exc}")
     return rules, errors
+
+
+def _split_fields(line: str) -> list[str]:
+    """The whitespace-separated fields of `line`, honouring quotes and comments.
+
+    A single- or double-quoted span keeps its whitespace and `#` and drops the quotes;
+    an unquoted `#` starts a comment. Backslashes are literal (regexes keep them).
+    Raises ValueError on an unterminated quote.
+    """
+    fields: list[str] = []
+    current: list[str] = []
+    in_field = False
+    quote = ""
+    for ch in line:
+        if quote:
+            if ch == quote:
+                quote = ""
+            else:
+                current.append(ch)
+        elif ch in "\"'":
+            quote = ch
+            in_field = True
+        elif ch == "#":
+            break  # the rest of the line is a comment
+        elif ch.isspace():
+            if in_field:
+                fields.append("".join(current))
+                current = []
+                in_field = False
+        else:
+            current.append(ch)
+            in_field = True
+    if quote:
+        raise ValueError("unterminated quote")
+    if in_field:
+        fields.append("".join(current))
+    return fields
 
 
 def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
@@ -74,8 +137,12 @@ def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
     return parse(text)
 
 
-def apply(artifact: Artifact, rules: list[IgnoreRule]) -> int:
-    """Drop ignored findings from `artifact` in place; return the number removed."""
+def apply(artifact: Artifact, rules: list[IgnoreRule], root: str = "") -> int:
+    """Drop ignored findings from `artifact` in place; return the number removed.
+
+    `root` is the repository root, used to read the offending content for rules that
+    carry a content pattern (see the module docstring).
+    """
     if not rules or not isinstance(artifact, sarif.SarifDocument):
         return 0
     removed = 0
@@ -83,15 +150,31 @@ def apply(artifact: Artifact, rules: list[IgnoreRule]) -> int:
         kept = []
         for result in run.get("results", []):
             finding = sarif.SarifResult(result)
-            if any(
-                rule.matches(finding.rule_id, finding.uri, finding.scanners)
-                for rule in rules
-            ):
+            if any(rule.matches(finding, root) for rule in rules):
                 removed += 1
             else:
                 kept.append(result)
         run["results"] = kept
     return removed
+
+
+def _offending_content(root: str, finding: sarif.SarifResult) -> str | None:
+    """The finding's offending content, or None when it cannot be read.
+
+    The line the finding points to, or the whole file when it has no line.
+    """
+    if not finding.uri:
+        return None
+    try:
+        text = (Path(root) / finding.uri).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if finding.line <= 0:
+        return text
+    lines = text.splitlines()
+    if finding.line > len(lines):
+        return None
+    return lines[finding.line - 1]
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:
