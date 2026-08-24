@@ -1,0 +1,273 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: repo-scanner
+description: >-
+  Run security scans against a checked-out repository and present findings in
+  the code-scanning pane, a pull-request comment, or the job log.
+author: Canonical Ltd.
+branding:
+  icon: shield
+  color: orange
+
+inputs:
+  token:
+    description: >-
+      Token for the SARIF upload and pull-request comment. Needs
+      'security-events: write' to upload to the code-scanning pane and
+      'pull-requests: write' to comment on a pull request; a destination whose
+      permission is missing is skipped rather than failing the job.
+    default: ${{ github.token }}
+  code-scanning:
+    description: >-
+      Upload each findings scan's SARIF to the code-scanning pane. Needs the
+      token's 'security-events: write' permission and code scanning enabled; the
+      upload is skipped (not failed) when either is missing.
+    default: "true"
+  pr-comment:
+    description: >-
+      Post the results summary as a pull-request comment (on pull_request events
+      only). Needs the token's 'pull-requests: write' permission.
+    default: "false"
+  secrets:
+    description: Run the secrets scan.
+    default: "true"
+  sast:
+    description: Run the static-analysis (SAST) scan.
+    default: "true"
+  iac:
+    description: Run the infrastructure-as-code scan.
+    default: "true"
+  workflow:
+    description: Run the CI/CD workflow scan.
+    default: "true"
+  sca:
+    description: Run the dependency-vulnerability (SCA) scan.
+    default: "true"
+  sbom:
+    description: >-
+      Generate a CycloneDX SBOM. It is attached as an artifact only and never
+      uploaded to the code-scanning pane. Off by default.
+    default: "false"
+  fail-on:
+    description: >-
+      Fail the job when a finding at or above this SARIF level is reported: one of
+      'error', 'warning', 'note', or 'none' (report findings but never fail on them).
+    default: error
+  path:
+    description: Directory to scan (defaults to the checked-out repository).
+    default: "."
+  image:
+    description: >-
+      The image to run via reposcan: 'canonical' (the official image),
+      'build' (build locally instead of pulling), or an OCI reference.
+    default: canonical
+  backend:
+    description: Execution backend.
+    default: docker
+
+outputs:
+  results-path:
+    description: Directory holding the SARIF/CycloneDX outputs and per-scan logs.
+    value: ${{ steps.scan.outputs.results-path }}
+  findings-total:
+    description: Total findings across all findings scans.
+    value: ${{ steps.scan.outputs.findings-total }}
+  findings-over-threshold:
+    description: Findings at or above the fail-on level.
+    value: ${{ steps.scan.outputs.findings-over-threshold }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up uv
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        enable-cache: false
+
+    - name: Run scans
+      id: scan
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_BACKEND: ${{ inputs.backend }}
+        INPUT_SECRETS: ${{ inputs.secrets }}
+        INPUT_SAST: ${{ inputs.sast }}
+        INPUT_IAC: ${{ inputs.iac }}
+        INPUT_WORKFLOW: ${{ inputs.workflow }}
+        INPUT_SCA: ${{ inputs.sca }}
+        INPUT_SBOM: ${{ inputs.sbom }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set +e  # scans with findings exit non-zero
+        set -uo pipefail
+
+        case "${INPUT_FAIL_ON}" in
+          error | warning | note | none) ;;
+          *) echo "::warning::unknown fail-on '${INPUT_FAIL_ON}', treating it as 'none'" ;;
+        esac
+
+        scan_path="$(realpath "${INPUT_PATH}")"
+        if [ ! -d "${scan_path}" ]; then
+          echo "::error::path to scan is not a directory: ${INPUT_PATH}"
+          echo "should-fail=true" >> "${GITHUB_OUTPUT}"
+          exit 1
+        fi
+
+        results="${RUNNER_TEMP}/reposcan-results"
+        sarif_dir="${results}/sarif"
+        log_dir="${results}/logs"
+        rm -rf "${results}"
+        mkdir -p "${sarif_dir}" "${log_dir}"
+        echo "results-path=${results}" >> "${GITHUB_OUTPUT}"
+
+        order=(secrets sast iac workflow sca sbom)
+        declare -A enabled=(
+          [secrets]="${INPUT_SECRETS}" [sast]="${INPUT_SAST}" [iac]="${INPUT_IAC}"
+          [workflow]="${INPUT_WORKFLOW}" [sca]="${INPUT_SCA}" [sbom]="${INPUT_SBOM}"
+        )
+        # SARIF levels ranked so a threshold can select "at or above": a finding with
+        # no level defaults to warning, per SARIF. 'none'/unknown fail-on -> 0, never fails.
+        declare -A rank=([note]=1 [warning]=2 [error]=3)
+        threshold="${rank[${INPUT_FAIL_ON}]:-0}"
+
+        summary="${results}/summary.md"
+        {
+          echo "## reposcan results"
+          echo
+          echo "| scan | status | findings |"
+          echo "| --- | --- | --- |"
+        } > "${summary}"
+
+        error=0   # a real tool/setup failure, as opposed to findings
+        total=0
+        over=0
+
+        for scan in "${order[@]}"; do
+          if [ "${enabled[${scan}]}" != "true" ]; then
+            echo "| ${scan} | skipped | - |" >> "${summary}"
+            continue
+          fi
+          if [ "${scan}" = "sbom" ]; then
+            out="${results}/sbom.cdx.json"
+            args=(sbom "${scan_path}" -o "${out}")
+          else
+            out="${sarif_dir}/${scan}.sarif"
+            args=(scan "${scan}" "${scan_path}" -o "${out}")
+          fi
+
+          echo "::group::reposcan ${scan}"
+          uv run --project "${GITHUB_ACTION_PATH}" reposcan \
+            --backend "${INPUT_BACKEND}" --image "${INPUT_IMAGE}" \
+            "${args[@]}" 2>&1 | tee "${log_dir}/${scan}.log"
+          rc=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          # reposcan exits 0 (clean), 3 (findings), 1 (tool error), or 2 (usage).
+          if [ "${rc}" != "0" ] && [ "${rc}" != "3" ]; then
+            echo "::error::${scan} scan failed (exit ${rc})"
+            echo "| ${scan} | failed (exit ${rc}) | - |" >> "${summary}"
+            error=1
+            continue
+          fi
+
+          if [ "${scan}" = "sbom" ]; then
+            n=$(jq '(.components // []) | length' "${out}" 2>/dev/null || echo 0)
+            echo "| sbom | ok | ${n} component(s) |" >> "${summary}"
+            continue
+          fi
+
+          # Tag each run so code scanning treats each scan as its own analysis rather
+          # than superseding the previous one (they all use the "reposcan" driver).
+          tmp="$(mktemp)"
+          jq --arg id "reposcan/${scan}" \
+            '.runs |= map(.automationDetails = {id: $id})' "${out}" > "${tmp}"
+          mv "${tmp}" "${out}"
+
+          n=$(jq '[.runs[]?.results[]?] | length' "${out}")
+          total=$((total + n))
+          if [ "${threshold}" -gt 0 ]; then
+            o=$(jq --argjson t "${threshold}" '
+              [ .runs[]?.results[]?
+                | ((.level // "warning") as $l | {note: 1, warning: 2, error: 3}[$l] // 2)
+                | select(. >= $t) ] | length' "${out}")
+            over=$((over + o))
+          fi
+          echo "| ${scan} | ok | ${n} |" >> "${summary}"
+        done
+
+        {
+          echo
+          echo "Full SARIF/CycloneDX outputs and per-scan logs are attached as the"
+          echo "\`reposcan-results\` artifact."
+        } >> "${summary}"
+        cat "${summary}" >> "${GITHUB_STEP_SUMMARY}"
+
+        should_fail=false
+        if [ "${error}" -ne 0 ]; then should_fail=true; fi
+        if [ "${threshold}" -gt 0 ] && [ "${over}" -gt 0 ]; then should_fail=true; fi
+
+        sarif_present=false
+        if compgen -G "${sarif_dir}/*.sarif" > /dev/null; then sarif_present=true; fi
+
+        {
+          echo "results-path=${results}"
+          echo "sarif-dir=${sarif_dir}"
+          echo "summary-file=${summary}"
+          echo "findings-total=${total}"
+          echo "findings-over-threshold=${over}"
+          echo "sarif-present=${sarif_present}"
+          echo "should-fail=${should_fail}"
+        } >> "${GITHUB_OUTPUT}"
+
+    # Upload results to the repository's code-scanning pane.
+    - name: Upload SARIF to code scanning
+      if: inputs.code-scanning == 'true' && steps.scan.outputs.sarif-present == 'true'
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@4c0873ef8656cb3c50b3f42fb63bc1ade0cfa827  # v4
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-dir }}
+        token: ${{ inputs.token }}
+
+    # Write results to a pull request comment, on pull_request runs.
+    - name: Comment on the pull request
+      if: >-
+        inputs.pr-comment == 'true'
+        && github.event_name == 'pull_request'
+        && steps.scan.outputs.summary-file != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        SUMMARY: ${{ steps.scan.outputs.summary-file }}
+      run: |
+        set -uo pipefail
+        gh pr comment "${PR_NUMBER}" --body-file "${SUMMARY}" --edit-last --create-if-none \
+          || gh pr comment "${PR_NUMBER}" --body-file "${SUMMARY}"
+
+    # Write the summary table to job logs and upload the scan artifacts
+    - name: Upload results artifact
+      if: always() && steps.scan.outputs.results-path != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+      with:
+        name: reposcan-results
+        path: ${{ steps.scan.outputs.results-path }}
+        if-no-files-found: ignore
+
+    - name: Fail on findings or scan errors
+      if: always()
+      shell: bash
+      env:
+        SHOULD_FAIL: ${{ steps.scan.outputs.should-fail }}
+        OVER: ${{ steps.scan.outputs.findings-over-threshold }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -uo pipefail
+        if [ "${SHOULD_FAIL:-false}" = "true" ]; then
+          echo "::error::reposcan failed the job (findings at or above" \
+            "'${FAIL_ON}': ${OVER:-0}, or a scan error)"
+          exit 1
+        fi

@@ -14,12 +14,21 @@ from contextlib import redirect_stdout
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil import table
 from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.output import Format, choose_format, emit
+from repo_scanner.scans.model import ArtifactKind
+from repo_scanner.scans.output import (
+    Format,
+    choose_format,
+    emit,
+    emit_all,
+    unwritable,
+)
 
 
 def _sarif(*levels: str) -> sarif.SarifDocument:
     findings = [
-        sarif.SarifResult(f"R{i}", f"message {i}", "app.py", i + 1, level=level)
+        sarif.SarifResult.build(
+            f"R{i}", f"message {i}", "app.py", i + 1, "tool", "", level=level
+        )
         for i, level in enumerate(levels)
     ]
     return sarif.SarifDocument.from_results("tool", "1.0", findings)
@@ -47,6 +56,46 @@ def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> N
             assert json.loads(handle.read())["version"] == "2.1.0"
 
 
+def test_the_table_names_the_tool_that_reported_each_finding() -> None:
+    # A single-tool scan names the tool on the run driver.
+    headers, rows = _sarif("error").rows()
+    assert headers == ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
+    assert rows[0][1] == "tool"  # the driver name from from_results("tool", ...)
+
+    # A merged scan annotates each result with its contributing scanners.
+    merged = sarif.SarifDocument(
+        {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {"driver": {"name": "reposcan"}},
+                    "results": [
+                        {
+                            "ruleId": "CVE-1",
+                            "level": "error",
+                            "locations": [
+                                {
+                                    "physicalLocation": {
+                                        "artifactLocation": {"uri": "go.mod"}
+                                    }
+                                }
+                            ],
+                            "properties": {"scanners": ["trivy", "grype"]},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    _, merged_rows = merged.rows()
+    assert merged_rows[0][1] == "trivy, grype"
+
+
+def _cyclonedx(*names: str) -> cyclonedx.CycloneDxDocument:
+    components = [{"name": name, "version": "1.0", "type": "library"} for name in names]
+    return cyclonedx.CycloneDxDocument({"components": components})
+
+
 def test_sbom_renders_a_component_table() -> None:
     doc = cyclonedx.CycloneDxDocument(
         {"components": [{"name": "flask", "version": "3.0.0", "type": "library"}]}
@@ -57,6 +106,32 @@ def test_sbom_renders_a_component_table() -> None:
     assert "COMPONENT" in out.getvalue() and "flask" in out.getvalue()
 
 
+def test_unwritable_guards_mixed_kinds_but_allows_sqlite() -> None:
+    both = {ArtifactKind.SARIF, ArtifactKind.CYCLONEDX}
+    # Findings and an SBOM cannot share one JSON document (a file, or stdout as JSON).
+    assert unwritable(both, Format.JSON, None) is not None
+    assert unwritable(both, None, "report.json") is not None
+    # sqlite holds both kinds; a single kind is fine either way.
+    assert unwritable(both, Format.SQLITE, "report.db") is None
+    assert unwritable({ArtifactKind.SARIF}, Format.JSON, None) is None
+
+
+def test_emit_all_renders_mixed_kinds_to_stdout_and_into_one_sqlite() -> None:
+    artifacts = [_sarif("error"), _cyclonedx("flask")]
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert emit_all(artifacts) is None  # stdout renders each artifact's own table
+    assert "LEVEL" in out.getvalue() and "COMPONENT" in out.getvalue()
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "r.db")
+        assert emit_all(artifacts, output=path, fmt=Format.SQLITE) is None
+        connection = sqlite3.connect(path)
+        findings = connection.execute("SELECT count(*) FROM findings").fetchone()
+        components = connection.execute("SELECT count(*) FROM components").fetchone()
+    assert findings == (1,) and components == (1,)  # one database, both kinds
+
+
 def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None:
     out = io.StringIO()
     with redirect_stdout(out):
@@ -65,7 +140,7 @@ def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None
 
     long = " ".join(f"word{i}" for i in range(300))
     doc = sarif.SarifDocument.from_results(
-        "tool", "1.0", [sarif.SarifResult("R", long, "a.py", 1)]
+        "tool", "1.0", [sarif.SarifResult.build("R", long, "a.py", 1, "tool", "")]
     )
     single, wrapped = io.StringIO(), io.StringIO()
     with redirect_stdout(single):

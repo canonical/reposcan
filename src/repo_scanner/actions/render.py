@@ -69,15 +69,15 @@ def render(
     Returns 0 on success; 2 on a bad input or an unrecognized report; 1 if it could not
     be written (including a missing or existing sqlite output file).
     """
-    artifact = _load(input_path)
-    if artifact is None:
+    artifacts = _load(input_path)
+    if not artifacts:
         return 2
     chosen, error = output.choose_format(fmt, output_path)
     if error is not None:
         logger.warning("%s", error)
         return 2
-    failure = output.emit(
-        artifact, output=output_path, fmt=chosen, limit=limit, wrap=wrap
+    failure = output.emit_all(
+        artifacts, output=output_path, fmt=chosen, limit=limit, wrap=wrap
     )
     if isinstance(failure, Failure):
         logger.error(failure.reason)
@@ -85,19 +85,25 @@ def render(
     return 0
 
 
-def _load(input_path: str) -> Artifact | None:
-    """The artifact at `input_path` (sqlite or JSON), or None (logging why)."""
+def _load(input_path: str) -> list[Artifact]:
+    """The artifacts at `input_path` (sqlite or JSON); empty on error (logging why).
+
+    A JSON report holds one artifact; a sqlite report may hold both a SARIF and a
+    CycloneDX document.
+    """
     try:
         with open(input_path, "rb") as handle:
             data = handle.read()
     except OSError as exc:
         logger.error("could not read %s: %s", input_path, exc)
-        return None
+        return []
+    artifacts: list[Artifact]
     if sqlitedb.is_sqlite(data):
-        artifact = reportdb.read(input_path)
+        artifacts = reportdb.read(input_path)
     else:
         text = data.decode("utf-8", "replace")
         artifact = sarif.parse(text) or cyclonedx.parse(text)
-    if artifact is None:
+        artifacts = [artifact] if artifact is not None else []
+    if not artifacts:
         logger.error("%s is not a SARIF, CycloneDX, or sqlite report", input_path)
-    return artifact
+    return artifacts

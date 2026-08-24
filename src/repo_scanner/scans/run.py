@@ -4,10 +4,9 @@
 """The scan driver: run a scan against a target and consolidate its tools' outputs.
 
 `run_scan` is backend-agnostic: given a started context, it resolves the dependency
-tree first (for scans that need it), runs each of the scan's invocations, records
-provenance, and hands the results to the scan to consolidate into an artifact. A tool
-that cannot be started, or exits outside its declared ok_codes, aborts the scan as a
-Failure (unless the invocation is optional).
+tree (for scans that need it), runs each of the scan's invocations, records provenance,
+runs `scan.parse` for each tool's output, and `scan.consolidate` to produce a single
+`Artifact`.
 """
 
 from __future__ import annotations
@@ -18,23 +17,19 @@ from typing import TYPE_CHECKING
 
 from repo_scanner.execution.context import ExecutionContext, read_file
 from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.exclude import (
-    EXCLUDABLE_TOOLS,
-    IgnoredPaths,
-    build_exclude_flags,
-)
-from repo_scanner.scans.model import Artifact, ToolInvocationRecord, ToolResult
+from repo_scanner.scans.exclude import IgnoredPaths
+from repo_scanner.scans.model import Artifact, ToolInvocationRecord
 from repo_scanner.scans.resolve import resolve_dependencies
 from repo_scanner.tools.registry import TOOLS
 
 if TYPE_CHECKING:
-    from repo_scanner.scans.base import ScanAction
+    from repo_scanner.scans.base import Scan
 
 logger = logging.getLogger(__name__)
 
 
 def run_scan(
-    scan: ScanAction,
+    scan: Scan,
     ctx: ExecutionContext,
     target: str,
     tool_root: str,
@@ -72,14 +67,9 @@ def run_scan(
             resolved_parent,
             allow_code_execution=getattr(scan, "allow_code_execution", False),
         )
-    invocations = scan.invocations(target)
-    # identify gitignore'd paths
-    ignored = (
-        IgnoredPaths.from_context(ctx, target)
-        if any(invocation.tool in EXCLUDABLE_TOOLS for invocation in invocations)
-        else IgnoredPaths()
-    )
-    results: list[ToolResult] = []
+    invocations = scan.invocations(ctx, target)
+    ignored = IgnoredPaths.from_context(ctx, target)
+    artifacts: list[Artifact] = []
     provenance: list[ToolInvocationRecord] = []
     for invocation in invocations:
         tool = TOOLS.get(invocation.tool)
@@ -89,7 +79,7 @@ def run_scan(
         cmd = [
             executable,
             *invocation.args,
-            *build_exclude_flags(invocation.tool, ignored),
+            *ignored.exclude_flags(invocation.tool),
         ]
         logger.debug("Running scan command:\n%s", " ".join(cmd))
         result = ctx.run(
@@ -132,9 +122,18 @@ def run_scan(
                     continue
                 return Failure(reason=note)
             result = ExecResult(result.exit_code, content, result.stderr)
-        results.append(ToolResult(invocation.tool, result))
-    artifact = scan.consolidate(results)
+        parsed = scan.parse(invocation.tool, result, target)
+        if isinstance(parsed, Failure):
+            if invocation.optional:
+                logger.warning("skipping %s: %s", invocation.tool, parsed.reason)
+                continue
+            return parsed
+        artifacts.append(parsed)
+    artifact = scan.consolidate(artifacts)
     if isinstance(artifact, Failure):
         return artifact
+    num_dropped = ignored.filter_findings(artifact)
+    if num_dropped:
+        logger.info("dropped %d finding(s) in git-ignored paths", num_dropped)
     artifact.record_invocations(provenance)
     return artifact

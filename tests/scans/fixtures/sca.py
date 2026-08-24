@@ -23,12 +23,12 @@ def verify(artifact: sarif.SarifDocument) -> None:
     # descriptions reference the vulnerable package by name.
     results = artifact.results()
     assert results, "expected at least one vulnerability finding"
-    rule_ids = {str(r.get("ruleId", "")) for r in results}
+    rule_ids = {r.rule_id for r in results}
     cves = {rid for rid in rule_ids if rid.startswith("CVE-")}
     assert cves, f"expected CVE rule IDs, got {sorted(rule_ids)}"
     # Verify the findings are for the planted package (Django), not noise: trivy and
     # grype carry the package name in the result message and/or the rule description.
-    text = " ".join(str(r.get("message", {}).get("text", "")) for r in results)
+    text = " ".join(r.message for r in results)
     for run in artifact.to_dict().get("runs", []):
         for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
             text += " " + str(rule.get("shortDescription", {}).get("text", ""))

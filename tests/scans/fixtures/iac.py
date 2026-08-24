@@ -20,8 +20,7 @@ def plant(repo: Path) -> None:
 def verify(artifact: sarif.SarifDocument) -> None:
     # checkov flags the Dockerfile: no HEALTHCHECK (CKV_DOCKER_2) and no USER
     # (CKV_DOCKER_3), both located in the planted Dockerfile.
-    by_rule = {result["ruleId"]: result for result in artifact.results()}
+    by_rule = {result.rule_id: result for result in artifact.results()}
     for rule in ("CKV_DOCKER_2", "CKV_DOCKER_3"):
         assert rule in by_rule, f"expected {rule}, got {sorted(by_rule)}"
-        location = by_rule[rule]["locations"][0]["physicalLocation"]["artifactLocation"]
-        assert location["uri"].endswith("Dockerfile"), location["uri"]
+        assert by_rule[rule].uri.endswith("Dockerfile"), by_rule[rule].uri

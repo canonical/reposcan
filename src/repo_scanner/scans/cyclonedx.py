@@ -11,21 +11,113 @@ component with which scanners reported it (via CycloneDX `properties`).
 import copy
 import json
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from repo_scanner.ioutil.sqlitedb import Table
-from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.ioutil.sqlitedb import Table, TableSchema
+from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
 
+# db schema for components table
+COMPONENTS = TableSchema(
+    name="components",
+    columns=("name", "version", "type", "purl", "scanners", "document"),
+    create=(
+        "CREATE TABLE components (name TEXT, version TEXT, type TEXT, purl TEXT, "
+        "scanners TEXT, document TEXT)"
+    ),
+    insert="INSERT INTO components VALUES (?, ?, ?, ?, ?, ?)",
+    select="SELECT * FROM components ORDER BY rowid",
+)
 
-def parse(text: str) -> "CycloneDxDocument | None":
-    """The CycloneDX document a tool printed, or None if `text` is not one.
+
+@dataclass(frozen=True)
+class CycloneDxDocument:
+    """A CycloneDX SBOM artifact (an Artifact of kind CYCLONEDX).
+
+    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`).
+    """
+
+    kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
+    content: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """The artifact as a CycloneDX document object."""
+        return self.content
+
+    def components(self) -> list[dict[str, Any]]:
+        """Every component object the SBOM lists."""
+        return self.content.get("components", [])
+
+    def count(self) -> int:
+        """The number of components the SBOM lists."""
+        return len(self.components())
+
+    def rows(self) -> tuple[list[str], list[list[str]]]:
+        """A table of components: name, version, and type."""
+        headers = ["COMPONENT", "VERSION", "TYPE"]
+        rows = [
+            [
+                str(component.get("name", "")),
+                str(component.get("version", "")),
+                str(component.get("type", "")),
+            ]
+            for component in self.components()
+        ]
+        return headers, rows
+
+    def records(self) -> Table:
+        """The components as a `COMPONENTS` table, for querying and reconstruction.
+
+        Each row has parsed columns (package URL, the merge's contributing scanners
+        from the `reposcan:scanner` properties) plus `document` (the component's raw
+        JSON, so a single component reconstructs).
+        """
+        components = [
+            (
+                str(component.get("name", "")),
+                str(component.get("version", "")),
+                str(component.get("type", "")),
+                str(component.get("purl", "")),
+                ",".join(
+                    str(prop.get("value", ""))
+                    for prop in component.get("properties", [])
+                    if prop.get("name") == SCANNER_PROPERTY
+                ),
+                json.dumps(component),
+            )
+            for component in self.components()
+        ]
+        return Table(COMPONENTS, components)
+
+    def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
+        """Record each executed tool command in the SBOM's CycloneDX `formulation`.
+
+        Each command is a workflow (a "scan" task) whose step holds the executed
+        command line and whose input holds the environment reposcan set.
+        """
+        if not invocations:
+            return
+        workflows = [
+            _workflow_object(index, inv) for index, inv in enumerate(invocations)
+        ]
+        self.content.setdefault("formulation", []).append(
+            {"bom-ref": "reposcan-scan", "workflows": workflows}
+        )
+
+
+def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
+    """The CycloneDX document in `text`, or None if `text` is not CycloneDX.
+
+    Pass `scanner` to annotate every component with the reposcan:scanner property.
 
     Args:
-        text: A tool's stdout, expected to be a CycloneDX JSON document.
+        text: JSON text expected to be a CycloneDX document.
+        scanner: The scanner that produced the SBOM, to annotate its components; None
+            to read the document back unchanged.
 
     Returns:
         A CycloneDxDocument if `text` is a CycloneDX JSON object, else None.
@@ -34,9 +126,22 @@ def parse(text: str) -> "CycloneDxDocument | None":
         document = json.loads(text)
     except json.JSONDecodeError:
         return None
-    if isinstance(document, dict) and document.get("bomFormat") == "CycloneDX":
-        return CycloneDxDocument(document)
-    return None
+    if not isinstance(document, dict) or document.get("bomFormat") != "CycloneDX":
+        return None
+    # syft always lists a component named "." (or "./") for the scanned
+    # directory, which is the source, not a dependency.
+    components = document.get("components")
+    if isinstance(components, list):
+        document["components"] = [
+            component
+            for component in components
+            if str(component.get("name", "")) not in (".", "./")
+        ]
+    sbom = CycloneDxDocument(document)
+    if scanner is not None:
+        for component in sbom.components():
+            _record_scanner(component, scanner)
+    return sbom
 
 
 def _component_key(component: dict[str, Any]) -> str:
@@ -90,110 +195,46 @@ def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
     return workflow
 
 
-def merge(sources: list[tuple[str, "CycloneDxDocument"]]) -> "CycloneDxDocument":
-    """Merge CycloneDX documents from several scanners into one deduped SBOM.
+def _merge_scanners(into: dict[str, Any], other: dict[str, Any]) -> None:
+    """Union `other`'s reposcan:scanner properties into `into` (no duplicates)."""
+    for prop in other.get("properties", []):
+        if prop.get("name") == SCANNER_PROPERTY:
+            _record_scanner(into, str(prop.get("value", "")))
 
-    Components with the same package URL (or type/name/version) are merged into
-    one, each annotated with a `reposcan:scanner` property per contributing tool.
+
+def merge(documents: Sequence[Artifact]) -> CycloneDxDocument:
+    """Consolidate one or more normalized CycloneDX SBOMs into one deduped SBOM.
+
+    Components with the same package URL (or type/name/version) are deduped.
 
     Args:
-        sources: (scanner_name, CycloneDxDocument) pairs.
+        documents: The normalized CycloneDX artifacts to combine.
 
     Returns:
         A single CycloneDxDocument (CycloneDX 1.5).
     """
     by_key: dict[str, dict[str, Any]] = {}
     order: list[str] = []
-    for scanner, document in sources:
-        for component in document.components():
+    for document in documents:
+        for component in document.to_dict().get("components", []):
             key = _component_key(component)
             if key in by_key:
-                _record_scanner(by_key[key], scanner)
+                _merge_scanners(by_key[key], component)
                 continue
             copied = copy.deepcopy(component)
-            _record_scanner(copied, scanner)
             by_key[key] = copied
             order.append(key)
-    return CycloneDxDocument(
-        {
-            "bomFormat": "CycloneDX",
-            "specVersion": "1.5",
-            "components": [by_key[key] for key in order],
-        }
-    )
-
-
-@dataclass(frozen=True)
-class CycloneDxDocument:
-    """A CycloneDX SBOM artifact (an Artifact of kind CYCLONEDX).
-
-    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`).
-    """
-
-    kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
-    content: dict[str, Any]
-
-    def to_dict(self) -> dict[str, Any]:
-        """The artifact as a CycloneDX document object."""
-        return self.content
-
-    def components(self) -> list[dict[str, Any]]:
-        """Every component object the SBOM lists."""
-        return self.content.get("components", [])
-
-    def count(self) -> int:
-        """The number of components the SBOM lists."""
-        return len(self.components())
-
-    def rows(self) -> tuple[list[str], list[list[str]]]:
-        """A table of components: name, version, and type."""
-        headers = ["COMPONENT", "VERSION", "TYPE"]
-        rows = [
-            [
-                str(component.get("name", "")),
-                str(component.get("version", "")),
-                str(component.get("type", "")),
-            ]
-            for component in self.components()
-        ]
-        return headers, rows
-
-    def records(self) -> Table:
-        """The components as a `components` table for querying and reconstruction.
-
-        Parsed columns (package URL, the merge's contributing scanners from the
-        `reposcan:scanner` properties) plus `document` (the component's raw JSON, so a
-        single component reconstructs). In document order.
-        """
-        columns = ("name", "version", "type", "purl", "scanners", "document")
-        components = [
-            (
-                str(component.get("name", "")),
-                str(component.get("version", "")),
-                str(component.get("type", "")),
-                str(component.get("purl", "")),
-                ",".join(
-                    str(prop.get("value", ""))
-                    for prop in component.get("properties", [])
-                    if prop.get("name") == SCANNER_PROPERTY
-                ),
-                json.dumps(component),
-            )
-            for component in self.components()
-        ]
-        return Table("components", columns, components)
-
-    def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
-        """Record each executed tool command in the SBOM's CycloneDX `formulation`.
-
-        Each command is a workflow (a "scan" task) whose step holds the executed
-        command line and whose input holds the environment reposcan set.
-        """
-        if not invocations:
-            return
-        workflows = [
-            _workflow_object(index, inv) for index, inv in enumerate(invocations)
-        ]
-        self.content.setdefault("formulation", []).append(
-            {"bom-ref": "reposcan-scan", "workflows": workflows}
-        )
+    content: dict[str, Any] = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "components": [by_key[key] for key in order],
+    }
+    # Carry every input's recorded formulation (tool provenance) onto the merged SBOM.
+    formulation = [
+        entry
+        for document in documents
+        for entry in document.to_dict().get("formulation", [])
+    ]
+    if formulation:
+        content["formulation"] = formulation
+    return CycloneDxDocument(content)

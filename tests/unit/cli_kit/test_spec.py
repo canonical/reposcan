@@ -81,3 +81,32 @@ def test_check_requires_enforces_a_dependency_only_when_the_option_is_set() -> N
     assert (
         check_requires(params, {"mode": "a", "depth": 5}) == "--depth requires --mode=b"
     )
+
+
+class _WithExtra(Action):
+    name = "y"
+    help = "a command that folds in a data-declared option via extra_options"
+    depth: int | None = option(convert=int)
+    extra_options = (option(name="flavor", choices=("plain", "rich"), default="plain"),)
+
+
+def test_extra_options_are_folded_in_beside_own_parameters() -> None:
+    aggregated = {p.name: p for p in params_of(_WithExtra)}
+    assert {"depth", "flavor"} <= set(aggregated)  # own attribute plus the extra
+    assert aggregated["flavor"].flags == ("--flavor",)  # data name infers the long flag
+    assert vars(_WithExtra(flavor="rich"))["flavor"] == "rich"  # populates self.<name>
+
+
+class _AnyOf(Action):
+    name = "z"
+    help = "a command whose option requires any of several, or membership in a list"
+    picks: list[str] = positional(many=True)
+    detail: int | None = option(convert=int, requires={"picks": ("a", "b")})
+
+
+def test_check_requires_supports_any_of_and_list_membership() -> None:
+    params = params_of(_AnyOf)
+    # `detail` requires that `picks` (a list) contain "a" or "b".
+    assert check_requires(params, {"picks": ["a", "c"], "detail": 1}) is None
+    error = check_requires(params, {"picks": ["c"], "detail": 1})
+    assert error == "--detail requires a or b among picks"

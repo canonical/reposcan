@@ -14,12 +14,13 @@ the message shapes differ.
 """
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
-from repo_scanner.execution.process import Failure
+from repo_scanner.execution.context import ExecutionContext
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.base import DependencyResolvingScan
-from repo_scanner.scans.model import ToolInvocation, ToolResult
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 from repo_scanner.tools.registry import TOOLS
 
 
@@ -28,11 +29,13 @@ class ScaScan(DependencyResolvingScan):
 
     name = "sca"
     help = "Dependency vulnerabilities (trivy, grype, govulncheck)."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The trivy, grype, and govulncheck invocations for `target`.
 
         Args:
+            ctx: The started context (unused).
             target: The repository path as seen in the execution context.
 
         Returns:
@@ -66,27 +69,25 @@ class ScaScan(DependencyResolvingScan):
             ),
         ]
 
-    def consolidate(self, results: list[ToolResult]) -> sarif.SarifDocument | Failure:
-        """Normalize each tool's output to SARIF and merge into one document.
+    def parse(
+        self, tool: str, output: ExecResult, target: str
+    ) -> sarif.SarifDocument | Failure:
+        """Normalize one tool's output to SARIF (trivy/grype SARIF, govulncheck JSON).
 
         Args:
-            results: The results of the invocations that ran (govulncheck may be
-                absent if it did not apply).
+            tool: The scanner that produced `output`.
+            output: The tool's result.
+            target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A merged SARIF artifact, or a Failure if a tool produced no usable
-            output.
+            A normalized SARIF artifact, or a Failure if the output was not usable.
         """
-        sources = []
-        for result in results:
-            if result.tool == "govulncheck":
-                document = _govulncheck_sarif(result.output.stdout)
-            else:
-                document = sarif.parse(result.output.stdout)
-            if document is None:
-                return Failure(reason=f"{result.tool} did not produce usable output")
-            sources.append((result.tool, document))
-        return sarif.merge(sources)
+        if tool == "govulncheck":
+            return _govulncheck_sarif(output.stdout, target)
+        document = sarif.parse(output.stdout, tool, target)
+        if document is None:
+            return Failure(reason=f"{tool} did not produce usable output")
+        return document
 
 
 def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
@@ -98,7 +99,7 @@ def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
     return None
 
 
-def _govulncheck_sarif(stdout: str) -> sarif.SarifDocument:
+def _govulncheck_sarif(stdout: str, target: str) -> sarif.SarifDocument:
     """Convert govulncheck's JSON message stream into a SARIF document.
 
     The stream carries OSV vulnerability records and findings. A finding that
@@ -106,6 +107,7 @@ def _govulncheck_sarif(stdout: str) -> sarif.SarifDocument:
 
     Args:
         stdout: govulncheck's `-json` output.
+        target: The scan root, used to normalize finding uris at ingestion.
 
     Returns:
         A SarifDocument (possibly with no results).
@@ -137,6 +139,10 @@ def _govulncheck_sarif(stdout: str) -> sarif.SarifDocument:
             continue  # report only source-reaching findings, once per vulnerability
         seen.add(osv_id)
         summary = str(osvs.get(osv_id, {}).get("summary") or osv_id)
-        results.append(sarif.SarifResult(osv_id, summary, position[0], position[1]))
+        results.append(
+            sarif.SarifResult.build(
+                osv_id, summary, position[0], position[1], "govulncheck", target
+            )
+        )
     version = TOOLS["govulncheck"].version
     return sarif.SarifDocument.from_results("govulncheck", version, results)

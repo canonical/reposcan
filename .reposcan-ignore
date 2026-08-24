@@ -1,0 +1,16 @@
+# .reposcan-ignore
+#   <tool>  <ruleId>  <path-glob>
+
+# trufflehog flags sha256 hashes in lockfile due to nearby mention of 'sentry'
+trufflehog  SentryToken  src/repo_scanner/tools/locks/*.txt
+
+# test fixtures
+trufflehog AWS tests/scans/fixtures/*
+
+# treat the following as verified action creators
+poutine  github_action_from_unverified_creator_used  **  "uses: canonical/"
+poutine  github_action_from_unverified_creator_used  **  "uses: astral-sh/"
+
+# silence zizmor and semgrep warnings about unpinned tag on first-party action
+zizmor   zizmor/unpinned-uses  .github/workflows/*.yml  "uses: canonical/repo-scanner@main"
+semgrep  *mutable-action-tag   .github/workflows/*.yml  "uses: canonical/repo-scanner@main"

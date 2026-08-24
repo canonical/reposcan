@@ -56,6 +56,7 @@ class Param(Generic[T]):
     def __init__(
         self,
         *,
+        name: str = "",
         flags: tuple[str, ...] = (),
         help: str = "",
         default: Any = None,
@@ -66,9 +67,9 @@ class Param(Generic[T]):
         many: bool = False,
         required: bool = True,
         is_flag: bool = False,
-        requires: dict[str, str] | None = None,
+        requires: dict[str, str | tuple[str, ...]] | None = None,
     ) -> None:
-        self.name = ""  # set by __set_name__ from the class-attribute name
+        self.name = name  # else set by __set_name__ from the class-attribute name
         self.flags = flags
         self.help = help
         self.default = default
@@ -79,9 +80,12 @@ class Param(Generic[T]):
         self.many = many
         self.required = required
         self.is_flag = is_flag
-        # A cross-option dependency: other-parameter -> the value it must have for
-        # this one to be valid, enforced by `check_requires` only when this is set.
+        # A cross-parameter dependency: another parameter -> the value(s) it must have
+        # (or, for a list-valued parameter, contain) for this one to be valid; a tuple
+        # means any-of. Enforced by `check_requires` only when this parameter is set.
         self.requires = requires
+        if name:
+            self._ensure_long_flag()
 
     def __set_name__(self, owner: type, name: str) -> None:
         """Capture attribute name.
@@ -89,14 +93,17 @@ class Param(Generic[T]):
         Magic method called once during class definition; captures the class attribute
         name that this Param instance is assigned to.
         """
-        self.name = name
-        # An option/flag's long spelling is inferred from its attribute name; the
-        # `flags` passed to the constructor are only the extra spellings (short forms,
-        # aliases). Positionals and remainders have no flags.
-        if not (self.positional or self.remainder):
-            long = "--" + name.replace("_", "-")
-            if long not in self.flags:
-                self.flags = (*self.flags, long)
+        if not self.name:
+            self.name = name
+        self._ensure_long_flag()
+
+    def _ensure_long_flag(self) -> None:
+        """Add the `--<name>` spelling for an option/flag, if not already present."""
+        if self.positional or self.remainder:
+            return
+        long = "--" + self.name.replace("_", "-")
+        if long not in self.flags:
+            self.flags = (*self.flags, long)
 
     @property
     def takes_cli_value(self) -> bool:
@@ -119,21 +126,24 @@ def _as_flags(extra_flags: str | Iterable[str] | None) -> tuple[str, ...]:
 def option(
     extra_flags: str | Iterable[str] | None = None,
     *,
+    name: str = "",
     default: T | None = None,
     choices: tuple[T, ...] | None = None,
     convert: Callable[[str], T] | None = None,
     help: str = "",
-    requires: dict[str, str] | None = None,
+    requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
     """A value option that consumes a following argument (`--backend docker`).
 
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
     iterable: `verbosity: str = option("-v", ...)` accepts both `-v` and
-    `--verbosity`. `requires` maps another parameter to the value it must have for
-    this option to be valid (checked by `check_requires`).
+    `--verbosity`. Pass `name` to declare the option as data rather than as a class
+    attribute. `requires` maps another parameter to the value(s) it must have for
+    this option to be valid.
     """
     return Param(
+        name=name,
         flags=_as_flags(extra_flags),
         default=default,
         choices=choices,
@@ -146,17 +156,20 @@ def option(
 def flag(
     extra_flags: str | Iterable[str] | None = None,
     *,
+    name: str = "",
     help: str = "",
-    requires: dict[str, str] | None = None,
+    requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
     """A boolean switch that takes no value, defaulting False.
 
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
-    iterable. `requires` maps another parameter to the value it must have for this
-    flag to be valid (checked by `check_requires`).
+    iterable. Pass `name` to declare the flag as data rather than as a class
+    attribute. `requires` maps another parameter to the value(s) it must have for this
+    flag to be valid.
     """
     return Param(
+        name=name,
         flags=_as_flags(extra_flags),
         default=False,
         is_flag=True,
@@ -167,19 +180,22 @@ def flag(
 
 def positional(
     help: str = "",
+    name: str = "",
     default: T | None = None,
     convert: Callable[[str], T] | None = None,
     many: bool = False,
     required: bool = True,
-    requires: dict[str, str] | None = None,
+    requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
     """A positional argument (command-line only).
 
     `many=True` collects zero or more values into a list; `required=False` makes a
-    single positional optional (falling back to `default`). `requires` maps another
-    parameter to the value it must have for this one to be valid.
+    single positional optional (falling back to `default`). Pass `name` to declare it
+    as data rather than as a class attribute. `requires` maps another parameter to the
+    value(s) it must have for this one to be valid.
     """
     return Param(
+        name=name,
         positional=True,
         many=many,
         required=required,
@@ -203,33 +219,68 @@ def params_of(cls: type) -> list[Param]:
 
     Base classes come first (so the flow-down globals lead), then the class's own
     parameters; a name declared again in a subclass overrides the inherited one.
+    Finally any `extra_options` are appended, unless a name conflict is found.
     """
     found: dict[str, Param] = {}
     for klass in reversed(cls.__mro__):
         for name, value in vars(klass).items():
             if isinstance(value, Param):
                 found[name] = value
+    for param in getattr(cls, "extra_options", ()):
+        found.setdefault(param.name, param)
     return list(found.values())
 
 
 def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | None:
-    """The first unmet cross-option requirement in `params`, or None.
+    """The first unmet cross-parameter requirement in `params`, or None.
 
-    A parameter's `requires` maps another parameter to the value it must have. It is
+    A parameter's `requires` maps another parameter to the value(s) it must have. It is
     enforced only when the parameter is actually set (its resolved value differs from
-    its default), so an unset option imposes no requirement.
+    its default), so an unset option imposes no requirement. A required value may be a
+    tuple of allowed values. When the value of the targeted parameter is a list, the
+    check passes if any of the required values appears in the list.
     """
+    params = list(params)
+    by_name = {param.name: param for param in params}
     for param in params:
         if not param.requires:
             continue
         if values.get(param.name) == param.default:
             continue  # not set, so its requirements do not apply
-        flag = "--" + param.name.replace("_", "-")
-        for required_name, required_value in param.requires.items():
-            if values.get(required_name) != required_value:
-                needs = "--" + required_name.replace("_", "-")
-                return f"{flag} requires {needs}={required_value}"
+        for required_name, required in param.requires.items():
+            target = values.get(required_name)
+            allowed = required if isinstance(required, tuple) else (required,)
+            if isinstance(target, (list, tuple, set)):
+                satisfied = any(value in target for value in allowed)
+            else:
+                satisfied = target in allowed
+            if satisfied:
+                continue
+            return _requirement_error(
+                param, by_name.get(required_name), required, target
+            )
     return None
+
+
+def _requirement_error(
+    param: Param,
+    required_param: Param | None,
+    required: str | tuple[str, ...],
+    target: Any,
+) -> str:
+    """A message for an unmet requirement of `param` on `required_param`."""
+    this = param.flags[-1] if param.flags else param.name
+    allowed = required if isinstance(required, tuple) else (required,)
+    wanted = " or ".join(str(value) for value in allowed)
+    required_name = required_param.name if required_param else ""
+    if isinstance(target, (list, tuple, set)):
+        if required_param is not None and required_param.positional:
+            where = required_name
+        else:
+            where = "--" + required_name.replace("_", "-")
+        return f"{this} requires {wanted} among {where}"
+    needs = "--" + required_name.replace("_", "-")
+    return f"{this} requires {needs}={wanted}"
 
 
 class Action:
@@ -240,14 +291,18 @@ class Action:
     `self.<name>` as an ordinary typed attribute -- both its own parameters and the
     flow-down globals declared on the base.
 
-    An action is a value-object: construct it directly with parameter values
-    (`SecretsScan(mode="filesystem")`, the rest falling back to their defaults),
-    and the engine constructs it the same way, from the resolved values. So `run`
-    (and any method it calls) can be exercised without the CLI.
+    Construct an Action instance like a dataclass (specify attribute values with
+    kwargs). Unspecified parameters/attributes fall back to their defaults.
+
+    In addition to typed class attribute parameters, a command may contribute
+    parameters as data via `extra_options`. `params_of` folds them in, so
+    they parse, resolve, and populate `self.<name>` like attribute-based parameters.
+    This lets a command aggregate options dynamically.
     """
 
     name: ClassVar[str]
     help: ClassVar[str]
+    extra_options: ClassVar[tuple[Param, ...]] = ()
 
     def __init__(self, **values: Any) -> None:
         params = params_of(type(self))

@@ -7,22 +7,27 @@ semgrep emits SARIF directly (`--sarif`), so this scan runs it over the target w
 its default ruleset and passes the SARIF through as the artifact.
 """
 
-from repo_scanner.execution.process import Failure
+from typing import ClassVar
+
+from repo_scanner.execution.context import ExecutionContext
+from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import ScanAction
-from repo_scanner.scans.model import ToolInvocation, ToolResult
+from repo_scanner.scans.base import Scan
+from repo_scanner.scans.model import ArtifactKind, ToolInvocation
 
 
-class SastScan(ScanAction):
+class SastScan(Scan):
     """Scan a repository's source for security issues with semgrep."""
 
     name = "sast"
     help = "Static analysis of source with semgrep."
+    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
-    def invocations(self, target: str) -> list[ToolInvocation]:
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The single semgrep invocation for `target`.
 
         Args:
+            ctx: The started context (unused).
             target: The repository path as seen in the execution context.
 
         Returns:
@@ -44,19 +49,20 @@ class SastScan(ScanAction):
         ]
         return [ToolInvocation("semgrep", args, ok_codes=(0, 1))]
 
-    def consolidate(self, results: list[ToolResult]) -> sarif.SarifDocument | Failure:
-        """Merge each result's SARIF output into one annotated artifact.
+    def parse(
+        self, tool: str, output: ExecResult, target: str
+    ) -> sarif.SarifDocument | Failure:
+        """Parse and normalize one semgrep SARIF result.
 
         Args:
-            results: The semgrep invocation results.
+            tool: The scanner that produced `output` (semgrep).
+            output: The tool's result (SARIF on stdout).
+            target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A SARIF artifact, or a Failure if a result did not produce SARIF.
+            A normalized SARIF artifact, or a Failure if the output was not SARIF.
         """
-        sources = []
-        for result in results:
-            document = sarif.parse(result.output.stdout)
-            if document is None:
-                return Failure(reason=f"{result.tool} did not produce SARIF output")
-            sources.append((result.tool, document))
-        return sarif.merge(sources)
+        document = sarif.parse(output.stdout, tool, target)
+        if document is None:
+            return Failure(reason=f"{tool} did not produce SARIF output")
+        return document

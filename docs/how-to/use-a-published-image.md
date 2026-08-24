@@ -11,13 +11,13 @@ With no `image` set, reposcan pulls the canonical published image, pinned by
 digest so its content is verified on every pull:
 
 ```
-reposcan scan sbom ./repo        # pulls the default image on first use
+reposcan sbom ./repo             # pulls the default image on first use
 ```
 
 The `canonical` shorthand names the same image explicitly:
 
 ```
-reposcan --image canonical scan sbom ./repo
+reposcan --image canonical sbom ./repo
 ```
 
 The LXD backend always builds locally.
@@ -45,7 +45,7 @@ reposcan config unset image
 Pass `--image build` to build the tool image locally instead:
 
 ```
-reposcan --image build scan sbom ./repo      # build, then scan
+reposcan --image build sbom ./repo           # build, then inventory
 reposcan config set image build              # persisted
 ```
 
