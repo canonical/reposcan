@@ -21,7 +21,9 @@ stored order) back into the metadata shell.
 import copy
 import json
 from collections.abc import Sequence
+from typing import Any
 
+from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil import sqlitedb
 from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans import cyclonedx, sarif
@@ -38,19 +40,37 @@ _METADATA = TableSchema(
 )
 
 
-def write(artifacts: Sequence[Artifact], path: str) -> None:
+def write(artifacts: Sequence[Artifact], path: str) -> Failure | None:
     """Write `artifacts` to a new sqlite report database at `path`.
 
     Each artifact contributes a `metadata` row (its kind plus its emptied shell) and
     its own entry table (`findings` for SARIF, `components` for CycloneDX). A report
     holds at most one artifact per kind, so those entry-table names never collide.
+
+    Every table goes in one transaction, so a report is either whole or absent.
+
+    Returns:
+        None on success, or a Failure if the database could not be opened.
     """
-    metadata_rows = [
-        (artifact.kind.value, json.dumps(_shell(artifact))) for artifact in artifacts
-    ]
-    sqlitedb.write(path, Table(_METADATA, metadata_rows))
-    for artifact in artifacts:
-        sqlitedb.write(path, artifact.records())
+    session, error = sqlitedb.connect(path)
+    if session is None:
+        return Failure(reason=error or f"could not write {path}")
+    with session:
+        session.create(_METADATA)
+        session.insert(
+            Table(
+                _METADATA,
+                [
+                    (artifact.kind.value, json.dumps(_shell(artifact)))
+                    for artifact in artifacts
+                ],
+            )
+        )
+        for artifact in artifacts:
+            records = artifact.records()
+            session.create(records.schema)
+            session.insert(records)
+    return None
 
 
 def read(path: str) -> list[Artifact]:
@@ -58,32 +78,36 @@ def read(path: str) -> list[Artifact]:
 
     Empty if `path` is not a reposcan report database (no `metadata` table).
     """
-    metadata = sqlitedb.read(path, _METADATA)
-    if metadata is None:
+    session, _ = sqlitedb.connect(path)
+    if session is None:
         return []
     artifacts: list[Artifact] = []
-    for kind, shell_json in metadata.rows:
-        shell = json.loads(shell_json)
-        if kind == ArtifactKind.SARIF.value:
-            findings = sqlitedb.read(path, sarif.FINDINGS)
-            for run, document in _column(findings, "run", "document"):
-                shell["runs"][int(run)]["results"].append(json.loads(document))
-            artifacts.append(sarif.SarifDocument(shell))
-        elif kind == ArtifactKind.CYCLONEDX.value:
-            components = sqlitedb.read(path, cyclonedx.COMPONENTS)
-            shell["components"] = [
-                json.loads(doc) for (doc,) in _column(components, "document")
-            ]
-            artifacts.append(cyclonedx.CycloneDxDocument(shell))
+    with session:
+        if not session.has_table(_METADATA.name):
+            return []
+        for kind, shell_json in session.query(_METADATA.select):
+            shell = json.loads(shell_json)
+            if kind == ArtifactKind.SARIF.value:
+                rows = session.query(sarif.FINDINGS.select)
+                for run, document in _column(rows, sarif.FINDINGS, "run", "document"):
+                    shell["runs"][int(run)]["results"].append(json.loads(document))
+                artifacts.append(sarif.SarifDocument(shell))
+            elif kind == ArtifactKind.CYCLONEDX.value:
+                rows = session.query(cyclonedx.COMPONENTS.select)
+                shell["components"] = [
+                    json.loads(document)
+                    for (document,) in _column(rows, cyclonedx.COMPONENTS, "document")
+                ]
+                artifacts.append(cyclonedx.CycloneDxDocument(shell))
     return artifacts
 
 
-def _column(table: Table | None, *names: str) -> list[tuple[str, ...]]:
-    """The named columns of each row, looked up by position in the table's schema."""
-    if table is None:
-        return []
-    indexes = [table.schema.columns.index(name) for name in names]
-    return [tuple(row[index] for index in indexes) for row in table.rows]
+def _column(
+    rows: Sequence[tuple[Any, ...]], schema: TableSchema, *names: str
+) -> list[tuple[Any, ...]]:
+    """The named columns of each row, looked up by position in `schema`."""
+    indexes = [schema.columns.index(name) for name in names]
+    return [tuple(row[index] for index in indexes) for row in rows]
 
 
 def _shell(artifact: Artifact) -> dict:

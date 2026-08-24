@@ -187,8 +187,7 @@ def _emit_sqlite(artifacts: Sequence[Artifact], output: str | None) -> Failure |
         )
     except OSError as exc:
         return Failure(reason=f"could not write {output}: {exc}")
-    reportdb.write(artifacts, output)
-    return None
+    return reportdb.write(artifacts, output)
 
 
 def _table(artifact: Artifact, limit: int, wrap: int) -> str:
