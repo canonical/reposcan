@@ -40,7 +40,13 @@ def verify(artifact: sarif.SarifDocument) -> None:
     rules = [result.rule_id for result in results]
     aws = [result for result in results if result.rule_id == "AWS"]
     assert aws, f"expected an AWS finding, got rules {rules}"
-    assert aws[0].uri.endswith("config.env"), aws[0].uri
+    assert aws[0].uri.endswith("config.env"), (
+        f"{aws[0].uri} does not end with config.env"
+    )
+    # the detected secret is fingerprinted for reposcan's own cross-run identity
+    assert aws[0].result.get("fingerprints", {}).get("secretHash"), (
+        f"secret result does not contain secretHash: {aws[0].result}"
+    )
 
 
 def _git(repo: Path, *args: str) -> None:

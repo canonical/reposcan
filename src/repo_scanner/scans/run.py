@@ -149,7 +149,7 @@ def run_scan(
     run = sarif.merge_runs(runs)
     # trailing slash required; otherwise self.name is interpreted as a run id
     run.set_automation_id(f"reposcan/{scan.name}/")
-    scan.add_fingerprints(run, ctx, target)
+    sarif.add_primarylocationlinehash(run, ctx, target)
     num_dropped = ignored.drop_ignored(run)
     if num_dropped:
         logger.info("dropped %d finding(s) in git-ignored paths", num_dropped)

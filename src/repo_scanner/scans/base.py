@@ -54,15 +54,6 @@ class SecurityScan(Scan):
         """
         raise NotImplementedError
 
-    def add_fingerprints(
-        self, run: sarif.SarifRun, ctx: ExecutionContext, target: str
-    ) -> None:
-        """Add SARIF fingerprints to `run`.
-
-        Override the method for scans that require a different fingerprint.
-        """
-        sarif.add_primarylocationlinehash(run, ctx, target)
-
 
 class DependencyResolvingScan(Scan):
     """A scan that resolves the dependency tree before scanning (sbom, sca).

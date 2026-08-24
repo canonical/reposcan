@@ -88,12 +88,6 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
             return Failure(reason=f"{tool} did not produce usable output")
         return run
 
-    def add_fingerprints(
-        self, run: sarif.SarifRun, ctx: ExecutionContext, target: str
-    ) -> None:
-        """No fingerprints: a sca finding's rule id identifies its vulnerability."""
-        return
-
 
 def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
     """The first source position in a govulncheck finding's trace, or None."""

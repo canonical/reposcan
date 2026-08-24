@@ -94,30 +94,3 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
 def test_create_run_fails_when_a_sarif_tool_output_is_unusable() -> None:
     result = ScaScan().create_run("grype", ExecResult(0, "not sarif", ""), "/scan/acme")
     assert isinstance(result, Failure)
-
-
-def test_sca_findings_get_no_fingerprints() -> None:
-    # Unlike SAST, sca overrides add_fingerprints to a no-op: a dependency finding's
-    # rule id already identifies its vulnerability, so no primaryLocationLineHash.
-    location = {"artifactLocation": {"uri": "go.mod"}, "region": {"startLine": 1}}
-    trivy = json.dumps(
-        {
-            "version": "2.1.0",
-            "runs": [
-                {
-                    "results": [
-                        {
-                            "ruleId": "CVE-1",
-                            "locations": [{"physicalLocation": location}],
-                        }
-                    ]
-                }
-            ],
-        }
-    )
-    scan = ScaScan()
-    run = scan.create_run("trivy", ExecResult(0, trivy, ""), "/scan/acme")
-    assert not isinstance(run, Failure)
-    scan.add_fingerprints(run, _NO_CTX, "/scan/acme")
-    (finding,) = run.results()
-    assert "partialFingerprints" not in finding.result

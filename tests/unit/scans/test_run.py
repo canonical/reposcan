@@ -3,6 +3,7 @@
 
 """Tests for the scan driver (repo_scanner.scans.run.run_scan)."""
 
+import hashlib
 from collections.abc import Mapping, Sequence
 
 from repo_scanner.execution.context import ExecutionContext
@@ -74,6 +75,30 @@ class _Scan(SecurityScan):
     def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
         self.seen.append(output)
         return sarif.SarifRun({"results": []})
+
+
+class _ScanWithFinding(SecurityScan):
+    # create_run yields one finding at app.py:2 so run_scan has a finding to hash.
+    name = "faux"
+
+    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+        return [ToolInvocation("trufflehog", ["--version"])]
+
+    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+        finding = sarif.SarifResult.build("R", "m", "app.py", 2, tool, target)
+        return sarif.SarifRun.from_results(tool, "1.0", [finding])
+
+
+def test_run_scan_adds_the_github_line_hash_to_every_scans_findings() -> None:
+    # The fixed result stands in for the tool run and the source read (cat) alike, so
+    # the finding's line 2 hashes to a primaryLocationLineHash. run_scan applies this to
+    # every scan now -- there is no per-scan opt-out.
+    ctx = _FakeContext(ExecResult(0, "import os\nSECRET = 'x'\n", ""))
+    run = run_scan(_ScanWithFinding(), ctx, "/scan/acme", "/opt/reposcan")
+    assert not isinstance(run, Failure)
+    (finding,) = run.results()
+    expected = hashlib.sha256(b"SECRET = 'x'").hexdigest()[:16]
+    assert finding.result["partialFingerprints"]["primaryLocationLineHash"] == expected
 
 
 def test_run_scan_runs_each_tool_at_its_installed_path_and_consolidates() -> None:

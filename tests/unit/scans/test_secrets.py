@@ -3,6 +3,7 @@
 
 """Tests for the secrets scan (repo_scanner.scans.secrets)."""
 
+import hashlib
 import json
 from typing import cast
 
@@ -99,6 +100,37 @@ def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
     assert aws.line == 10
     assert aws.scanners == ["trufflehog"]  # normalized on ingest
     assert github.rule_id == "GitHub" and github.level == "warning"  # unverified
+
+
+def test_create_run_fingerprints_each_finding_by_its_secret() -> None:
+    output = (
+        json.dumps(
+            {
+                "SourceMetadata": {"Data": {"Git": {"file": "a.py", "line": 1}}},
+                "DetectorName": "AWS",
+                "Raw": "AKIAEXAMPLE",
+                "RawV2": "AKIAEXAMPLE:secretpart",  # preferred when present
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "SourceMetadata": {"Data": {"Git": {"file": "b.py", "line": 2}}},
+                "DetectorName": "GitHub",
+                "Raw": "ghp_example",  # no RawV2 -> Raw is hashed
+            }
+        )
+        + "\n"
+    )
+    run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
+    aws, github = run.results()
+    aws_hash = hashlib.sha256(b"AKIAEXAMPLE:secretpart").hexdigest()
+    assert aws.result["fingerprints"] == {"secretHash": aws_hash}
+    assert github.result["fingerprints"]["secretHash"] == (
+        hashlib.sha256(b"ghp_example").hexdigest()
+    )
+    # the secret hash is a complete fingerprint, not a GitHub partialFingerprint
+    assert "partialFingerprints" not in aws.result
 
 
 def test_merge_runs_combines_findings_across_tool_runs() -> None:

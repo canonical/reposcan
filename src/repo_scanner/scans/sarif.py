@@ -126,6 +126,14 @@ class SarifResult:
         """A dedup key: the finding's rule and primary location."""
         return (self.rule_id, self.uri, self.line)
 
+    def add_fingerprint(self, name: str, value: str) -> None:
+        """Record a complete fingerprint.
+
+        A `fingerprints` entry is a stable identity, fully identifying the finding.
+        Not used or recognized by GitHub's code-scanning.
+        """
+        self.result.setdefault("fingerprints", {})[name] = value
+
     def _physical_location(self) -> dict[str, Any]:
         """The primary location's physicalLocation dict, or an empty one."""
         locations = self.result.get("locations") or []

@@ -8,6 +8,7 @@ target -- the git history by default, or the working-tree files in filesystem mo
 -- and turns each finding into a SARIF result.
 """
 
+import hashlib
 import json
 from typing import Any
 
@@ -111,15 +112,24 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
 
 
 def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.SarifResult:
-    """Build a SARIF finding from one trufflehog finding."""
+    """Build a SARIF finding from one trufflehog finding.
+
+    The detected secret's hash is recorded as a `fingerprints.secretHash`.
+    """
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
     uri, line = _finding_location(finding)
     message = f"{detector} secret detected" + (" (verified)" if verified else "")
     level = "error" if verified else "warning"
-    return sarif.SarifResult.build(
+    result = sarif.SarifResult.build(
         detector, message, uri, line, scanner, target, level=level
     )
+    # RawV2, where a detector sets it, is a more complete/unique form than Raw.
+    secret = finding.get("RawV2") or finding.get("Raw") or ""
+    if secret:
+        digest = hashlib.sha256(secret.encode("utf-8", "surrogatepass")).hexdigest()
+        result.add_fingerprint("secretHash", digest)
+    return result
 
 
 def _finding_location(finding: dict[str, Any]) -> tuple[str, int]:
