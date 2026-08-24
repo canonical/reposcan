@@ -8,7 +8,6 @@ from typing import cast
 
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.sast import SastScan
 
 
@@ -19,26 +18,25 @@ def test_invocations_run_semgrep_producing_sarif() -> None:
     assert inv.args[-1] == "/scan/acme"  # the target is the last argument
 
 
-def test_parse_normalizes_semgrep_sarif() -> None:
-    # parse ingests one semgrep run's SARIF and normalizes it (merge is covered in
-    # test_workflow); the semgrep finding survives with its scanner annotation.
+def test_create_run_normalizes_semgrep_sarif() -> None:
+    # create_run ingests one semgrep run's SARIF and normalizes it; the semgrep
+    # finding survives with its scanner annotation.
     document = {
         "version": "2.1.0",
         "runs": [{"results": [{"ruleId": "x", "level": "error"}]}],
     }
-    result = SastScan().parse(
+    run = SastScan().create_run(
         "semgrep", ExecResult(0, json.dumps(document), ""), "/scan/acme"
     )
-    assert not isinstance(result, Failure)
-    assert result.kind is ArtifactKind.SARIF
-    findings = result.results()
+    assert not isinstance(run, Failure)
+    findings = run.results()
     assert len(findings) == 1
     assert findings[0].rule_id == "x" and findings[0].level == "error"
     assert findings[0].scanners == ["semgrep"]  # annotated on ingest
 
 
-def test_parse_rejects_non_sarif_output() -> None:
-    result = SastScan().parse(
+def test_create_run_rejects_non_sarif_output() -> None:
+    result = SastScan().create_run(
         "semgrep", ExecResult(0, "not sarif output", ""), "/scan/acme"
     )
     assert isinstance(result, Failure)

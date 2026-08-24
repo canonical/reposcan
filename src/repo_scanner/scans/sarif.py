@@ -4,14 +4,19 @@
 """Build/parse SARIF 2.1.0 documents from scan findings."""
 
 import copy
+import hashlib
 import json
+import logging
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from repo_scanner.execution.context import ExecutionContext, read_file
 from repo_scanner.ioutil.sqlitedb import Table, TableSchema
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 
@@ -128,6 +133,63 @@ class SarifResult:
 
 
 @dataclass(frozen=True)
+class SarifRun:
+    """A SARIF run.
+
+    `from_results` builds a run from `SarifResult`s; the plain `SarifRun(dict)`
+    constructor is a view over an existing run dict.
+    """
+
+    run: dict[str, Any]
+
+    @classmethod
+    def from_results(
+        cls, scanner: str, version: str, results: list[SarifResult]
+    ) -> "SarifRun":
+        """Assemble findings into a run driven by `scanner`.
+
+        Args:
+            scanner: The scanner that produced the findings (the run's driver).
+            version: The scanner's version.
+            results: The normalized findings the run reports.
+        """
+        driver = {"name": scanner, "version": version}
+        return cls(
+            {
+                "tool": {"driver": driver},
+                "results": [finding.result for finding in results],
+            }
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The run as a SARIF run object."""
+        return self.run
+
+    def results(self) -> list[SarifResult]:
+        """The run's findings, each as a SarifResult."""
+        return [SarifResult(result) for result in self.run.get("results", [])]
+
+    @property
+    def rules(self) -> list[dict[str, Any]]:
+        """The run's tool-driver rule objects (rule metadata), or an empty list."""
+        return self.run.get("tool", {}).get("driver", {}).get("rules", [])
+
+    @property
+    def invocations(self) -> list[dict[str, Any]]:
+        """The run's recorded tool invocations, or an empty list."""
+        return self.run.get("invocations", [])
+
+    def set_automation_id(self, automation_id: str) -> None:
+        """Set the run's `automationDetails.id` (its code-scanning category)."""
+        self.run["automationDetails"] = {"id": automation_id}
+
+    def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
+        """Record each executed tool command under the run's SARIF `invocations`."""
+        if invocations:
+            self.run["invocations"] = [_invocation_object(inv) for inv in invocations]
+
+
+@dataclass(frozen=True)
 class SarifDocument:
     """A SARIF 2.1.0 document."""
 
@@ -135,26 +197,16 @@ class SarifDocument:
     content: dict[str, Any]
 
     @classmethod
-    def from_results(
-        cls, scanner: str, version: str, results: list[SarifResult]
-    ) -> "SarifDocument":
-        """Assemble findings into a document.
+    def from_runs(cls, runs: Sequence[SarifRun]) -> "SarifDocument":
+        """Assemble runs into a document, keeping each as its own SARIF run.
 
         Args:
-            scanner: The scanner that produced the findings.
-            version: The scanner's version.
-            results: The normalized findings the run reports.
+            runs: The runs to report together (e.g. each scan's consolidated run).
         """
-        driver = {"name": scanner, "version": version}
         content = {
             "$schema": SCHEMA,
             "version": "2.1.0",
-            "runs": [
-                {
-                    "tool": {"driver": driver},
-                    "results": [finding.result for finding in results],
-                }
-            ],
+            "runs": [run.to_dict() for run in runs],
         }
         return cls(content)
 
@@ -162,13 +214,13 @@ class SarifDocument:
         """The artifact as a SARIF 2.1.0 document object."""
         return self.content
 
+    def runs(self) -> list[SarifRun]:
+        """The document's runs, each as a SarifRun."""
+        return [SarifRun(run) for run in self.content.get("runs", [])]
+
     def results(self) -> list[SarifResult]:
         """Every finding as a SarifResult, flattened across all runs."""
-        return [
-            SarifResult(result)
-            for run in self.content.get("runs", [])
-            for result in run.get("results", [])
-        ]
+        return [result for run in self.runs() for result in run.results()]
 
     def count(self) -> int:
         """The number of findings across every run."""
@@ -215,17 +267,6 @@ class SarifDocument:
                 )
         return Table(FINDINGS, findings)
 
-    def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
-        """Record each executed tool command under the run's SARIF `invocations`.
-
-        All tools merge into one run, so they share its `invocations` array; each
-        tool is identified by its `executableLocation` and a `tool` property.
-        """
-        runs = self.content.get("runs")
-        if not invocations or not runs:
-            return
-        runs[0]["invocations"] = [_invocation_object(inv) for inv in invocations]
-
 
 def parse(
     text: str, scanner: str | None = None, target: str = ""
@@ -253,54 +294,55 @@ def parse(
     return SarifDocument(document)
 
 
-def merge(documents: Sequence[Artifact]) -> SarifDocument:
-    """Consolidate one or more normalized SARIF documents into one "reposcan" doc.
+def parse_run(text: str, scanner: str, target: str) -> SarifRun | None:
+    """Parse one SARIF run from a tool's output."""
+    document = parse(text, scanner, target)
+    if document is None:
+        return None
+    runs = document.runs()
+    if len(runs) > 1:
+        logger.warning("%s produced more than one SARIF run; data may be lost", scanner)
+    run = runs[0]
+    return run
 
-    Results with the same rule and primary location are deduped, their scanner lists
-    unioned. The rules referenced by surviving results are carried onto the merged
-    driver so their metadata is not lost.
+
+def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
+    """Merge `SarifRun`s.
 
     Args:
-        documents: The normalized SARIF artifacts to combine.
+        runs: The normalized runs to combine (e.g. one scan's per-tool runs).
     """
     by_key: dict[tuple[str, str, int], dict[str, Any]] = {}
     order: list[tuple[str, str, int]] = []
     rules_by_id: dict[str, dict[str, Any]] = {}
-    for document in documents:
-        for run in document.to_dict().get("runs", []):
-            for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
-                rule_id = str(rule.get("id", ""))
-                if rule_id and rule_id not in rules_by_id:
-                    rules_by_id[rule_id] = rule
-            for result in run.get("results", []):
-                finding = SarifResult(result)
-                key = finding.key
-                if key in by_key:
-                    for scanner in finding.scanners:
-                        _record_scanner(by_key[key], scanner)
-                    continue
-                copied = copy.deepcopy(result)
-                # ruleIndex points into one run's rule list; results also reference
-                # rules by id, so drop the now-meaningless index after combining runs.
-                copied.pop("ruleIndex", None)
-                by_key[key] = copied
-                order.append(key)
+    for run in runs:
+        for rule in run.rules:
+            rule_id = str(rule.get("id", ""))
+            if rule_id and rule_id not in rules_by_id:
+                rules_by_id[rule_id] = rule
+        for finding in run.results():
+            key = finding.key
+            if key in by_key:
+                for scanner in finding.scanners:
+                    _record_scanner(by_key[key], scanner)
+                continue
+            copied = copy.deepcopy(finding.result)
+            # ruleIndex points into one run's rule list; results also reference
+            # rules by id, so drop the now-meaningless index after combining runs.
+            copied.pop("ruleIndex", None)
+            by_key[key] = copied
+            order.append(key)
     results = [by_key[key] for key in order]
     referenced = {str(result.get("ruleId", "")) for result in results}
     rules = [rules_by_id[rule_id] for rule_id in rules_by_id if rule_id in referenced]
     driver: dict[str, Any] = {"name": "reposcan"}
     if rules:
         driver["rules"] = rules
-    run: dict[str, Any] = {"tool": {"driver": driver}, "results": results}
-    invocations = [
-        invocation
-        for document in documents
-        for source in document.to_dict().get("runs", [])
-        for invocation in source.get("invocations", [])
-    ]
+    merged: dict[str, Any] = {"tool": {"driver": driver}, "results": results}
+    invocations = [invocation for run in runs for invocation in run.invocations]
     if invocations:
-        run["invocations"] = invocations
-    return SarifDocument({"$schema": SCHEMA, "version": "2.1.0", "runs": [run]})
+        merged["invocations"] = invocations
+    return SarifRun(merged)
 
 
 # --- normalization: turn raw tool results into reposcan's canonical shape ---
@@ -334,6 +376,41 @@ def _normalize_result(
         artifact = location.get("physicalLocation", {}).get("artifactLocation")
         if isinstance(artifact, dict) and artifact.get("uri"):
             artifact["uri"] = _relative_uri(str(artifact["uri"]), target)
+
+
+# --- fingerprinting: give each finding a stable partial fingerprint ---
+
+
+def add_primarylocationlinehash(
+    run: SarifRun, ctx: ExecutionContext, target: str
+) -> None:
+    """Ensure a primaryLocationLineHash on each run result, in place.
+
+    Applies a stable hash of the primary location's start line, read from the source
+    file through `ctx`. Used by GitHub (and others) to de-duplicate.
+    """
+    for finding in run.results():
+        if "primaryLocationLineHash" in finding.result.get("partialFingerprints", {}):
+            continue
+        content = (
+            read_file(ctx, finding.uri, cwd=target)
+            if finding.uri and finding.line > 0
+            else None
+        )
+        lines = content.splitlines() if content is not None else []
+        line = lines[finding.line - 1].strip() if 0 < finding.line <= len(lines) else ""
+        if not line:
+            logger.warning(
+                "could not read the source line for %s:%d; skipping its "
+                "primaryLocationLineHash",
+                finding.uri or "(no uri)",
+                finding.line,
+            )
+            continue
+        fingerprints = finding.result.setdefault("partialFingerprints", {})
+        fingerprints["primaryLocationLineHash"] = hashlib.sha256(
+            line.encode("utf-8", "surrogatepass")
+        ).hexdigest()[:16]
 
 
 def _rule_levels(run: dict[str, Any]) -> dict[str, str]:

@@ -79,7 +79,3 @@ class Artifact(Protocol):
     def records(self) -> Table:
         """The artifact as a db table: schema plus one row per entry."""
         ...
-
-    def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
-        """Record the tool commands that produced this artifact, as provenance."""
-        ...

@@ -14,22 +14,21 @@ the message shapes differ.
 """
 
 import json
-from typing import Any, ClassVar
+from typing import Any
 
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import DependencyResolvingScan
-from repo_scanner.scans.model import ArtifactKind, ToolInvocation
+from repo_scanner.scans.base import DependencyResolvingScan, SecurityScan
+from repo_scanner.scans.model import ToolInvocation
 from repo_scanner.tools.registry import TOOLS
 
 
-class ScaScan(DependencyResolvingScan):
+class ScaScan(SecurityScan, DependencyResolvingScan):
     """Scan a repository's dependencies for known vulnerabilities."""
 
     name = "sca"
     help = "Dependency vulnerabilities (trivy, grype, govulncheck)."
-    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The trivy, grype, and govulncheck invocations for `target`.
@@ -69,10 +68,10 @@ class ScaScan(DependencyResolvingScan):
             ),
         ]
 
-    def parse(
+    def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifDocument | Failure:
-        """Normalize one tool's output to SARIF (trivy/grype SARIF, govulncheck JSON).
+    ) -> sarif.SarifRun | Failure:
+        """Create a SarifRun from command execution output.
 
         Args:
             tool: The scanner that produced `output`.
@@ -80,14 +79,20 @@ class ScaScan(DependencyResolvingScan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A normalized SARIF artifact, or a Failure if the output was not usable.
+            The tool's normalized SARIF run, or a Failure if not usable.
         """
         if tool == "govulncheck":
-            return _govulncheck_sarif(output.stdout, target)
-        document = sarif.parse(output.stdout, tool, target)
-        if document is None:
+            return _govulncheck_run(output.stdout, target)
+        run = sarif.parse_run(output.stdout, tool, target)
+        if run is None:
             return Failure(reason=f"{tool} did not produce usable output")
-        return document
+        return run
+
+    def add_fingerprints(
+        self, run: sarif.SarifRun, ctx: ExecutionContext, target: str
+    ) -> None:
+        """No fingerprints: a sca finding's rule id identifies its vulnerability."""
+        return
 
 
 def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
@@ -99,8 +104,8 @@ def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
     return None
 
 
-def _govulncheck_sarif(stdout: str, target: str) -> sarif.SarifDocument:
-    """Convert govulncheck's JSON message stream into a SARIF document.
+def _govulncheck_run(stdout: str, target: str) -> sarif.SarifRun:
+    """Convert govulncheck's JSON message stream into a SARIF run.
 
     The stream carries OSV vulnerability records and findings. A finding that
     reaches a source position is reported once per OSV id.
@@ -110,7 +115,7 @@ def _govulncheck_sarif(stdout: str, target: str) -> sarif.SarifDocument:
         target: The scan root, used to normalize finding uris at ingestion.
 
     Returns:
-        A SarifDocument (possibly with no results).
+        A SarifRun (possibly with no results).
     """
     osvs: dict[str, dict[str, Any]] = {}
     findings: list[dict[str, Any]] = []
@@ -145,4 +150,4 @@ def _govulncheck_sarif(stdout: str, target: str) -> sarif.SarifDocument:
             )
         )
     version = TOOLS["govulncheck"].version
-    return sarif.SarifDocument.from_results("govulncheck", version, results)
+    return sarif.SarifRun.from_results("govulncheck", version, results)

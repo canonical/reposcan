@@ -22,11 +22,12 @@ def _write(directory: str, name: str, content: str) -> str:
 
 
 def _sarif_doc() -> dict:
-    return sarif.SarifDocument.from_results(
+    run = sarif.SarifRun.from_results(
         "tool",
         "1.0",
         [sarif.SarifResult.build("X", "boom", "a.py", 3, "tool", "", level="error")],
-    ).to_dict()
+    )
+    return sarif.SarifDocument.from_runs([run]).to_dict()
 
 
 def test_renders_json_input_as_a_table() -> None:

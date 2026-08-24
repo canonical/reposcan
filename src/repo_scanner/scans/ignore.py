@@ -30,7 +30,6 @@ import re
 from pathlib import Path
 
 from repo_scanner.scans import sarif
-from repo_scanner.scans.model import Artifact
 
 logger = logging.getLogger(__name__)
 
@@ -142,16 +141,18 @@ def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
     return parse(text)
 
 
-def apply(artifact: Artifact, rules: list[IgnoreRule], root: str = "") -> int:
-    """Drop ignored findings from `artifact` in place; return the number removed.
+def apply(
+    document: sarif.SarifDocument, rules: list[IgnoreRule], root: str = ""
+) -> int:
+    """Drop ignored findings from `document` in place; return the number removed.
 
     `root` is the repository root, used to read the offending content for rules that
     carry a content pattern (see the module docstring).
     """
-    if not rules or not isinstance(artifact, sarif.SarifDocument):
+    if not rules:
         return 0
     removed = 0
-    for run in artifact.content.get("runs", []):
+    for run in document.content.get("runs", []):
         kept = []
         for result in run.get("results", []):
             finding = sarif.SarifResult(result)

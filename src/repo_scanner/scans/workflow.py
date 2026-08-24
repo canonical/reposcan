@@ -7,21 +7,18 @@ Both tools emit SARIF; their results are merged into one document, annotated wit
 which scanner reported each finding (see scans/sarif.py `merge`).
 """
 
-from typing import ClassVar
-
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import Scan
-from repo_scanner.scans.model import ArtifactKind, ToolInvocation
+from repo_scanner.scans.base import SecurityScan
+from repo_scanner.scans.model import ToolInvocation
 
 
-class WorkflowScan(Scan):
+class WorkflowScan(SecurityScan):
     """Audit a repository's CI/CD workflow definitions with zizmor and poutine."""
 
     name = "workflow"
     help = "Audit CI/CD workflows with zizmor and poutine."
-    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The zizmor and poutine invocations for `target`.
@@ -43,10 +40,10 @@ class WorkflowScan(Scan):
             ),
         ]
 
-    def parse(
+    def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifDocument | Failure:
-        """Parse and normalize tool output.
+    ) -> sarif.SarifRun | Failure:
+        """Create a SarifRun from command execution output.
 
         Args:
             tool: The scanner that produced `output` (zizmor or poutine).
@@ -54,9 +51,9 @@ class WorkflowScan(Scan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A normalized SARIF artifact, or a Failure if the output was not SARIF.
+            The tool's normalized SARIF run, or a Failure if not SARIF.
         """
-        document = sarif.parse(output.stdout, tool, target)
-        if document is None:
+        run = sarif.parse_run(output.stdout, tool, target)
+        if run is None:
             return Failure(reason=f"{tool} did not produce SARIF output")
-        return document
+        return run

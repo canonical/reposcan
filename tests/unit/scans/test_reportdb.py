@@ -35,11 +35,12 @@ def _query(path: str, sql: str) -> list[tuple]:
 
 
 def _sarif() -> sarif.SarifDocument:
-    return sarif.SarifDocument.from_results(
+    run = sarif.SarifRun.from_results(
         "t",
         "1.0",
         [sarif.SarifResult.build("R1", "boom", "a.py", 3, "t", "", level="error")],
     )
+    return sarif.SarifDocument.from_runs([run])
 
 
 def test_write_then_read_reconstructs_the_whole_artifact() -> None:

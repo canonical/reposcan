@@ -15,7 +15,7 @@ from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
 from repo_scanner.scans import output
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
-from repo_scanner.scans.run import run_scan
+from repo_scanner.scans.run import generate_sbom
 from repo_scanner.scans.sbom import SbomScan
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class SbomCommand(Action):
                 include_dev_dependencies=self.include_dev_dependencies,
                 allow_code_execution=self.allow_code_execution,
             )
-            artifact = run_scan(
+            artifact = generate_sbom(
                 scan,
                 session.context,
                 session.target,

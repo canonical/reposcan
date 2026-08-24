@@ -128,7 +128,7 @@ def unwritable(
     if len(kinds) > 1 and fmt is not Format.SQLITE and single_document:
         return (
             "SARIF and CycloneDX cannot be merged into a single JSON file; run the "
-            "sbom and findings scans separately, or use the sqlite output format."
+            "sbom and security scans separately, or use the sqlite output format."
         )
     return None
 

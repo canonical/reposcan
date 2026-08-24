@@ -31,7 +31,9 @@ def _sarif(*levels: str) -> sarif.SarifDocument:
         )
         for i, level in enumerate(levels)
     ]
-    return sarif.SarifDocument.from_results("tool", "1.0", findings)
+    return sarif.SarifDocument.from_runs(
+        [sarif.SarifRun.from_results("tool", "1.0", findings)]
+    )
 
 
 def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> None:
@@ -60,7 +62,7 @@ def test_the_table_names_the_tool_that_reported_each_finding() -> None:
     # A single-tool scan names the tool on the run driver.
     headers, rows = _sarif("error").rows()
     assert headers == ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
-    assert rows[0][1] == "tool"  # the driver name from from_results("tool", ...)
+    assert rows[0][1] == "tool"  # the scanner annotated on the finding
 
     # A merged scan annotates each result with its contributing scanners.
     merged = sarif.SarifDocument(
@@ -139,8 +141,14 @@ def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None
     assert len([line for line in out.getvalue().splitlines() if "app.py:" in line]) == 2
 
     long = " ".join(f"word{i}" for i in range(300))
-    doc = sarif.SarifDocument.from_results(
-        "tool", "1.0", [sarif.SarifResult.build("R", long, "a.py", 1, "tool", "")]
+    doc = sarif.SarifDocument.from_runs(
+        [
+            sarif.SarifRun.from_results(
+                "tool",
+                "1.0",
+                [sarif.SarifResult.build("R", long, "a.py", 1, "tool", "")],
+            )
+        ]
     )
     single, wrapped = io.StringIO(), io.StringIO()
     with redirect_stdout(single):

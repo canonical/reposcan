@@ -33,10 +33,11 @@ def test_govulncheck_stream_becomes_sarif() -> None:
             json.dumps({"progress": {"message": "scanning"}}),
         ]
     )
-    result = ScaScan().parse("govulncheck", ExecResult(3, stream, ""), "/scan/acme")
-    assert not isinstance(result, Failure)
-    assert result.count() == 1  # only the source-reaching finding
-    finding = result.results()[0]
+    run = ScaScan().create_run("govulncheck", ExecResult(3, stream, ""), "/scan/acme")
+    assert not isinstance(run, Failure)
+    findings = run.results()
+    assert len(findings) == 1  # only the source-reaching finding
+    finding = findings[0]
     assert finding.rule_id == "GO-2024-1"
     assert finding.message == "bad thing"  # the OSV summary
     assert finding.scanners == ["govulncheck"]
@@ -79,18 +80,44 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
         }
     )
     scan = ScaScan()
-    trivy_doc = scan.parse("trivy", ExecResult(0, trivy, ""), "/scan/acme")
-    govulncheck_doc = scan.parse(
+    trivy_run = scan.create_run("trivy", ExecResult(0, trivy, ""), "/scan/acme")
+    govulncheck_run = scan.create_run(
         "govulncheck", ExecResult(3, govulncheck, ""), "/scan/acme"
     )
-    assert not isinstance(trivy_doc, Failure)
-    assert not isinstance(govulncheck_doc, Failure)
-    result = scan.consolidate([trivy_doc, govulncheck_doc])
-    assert isinstance(result, sarif.SarifDocument)
-    rules = {r.rule_id for r in result.results()}
+    assert not isinstance(trivy_run, Failure)
+    assert not isinstance(govulncheck_run, Failure)
+    merged = sarif.merge_runs([trivy_run, govulncheck_run])
+    rules = {finding.rule_id for finding in merged.results()}
     assert rules == {"CVE-1", "GO-1"}
 
 
-def test_parse_fails_when_a_sarif_tool_output_is_unusable() -> None:
-    result = ScaScan().parse("grype", ExecResult(0, "not sarif", ""), "/scan/acme")
+def test_create_run_fails_when_a_sarif_tool_output_is_unusable() -> None:
+    result = ScaScan().create_run("grype", ExecResult(0, "not sarif", ""), "/scan/acme")
     assert isinstance(result, Failure)
+
+
+def test_sca_findings_get_no_fingerprints() -> None:
+    # Unlike SAST, sca overrides add_fingerprints to a no-op: a dependency finding's
+    # rule id already identifies its vulnerability, so no primaryLocationLineHash.
+    location = {"artifactLocation": {"uri": "go.mod"}, "region": {"startLine": 1}}
+    trivy = json.dumps(
+        {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "results": [
+                        {
+                            "ruleId": "CVE-1",
+                            "locations": [{"physicalLocation": location}],
+                        }
+                    ]
+                }
+            ],
+        }
+    )
+    scan = ScaScan()
+    run = scan.create_run("trivy", ExecResult(0, trivy, ""), "/scan/acme")
+    assert not isinstance(run, Failure)
+    scan.add_fingerprints(run, _NO_CTX, "/scan/acme")
+    (finding,) = run.results()
+    assert "partialFingerprints" not in finding.result

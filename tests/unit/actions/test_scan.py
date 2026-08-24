@@ -19,14 +19,14 @@ import pytest
 import repo_scanner.actions.scan as scan_cmd
 from repo_scanner.cli_kit import params_of
 from repo_scanner.execution.process import Failure
-from repo_scanner.scans.model import Artifact
+from repo_scanner.scans import sarif
 from repo_scanner.scans.output import Format
 from repo_scanner.scans.registry import SCANS
-from tests.unit.actions.helpers import patch_scan, sarif_artifact
+from tests.unit.actions.helpers import patch_run_scan, sarif_run
 
 
 def _run(
-    *outcomes: Artifact | Failure,
+    *outcomes: sarif.SarifRun | Failure,
     scans: Sequence[str] = ("secrets",),
     fmt: Format | None = None,
 ) -> tuple[int, str]:
@@ -36,21 +36,21 @@ def _run(
         action = scan_cmd.ScanCommand(
             scans=list(scans), path=repo, format=fmt.value if fmt else None
         )
-        with patch_scan(scan_cmd, *outcomes), redirect_stdout(out):
+        with patch_run_scan(scan_cmd, *outcomes), redirect_stdout(out):
             code = action.run()
     return code, out.getvalue()
 
 
 def test_exit_zero_when_no_findings_and_three_when_findings() -> None:
-    code, out = _run(sarif_artifact(0))
+    code, out = _run(sarif_run(0))
     assert code == 0
     assert "LEVEL" in out  # the default stdout table's header
-    code, _ = _run(sarif_artifact(2))
+    code, _ = _run(sarif_run(2))
     assert code == 3  # findings
 
 
 def test_format_json_overrides_the_stdout_table_default() -> None:
-    code, out = _run(sarif_artifact(1), fmt=Format.JSON)
+    code, out = _run(sarif_run(1), fmt=Format.JSON)
     assert code == 3
     assert json.loads(out)["version"] == "2.1.0"  # native SARIF, not a table
 
@@ -60,12 +60,13 @@ def test_a_scan_failure_returns_one() -> None:
     assert code == 1
 
 
-def test_multiple_scans_consolidate_to_one_findings_report() -> None:
-    # Two SARIF scans run; their artifacts merge into a single findings table.
-    code, out = _run(sarif_artifact(1), sarif_artifact(1), scans=["sast", "secrets"])
+def test_multiple_scans_combine_into_one_report_without_cross_scan_dedup() -> None:
+    # Two SARIF scans run; their artifacts combine into one multi-run report. Each scan
+    # stays its own run, so identical findings from different scans are not deduped.
+    code, out = _run(sarif_run(1), sarif_run(1), scans=["sast", "secrets"])
     assert code == 3
     finding_rows = [line for line in out.splitlines() if "f.py:" in line]
-    assert len(finding_rows) == 1  # the two identical findings deduped into one
+    assert len(finding_rows) == 2  # one finding per scan, kept separate
 
 
 def test_output_file_receives_the_report_and_stdout_stays_clean() -> None:
@@ -73,7 +74,7 @@ def test_output_file_receives_the_report_and_stdout_stays_clean() -> None:
         path = os.path.join(repo, "report.sarif")
         action = scan_cmd.ScanCommand(scans=["secrets"], path=repo, output=path)
         out = io.StringIO()
-        with patch_scan(scan_cmd, sarif_artifact(1)), redirect_stdout(out):
+        with patch_run_scan(scan_cmd, sarif_run(1)), redirect_stdout(out):
             code = action.run()
         assert code == 3
         assert out.getvalue() == ""  # nothing on stdout when writing to a file
@@ -89,7 +90,7 @@ def test_refuses_to_overwrite_an_existing_output_file() -> None:
             handle.write("existing report")
         action = scan_cmd.ScanCommand(scans=["secrets"], path=repo, output=path)
         out = io.StringIO()
-        with patch_scan(scan_cmd, sarif_artifact(1)), redirect_stdout(out):
+        with patch_run_scan(scan_cmd, sarif_run(1)), redirect_stdout(out):
             code = action.run()
         assert code == 2  # refused before running the scan
         assert out.getvalue() == ""

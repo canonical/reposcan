@@ -9,14 +9,14 @@ target -- the git history by default, or the working-tree files in filesystem mo
 """
 
 import json
-from typing import Any, ClassVar
+from typing import Any
 
 from repo_scanner.cli_kit import option
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import Scan
-from repo_scanner.scans.model import ArtifactKind, ToolInvocation
+from repo_scanner.scans.base import SecurityScan
+from repo_scanner.scans.model import ToolInvocation
 from repo_scanner.tools.registry import TRUFFLEHOG
 
 # trufflehog flags common to both modes: machine-readable output, no self-update.
@@ -26,7 +26,7 @@ _COMMON_ARGS = ["--json", "--no-update"]
 _AUTO = "auto"
 
 
-class SecretsScan(Scan):
+class SecretsScan(SecurityScan):
     """Scan a repository for secrets with trufflehog.
 
     `mode` selects what trufflehog reads: "history" scans the full git history
@@ -38,7 +38,6 @@ class SecretsScan(Scan):
 
     name = "secrets"
     help = "Scan for leaked secrets with trufflehog."
-    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
 
     mode: str = option(
         choices=("history", "filesystem"),
@@ -77,8 +76,8 @@ class SecretsScan(Scan):
                 raise ValueError("Unexpected execution mode")
         return [ToolInvocation("trufflehog", args)]
 
-    def parse(self, tool: str, output: ExecResult, target: str) -> sarif.SarifDocument:
-        """Turn one trufflehog run's JSONL findings into a normalized SARIF artifact.
+    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+        """Create a SarifRun from command execution output.
 
         Args:
             tool: The scanner that produced `output` (trufflehog).
@@ -86,13 +85,13 @@ class SecretsScan(Scan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            A SARIF artifact listing the run's findings.
+            One SARIF run listing the findings.
         """
         findings = [
             _to_result(finding, tool, target)
             for finding in _parse_findings(output.stdout)
         ]
-        return sarif.SarifDocument.from_results(tool, TRUFFLEHOG.version, findings)
+        return sarif.SarifRun.from_results(tool, TRUFFLEHOG.version, findings)
 
 
 def _parse_findings(stdout: str) -> list[dict[str, Any]]:

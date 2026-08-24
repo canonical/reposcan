@@ -1,25 +1,24 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Filter git-ignored paths."""
+"""Read .gitignore and use it for tool config + result filtering."""
 
 from dataclasses import dataclass
 
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult
 from repo_scanner.scans import sarif
-from repo_scanner.scans.model import Artifact
 
 
 @dataclass(frozen=True)
-class IgnoredPaths:
+class GitIgnore:
     """Repository-root-relative paths git ignores, split into directories and files."""
 
     dirs: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
 
     @classmethod
-    def from_context(cls, ctx: ExecutionContext, target: str) -> "IgnoredPaths":
+    def from_context(cls, ctx: ExecutionContext, target: str) -> "GitIgnore":
         """The paths git ignores under `target`, found by running git in `ctx`.
 
         Runs `git ls-files` (read-only) with `target` as the working directory, so
@@ -59,14 +58,14 @@ class IgnoredPaths:
                 files.append(entry)
         return cls(tuple(dirs), tuple(files))
 
-    def contains(self, path: str) -> bool:
+    def ignores(self, path: str) -> bool:
         """Whether repo-relative `path` is git-ignored (a file or under a dir)."""
         return path in self.files or any(
             path == directory or path.startswith(f"{directory}/")
             for directory in self.dirs
         )
 
-    def exclude_flags(self, tool: str) -> list[str]:
+    def tool_flags(self, tool: str) -> list[str]:
         """tool-specific CLI flags that make `tool` skip the ignored paths.
 
         Args:
@@ -102,19 +101,16 @@ class IgnoredPaths:
             return flags
         return []
 
-    def filter_findings(self, artifact: Artifact) -> int:
-        """Drop findings under an ignored path."""
-        if not isinstance(artifact, sarif.SarifDocument):
-            return 0
+    def drop_ignored(self, run: sarif.SarifRun) -> int:
+        """Drop the run's git-ignored findings; return the number removed."""
         if not self.dirs and not self.files:
             return 0
         removed = 0
-        for run in artifact.content.get("runs", []):
-            kept = []
-            for result in run.get("results", []):
-                if self.contains(sarif.SarifResult(result).uri):
-                    removed += 1
-                else:
-                    kept.append(result)
-            run["results"] = kept
+        kept = []
+        for result in run.to_dict().get("results", []):
+            if self.ignores(sarif.SarifResult(result).uri):
+                removed += 1
+            else:
+                kept.append(result)
+        run.to_dict()["results"] = kept
         return removed

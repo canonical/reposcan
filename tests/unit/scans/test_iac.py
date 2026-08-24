@@ -7,10 +7,9 @@ import json
 
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans.iac import IacScan
-from repo_scanner.scans.model import ArtifactKind
 
 
-def test_parse_converts_checkov_failed_checks_to_sarif() -> None:
+def test_create_run_converts_checkov_failed_checks_to_sarif() -> None:
     report = {
         "results": {
             "failed_checks": [
@@ -23,16 +22,15 @@ def test_parse_converts_checkov_failed_checks_to_sarif() -> None:
             ]
         }
     }
-    result = IacScan().parse(
+    run = IacScan().create_run(
         "checkov", ExecResult(0, json.dumps(report), ""), "/scan/acme"
     )
-    assert not isinstance(result, Failure)
-    assert result.kind is ArtifactKind.SARIF
-    finding = result.results()[0]
+    assert not isinstance(run, Failure)
+    finding = run.results()[0]
     assert finding.rule_id == "CKV_DOCKER_3"
     assert finding.uri == "Dockerfile"  # the leading slash is stripped
 
 
-def test_parse_rejects_non_json_output() -> None:
-    result = IacScan().parse("checkov", ExecResult(0, "boom", ""), "/scan/acme")
+def test_create_run_rejects_non_json_output() -> None:
+    result = IacScan().create_run("checkov", ExecResult(0, "boom", ""), "/scan/acme")
     assert isinstance(result, Failure)

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan scan` command: run one or more findings scans and consolidate.
+"""The `reposcan scan` command.
 
 `reposcan scan <types> <path>` runs each requested scan type against a repository in
 one backend session, then consolidates their findings into a single SARIF report.
@@ -25,8 +25,8 @@ from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
 from repo_scanner.scans import ignore, output, sarif
-from repo_scanner.scans.base import Scan
-from repo_scanner.scans.model import Artifact
+from repo_scanner.scans.base import SecurityScan
+from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.registry import SCANS
 from repo_scanner.scans.run import run_scan
@@ -65,7 +65,7 @@ def _scan_names(raw: str) -> list[str]:
     return names
 
 
-def _aggregate_scan_options(scans: dict[str, type[Scan]]) -> tuple[Param, ...]:
+def _aggregate_scan_options(scans: dict[str, type[SecurityScan]]) -> tuple[Param, ...]:
     """The union of each scan's options, each requiring its scan(s) to be selected.
 
     A scan-specific option is only meaningful when a scan that declares it is selected,
@@ -149,9 +149,8 @@ class ScanCommand(Action):
             logger.warning("%s", error)
             return 2
 
-        # throw an error upfront if selected output type is invalid
-        kinds = {SCANS[name].artifact_kind for name in names}
-        error = output.unwritable(kinds, fmt, self.output)
+        # throw an error upfront if selected output type is invalid (findings are SARIF)
+        error = output.unwritable({ArtifactKind.SARIF}, fmt, self.output)
         if error is not None:
             logger.error("%s", error)
             return 2
@@ -177,7 +176,7 @@ class ScanCommand(Action):
             if not session.ok:
                 return session.exit_code
             assert session.target is not None  # a source was given, so target is set
-            artifacts: list[Artifact] = []
+            runs: list[sarif.SarifRun] = []
             for name in names:
                 scan_cls = SCANS[name]
                 scan = scan_cls(
@@ -186,7 +185,7 @@ class ScanCommand(Action):
                         for param in params_of(scan_cls)
                     }
                 )
-                artifact = run_scan(
+                run = run_scan(
                     scan,
                     session.context,
                     session.target,
@@ -194,17 +193,15 @@ class ScanCommand(Action):
                     resolved_parent=session.resolved_parent,
                     stream=True,
                 )
-                if isinstance(artifact, Failure):
-                    logger.error("%s scan failed: %s", name, artifact.reason)
+                if isinstance(run, Failure):
+                    logger.error("%s scan failed: %s", name, run.reason)
                     return 1
-                removed = ignore.apply(artifact, ignore_rules, path)
-                if removed:
-                    logger.info(
-                        "ignored %d %s finding(s) via %s", removed, name, ignore_path
-                    )
-                artifacts.append(artifact)
+                runs.append(run)
 
-            report = sarif.merge(artifacts)
+            report = sarif.SarifDocument.from_runs(runs)
+            removed = ignore.apply(report, ignore_rules, path)
+            if removed:
+                logger.info("ignored %d finding(s) via %s", removed, ignore_path)
             failure = output.emit_all(
                 [report],
                 output=self.output,

@@ -178,13 +178,6 @@ runs:
             continue
           fi
 
-          # Tag each run so code scanning treats each scan as its own analysis rather
-          # than superseding the previous one (they all use the "reposcan" driver).
-          tmp="$(mktemp)"
-          jq --arg id "reposcan/${scan}" \
-            '.runs |= map(.automationDetails = {id: $id})' "${out}" > "${tmp}"
-          mv "${tmp}" "${out}"
-
           n=$(jq '[.runs[]?.results[]?] | length' "${out}")
           total=$((total + n))
           if [ "${threshold}" -gt 0 ]; then

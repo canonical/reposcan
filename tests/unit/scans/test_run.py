@@ -8,8 +8,8 @@ from collections.abc import Mapping, Sequence
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
-from repo_scanner.scans.base import Scan
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocation
+from repo_scanner.scans.base import SecurityScan
+from repo_scanner.scans.model import ToolInvocation
 from repo_scanner.scans.run import run_scan
 
 
@@ -48,21 +48,18 @@ class _FakeContext:
         return None
 
 
-class _FakeScan(Scan):
+class _FakeScan(SecurityScan):
     # Invokes one real registered tool so installed-path lookup resolves.
     name = "faux"
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
-    def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
-        return sarif.SarifDocument({"runs": [{"results": []}]})
-
-    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
-        return sarif.SarifDocument({"runs": [{"results": []}]})
+    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+        return sarif.SarifRun({"results": []})
 
 
-class _Scan(Scan):
+class _Scan(SecurityScan):
     # A scan running the given invocations; records each ExecResult it parses.
     name = "faux"
 
@@ -74,19 +71,17 @@ class _Scan(Scan):
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         return self._invocations
 
-    def parse(self, tool: str, output: ExecResult, target: str) -> Artifact | Failure:
+    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
         self.seen.append(output)
-        return sarif.SarifDocument({"runs": [{"results": []}]})
-
-    def consolidate(self, artifacts: Sequence[Artifact]) -> Artifact | Failure:
-        return sarif.SarifDocument({"runs": [{"results": []}]})
+        return sarif.SarifRun({"results": []})
 
 
 def test_run_scan_runs_each_tool_at_its_installed_path_and_consolidates() -> None:
     ctx = _FakeContext(ExecResult(0, "", ""))
-    artifact = run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(artifact, Failure)
-    assert artifact.kind is ArtifactKind.SARIF
+    run = run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan")
+    assert not isinstance(run, Failure)
+    # one consolidated run, tagged with the scan's code-scanning category
+    assert run.to_dict()["automationDetails"] == {"id": "reposcan/faux/"}
     assert ctx.commands[0][:2] == ["git", "ls-files"]  # the git-ignored-path lookup
     assert ctx.commands[1][0] == "/opt/reposcan/bin/trufflehog"
 
@@ -127,9 +122,9 @@ def test_run_scan_records_tool_invocations_as_provenance() -> None:
     # invocation set (never the inherited process environment).
     ctx = _FakeContext(ExecResult(0, "", ""))
     scan = _Scan([ToolInvocation("trufflehog", ["--version"], env={"K": "V"})])
-    artifact = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(artifact, Failure)
-    (invocation,) = artifact.to_dict()["runs"][0]["invocations"]
+    run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
+    assert not isinstance(run, Failure)
+    (invocation,) = run.to_dict()["invocations"]
     assert invocation["commandLine"] == "/opt/reposcan/bin/trufflehog --version"
     assert invocation["environmentVariables"] == {"K": "V"}
     assert invocation["exitCode"] == 0 and invocation["executionSuccessful"] is True

@@ -19,27 +19,27 @@ def _sarif(results: list[dict]) -> str:
     return json.dumps({"version": "2.1.0", "runs": [{"results": results}]})
 
 
-def test_consolidate_merges_dedups_and_annotates_scanners() -> None:
+def test_create_run_then_merge_dedups_and_annotates_scanners() -> None:
     shared = _result("SHARED", "workflow.yml", 3)
     zizmor = _sarif([shared, _result("ZIZ", "workflow.yml", 5)])
     poutine = _sarif([shared, _result("POU", "workflow.yml", 7)])
 
     scan = WorkflowScan()
-    zizmor_doc = scan.parse("zizmor", ExecResult(0, zizmor, ""), "/scan/acme")
-    poutine_doc = scan.parse("poutine", ExecResult(0, poutine, ""), "/scan/acme")
-    assert not isinstance(zizmor_doc, Failure)
-    assert not isinstance(poutine_doc, Failure)
-    result = scan.consolidate([zizmor_doc, poutine_doc])
-    assert isinstance(result, sarif.SarifDocument)
-    assert result.count() == 3  # the shared finding is deduped
-    by_rule = {r.rule_id: r for r in result.results()}
+    zizmor_run = scan.create_run("zizmor", ExecResult(0, zizmor, ""), "/scan/acme")
+    poutine_run = scan.create_run("poutine", ExecResult(0, poutine, ""), "/scan/acme")
+    assert not isinstance(zizmor_run, Failure)
+    assert not isinstance(poutine_run, Failure)
+    merged = sarif.merge_runs([zizmor_run, poutine_run])
+    findings = merged.results()
+    assert len(findings) == 3  # the shared finding is deduped
+    by_rule = {finding.rule_id: finding for finding in findings}
     assert by_rule["SHARED"].scanners == ["zizmor", "poutine"]
     assert by_rule["ZIZ"].scanners == ["zizmor"]
     assert by_rule["POU"].scanners == ["poutine"]
 
 
-def test_parse_fails_when_a_tool_output_is_not_sarif() -> None:
-    result = WorkflowScan().parse(
+def test_create_run_fails_when_a_tool_output_is_not_sarif() -> None:
+    result = WorkflowScan().create_run(
         "zizmor", ExecResult(0, "not sarif", ""), "/scan/acme"
     )
     assert isinstance(result, Failure)

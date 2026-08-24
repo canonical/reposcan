@@ -56,8 +56,8 @@ scans (trivy is used by SBOM and `sca`). A scan translates reposcan's parameters
 into each tool's native flags, and its consolidation step merges the tools'
 outputs into one artifact.
 
-Findings scans produce SARIF; the SBOM produces a CycloneDX inventory. The
-findings scans are exposed through the `scan` command and the SBOM through the
+Security scans produce SARIF; the SBOM produces a CycloneDX inventory. The
+security scans are exposed through the `scan` command and the SBOM through the
 `sbom` command, though both use the same internal scan model. When several tools
 contribute to one scan, their outputs are merged and de-duplicated.
 De-duplication is performed by rule and location for SARIF and by package URL

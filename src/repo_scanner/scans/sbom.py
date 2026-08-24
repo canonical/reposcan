@@ -12,13 +12,9 @@ cdxgen interleaves progress logs on stdout, so stdout is not a reliable channel.
 stays optional: if it fails, trivy + syft still produce the SBOM.
 """
 
-from typing import ClassVar
-
 from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans import cyclonedx
 from repo_scanner.scans.base import DependencyResolvingScan
-from repo_scanner.scans.model import ArtifactKind, ToolInvocation
+from repo_scanner.scans.model import ToolInvocation
 
 # Where cdxgen writes its BOM inside the (ephemeral) scan container; run_scan reads it.
 _CDXGEN_OUTPUT = "/tmp/cdxgen-sbom.json"
@@ -28,8 +24,7 @@ class SbomScan(DependencyResolvingScan):
     """Build a software bill of materials for a repository's components."""
 
     name = "sbom"
-    help = "Software bill of materials (trivy, syft, cdxgen)."
-    artifact_kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
+    help = "Software bill of materials."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The trivy, syft, and cdxgen invocations for `target`.
@@ -92,23 +87,3 @@ class SbomScan(DependencyResolvingScan):
                 optional=True,
             ),
         ]
-
-    def parse(
-        self, tool: str, output: ExecResult, target: str
-    ) -> cyclonedx.CycloneDxDocument | Failure:
-        """Parse one tool's CycloneDX output into a normalized SBOM artifact.
-
-        Args:
-            tool: The scanner that produced `output`.
-            output: The tool's result (CycloneDX JSON on stdout, or read from a file).
-            target: The scan root (unused: an SBOM inventories components, not located
-                findings, so it has no uris to make relative).
-
-        Returns:
-            A normalized CycloneDX artifact, or a Failure if the output was not
-            CycloneDX.
-        """
-        document = cyclonedx.parse(output.stdout, tool)
-        if document is None:
-            return Failure(reason=f"{tool} did not produce CycloneDX output")
-        return document

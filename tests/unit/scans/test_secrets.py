@@ -7,7 +7,8 @@ import json
 from typing import cast
 
 from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
+from repo_scanner.execution.process import ExecResult
+from repo_scanner.scans import sarif
 from repo_scanner.scans.secrets import SecretsScan
 
 
@@ -86,29 +87,31 @@ def test_history_depth_limits_the_commit_scan_and_filesystem_ignores_it() -> Non
     assert "--max-depth" not in filesystem.args
 
 
-def test_parse_turns_trufflehog_findings_into_sarif() -> None:
-    result = SecretsScan().parse(
+def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
+    run = SecretsScan().create_run(
         "trufflehog", ExecResult(0, _TRUFFLEHOG_OUTPUT, ""), "/scan/x"
     )
-    assert result.count() == 2  # the log line was skipped
+    findings = run.results()
+    assert len(findings) == 2  # the log line was skipped
 
-    aws, github = result.results()
+    aws, github = findings
     assert aws.rule_id == "AWS" and aws.level == "error"  # verified -> error
     assert aws.line == 10
     assert aws.scanners == ["trufflehog"]  # normalized on ingest
     assert github.rule_id == "GitHub" and github.level == "warning"  # unverified
 
 
-def test_consolidate_merges_findings_across_tool_runs() -> None:
+def test_merge_runs_combines_findings_across_tool_runs() -> None:
     def one_finding(detector: str) -> str:
         data = {"SourceMetadata": {"Data": {"Git": {"file": "x.py"}}}}
         return json.dumps({**data, "DetectorName": detector}) + "\n"
 
     scan = SecretsScan()
-    docs = [
-        scan.parse("trufflehog", ExecResult(0, one_finding("AWS"), ""), "/scan/x"),
-        scan.parse("trufflehog", ExecResult(0, one_finding("GitHub"), ""), "/scan/x"),
+    runs = [
+        scan.create_run("trufflehog", ExecResult(0, one_finding("AWS"), ""), "/scan/x"),
+        scan.create_run(
+            "trufflehog", ExecResult(0, one_finding("GitHub"), ""), "/scan/x"
+        ),
     ]
-    artifact = scan.consolidate(docs)
-    assert not isinstance(artifact, Failure)
-    assert artifact.count() == 2  # one from each run
+    merged = sarif.merge_runs(runs)
+    assert len(merged.results()) == 2  # one from each run

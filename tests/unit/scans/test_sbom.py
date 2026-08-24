@@ -7,7 +7,7 @@ import json
 from typing import cast
 
 from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
+from repo_scanner.scans import cyclonedx
 from repo_scanner.scans.cyclonedx import CycloneDxDocument
 from repo_scanner.scans.model import ToolInvocationRecord
 from repo_scanner.scans.sbom import SbomScan
@@ -22,18 +22,15 @@ def _cyclonedx(components: list[dict]) -> str:
     )
 
 
-def test_consolidate_merges_dedups_by_purl_and_annotates_scanners() -> None:
+def test_merge_dedups_by_purl_and_annotates_scanners() -> None:
     shared = {"type": "library", "name": "left-pad", "purl": "pkg:npm/left-pad@1.0.0"}
     trivy = _cyclonedx([shared, {"name": "a", "purl": "pkg:npm/a@1"}])
     syft = _cyclonedx([shared, {"name": "b", "purl": "pkg:npm/b@1"}])
 
-    scan = SbomScan()
-    trivy_doc = scan.parse("trivy", ExecResult(0, trivy, ""), "/scan/acme")
-    syft_doc = scan.parse("syft", ExecResult(0, syft, ""), "/scan/acme")
-    assert not isinstance(trivy_doc, Failure)
-    assert not isinstance(syft_doc, Failure)
-    result = scan.consolidate([trivy_doc, syft_doc])
-    assert isinstance(result, CycloneDxDocument)
+    trivy_doc = cyclonedx.parse(trivy, "trivy")
+    syft_doc = cyclonedx.parse(syft, "syft")
+    assert trivy_doc is not None and syft_doc is not None
+    result = cyclonedx.merge([trivy_doc, syft_doc])
     by_purl = {c["purl"]: c for c in result.components()}
     assert len(by_purl) == 3  # the shared component is deduped by purl
     scanners = [
@@ -73,14 +70,13 @@ def test_parse_drops_the_scanned_root_component() -> None:
             {"type": "library", "name": "flask", "purl": "pkg:pypi/flask@3.0.0"},
         ]
     )
-    result = SbomScan().parse("syft", ExecResult(0, output, ""), "/scan/acme")
-    assert not isinstance(result, Failure)
+    result = cyclonedx.parse(output, "syft")
+    assert result is not None
     assert [c["name"] for c in result.components()] == ["flask"]
 
 
-def test_parse_fails_on_non_cyclonedx_output() -> None:
-    result = SbomScan().parse("syft", ExecResult(0, "not cyclonedx", ""), "/scan/acme")
-    assert isinstance(result, Failure)
+def test_parse_returns_none_on_non_cyclonedx_output() -> None:
+    assert cyclonedx.parse("not cyclonedx", "syft") is None
 
 
 def test_record_invocations_adds_a_formulation_workflow_with_command_and_env() -> None:

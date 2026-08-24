@@ -32,7 +32,7 @@ reported them. The exit code is `3` if any scan reported something, else `0`.
 
 ## Read the exit code
 
-Findings scans use the exit code to report the outcome, so they fit into
+Security scans use the exit code to report the outcome, so they fit into
 pipelines:
 
 - `0`: the scan ran and found nothing.

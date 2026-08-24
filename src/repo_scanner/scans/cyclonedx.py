@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from repo_scanner.ioutil.sqlitedb import Table, TableSchema
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
@@ -202,7 +202,7 @@ def _merge_scanners(into: dict[str, Any], other: dict[str, Any]) -> None:
             _record_scanner(into, str(prop.get("value", "")))
 
 
-def merge(documents: Sequence[Artifact]) -> CycloneDxDocument:
+def merge(documents: Sequence[CycloneDxDocument]) -> CycloneDxDocument:
     """Consolidate one or more normalized CycloneDX SBOMs into one deduped SBOM.
 
     Components with the same package URL (or type/name/version) are deduped.
