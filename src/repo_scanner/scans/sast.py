@@ -62,4 +62,17 @@ class SastScan(SecurityScan):
         run = sarif.parse_run(output.stdout, tool, target)
         if run is None:
             return Failure(reason=f"{tool} did not produce SARIF output")
+        # remove semgrep's "not logged in" failure; confuses downstream tools with a
+        # "hash" that says "requires login"
+        for finding in run.results():
+            for field in ("fingerprints", "partialFingerprints"):
+                entries = finding.result.get(field)
+                if not entries:
+                    continue
+                for name in [
+                    name for name, value in entries.items() if value == "requires login"
+                ]:
+                    del entries[name]
+                if not entries:
+                    del finding.result[field]
         return run

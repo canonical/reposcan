@@ -35,6 +35,38 @@ def test_create_run_normalizes_semgrep_sarif() -> None:
     assert findings[0].scanners == ["semgrep"]  # annotated on ingest
 
 
+def test_create_run_drops_requires_login_fingerprints() -> None:
+    # remove semgrep's matchBasedId/v1 fingerprint placeholder
+    document = {
+        "runs": [
+            {
+                "results": [
+                    {
+                        "ruleId": "only-placeholder",
+                        "fingerprints": {"matchBasedId/v1": "requires login"},
+                    },
+                    {
+                        "ruleId": "has-a-real-one",
+                        "fingerprints": {
+                            "matchBasedId/v1": "requires login",
+                            "otherHash": "abc123",
+                        },
+                        "partialFingerprints": {"p": "requires login"},
+                    },
+                ]
+            }
+        ],
+    }
+    run = SastScan().create_run(
+        "semgrep", ExecResult(0, json.dumps(document), ""), "/scan/acme"
+    )
+    assert not isinstance(run, Failure)
+    one, two = run.results()
+    assert "fingerprints" not in one.result  # emptied field removed
+    assert two.result["fingerprints"] == {"otherHash": "abc123"}
+    assert "partialFingerprints" not in two.result  # emptied field removed too
+
+
 def test_create_run_rejects_non_sarif_output() -> None:
     result = SastScan().create_run(
         "semgrep", ExecResult(0, "not sarif output", ""), "/scan/acme"
