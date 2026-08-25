@@ -97,7 +97,8 @@ def test_run_scan_adds_the_github_line_hash_to_every_scans_findings() -> None:
     run = run_scan(_ScanWithFinding(), ctx, "/scan/acme", "/opt/reposcan")
     assert not isinstance(run, Failure)
     (finding,) = run.results()
-    expected = hashlib.sha256(b"SECRET = 'x'").hexdigest()[:16]
+    digest = hashlib.sha256(b"SECRET = 'x'").hexdigest()[:16]
+    expected = f"{digest}:1"  # the first occurrence of that line in that file
     assert finding.result["partialFingerprints"]["primaryLocationLineHash"] == expected
 
 

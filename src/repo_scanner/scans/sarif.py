@@ -396,7 +396,15 @@ def add_primarylocationlinehash(
 
     Applies a stable hash of the primary location's start line, read from the source
     file through `ctx`. Used by GitHub (and others) to de-duplicate.
+
+    Identical lines hash identically, so two findings of one rule on two copies of a
+    line would be indistinguishable, and a consumer that de-duplicates on the
+    fingerprint would treat them as one. Each hash therefore carries the occurrence's
+    1-based position among the identical lines of its file, as `<hash>:<n>`, which is
+    the form GitHub's own fingerprinting emits.
     """
+    # Counted per file, so a line repeated in two files still hashes to ":1" in each.
+    occurrences: dict[tuple[str, str], int] = {}
     for finding in run.results():
         if "primaryLocationLineHash" in finding.result.get("partialFingerprints", {}):
             continue
@@ -415,10 +423,11 @@ def add_primarylocationlinehash(
                 finding.line,
             )
             continue
+        digest = hashlib.sha256(line.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+        occurrence = occurrences.get((finding.uri, digest), 0) + 1
+        occurrences[(finding.uri, digest)] = occurrence
         fingerprints = finding.result.setdefault("partialFingerprints", {})
-        fingerprints["primaryLocationLineHash"] = hashlib.sha256(
-            line.encode("utf-8", "surrogatepass")
-        ).hexdigest()[:16]
+        fingerprints["primaryLocationLineHash"] = f"{digest}:{occurrence}"
 
 
 def _rule_levels(run: dict[str, Any]) -> dict[str, str]:

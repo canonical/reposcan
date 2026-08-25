@@ -133,8 +133,30 @@ def test_add_primarylocationlinehash() -> None:
     (run,) = doc.runs()
     sarif.add_primarylocationlinehash(run, cast(ExecutionContext, _Ctx()), "/r")
     (finding,) = run.results()
-    expected = hashlib.sha256(b"SECRET = 'abc'").hexdigest()[:16]
+    digest = hashlib.sha256(b"SECRET = 'abc'").hexdigest()[:16]
+    # The first occurrence of that line's content in that file.
+    expected = f"{digest}:1"
     assert finding.result["partialFingerprints"]["primaryLocationLineHash"] == expected
+
+
+def test_identical_lines_in_one_file_get_distinct_fingerprints() -> None:
+    class _Ctx:
+        def run(self, command: list[str], **kwargs: object) -> ExecResult:
+            return ExecResult(0, "password = get()\npassword = get()\n", "")
+
+    findings = [
+        sarif.SarifResult.build("R", "hardcoded", "conf.py", line, "semgrep", "/r")
+        for line in (1, 2)
+    ]
+    run = sarif.SarifRun.from_results("semgrep", "1.0", findings)
+    sarif.add_primarylocationlinehash(run, cast(ExecutionContext, _Ctx()), "/r")
+    hashes = [
+        stored.result["partialFingerprints"]["primaryLocationLineHash"]
+        for stored in run.results()
+    ]
+    digest = hashlib.sha256(b"password = get()").hexdigest()[:16]
+    # Same content, so the same hash; the occurrence index is what tells them apart.
+    assert hashes == [f"{digest}:1", f"{digest}:2"]
 
 
 def test_add_primarylocationlinehash_skips_when_the_source_is_unreadable() -> None:
