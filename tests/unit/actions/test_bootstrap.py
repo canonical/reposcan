@@ -27,6 +27,7 @@ class _FakeContext:
 
     def __init__(self, fail_on: str | None = None) -> None:
         self.scripts: list[str] = []
+        self.argvs: list[list[str]] = []
         self._fail_on = fail_on
 
     def start(self) -> Failure | None:
@@ -44,7 +45,8 @@ class _FakeContext:
         stream_stderr: bool = False,
         stdin: str | None = None,
     ) -> ExecResult | Failure:
-        script = command[-1]  # sh -euc <script>
+        script = stdin or ""  # sh -eu, with the script fed on stdin
+        self.argvs.append(list(command))
         self.scripts.append(script)
         if self._fail_on is not None and self._fail_on in script:
             return ExecResult(exit_code=1, stdout="", stderr="boom")
@@ -106,6 +108,17 @@ def test_installs_a_named_tool_and_pulls_in_its_prerequisite() -> None:
     uv_at = next(i for i, m in enumerate(installing) if "installing uv" in m)
     semgrep_at = next(i for i, m in enumerate(installing) if "installing semgrep" in m)
     assert uv_at < semgrep_at
+
+
+def test_scripts_run_on_stdin_not_as_a_shell_argument() -> None:
+    # A hash-pinned lock embedded in the command can exceed the kernel's per-argument
+    # size limit, so the script must reach sh on stdin, never in argv.
+    context = _FakeContext()
+    code = bootstrap(context, ["checkov"], _LINUX, _ROOT)
+    assert code == 0
+    assert context.argvs and all(argv == ["sh", "-eu"] for argv in context.argvs)
+    # the lock (with --hash pins) is present, but only via stdin
+    assert any("--hash" in script for script in context.scripts)
 
 
 def test_a_failing_tool_is_isolated_and_the_rest_proceed() -> None:

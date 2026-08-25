@@ -79,7 +79,9 @@ def bootstrap(
         logger.info("installing %s %s", step.tool.name, step.tool.version)
         reason = None
         for command in step.commands:
-            result = ctx.run(["sh", "-euc", command])
+            # Feed the script on stdin, not as a `-c` argument: a hash-pinned lock
+            # embedded in the command can exceed the kernel's per-argument size limit.
+            result = ctx.run(["sh", "-eu"], stdin=command)
             if isinstance(result, Failure):
                 reason = result.reason
                 break
