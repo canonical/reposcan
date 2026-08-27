@@ -73,6 +73,16 @@ class Component:
 
 
 @dataclass(frozen=True)
+class ComponentVersion:
+    """One version of a component."""
+
+    version: str
+    first_seen_analysis: int
+    last_seen_analysis: int
+    analysis_count: int
+
+
+@dataclass(frozen=True)
 class ProjectSummary:
     """Project identifier."""
 

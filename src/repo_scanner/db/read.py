@@ -11,6 +11,7 @@ from repo_scanner.db import schema
 from repo_scanner.db.model import (
     AnalysisSummary,
     Component,
+    ComponentVersion,
     Issue,
     ProjectSummary,
     ScanStatus,
@@ -122,6 +123,29 @@ def components(path: str, project_id: int) -> list[Component]:
             )
             for component_id, project, component_key, first_seen, last_seen in (
                 session.query(schema.SELECT_COMPONENTS, (project_id,))
+            )
+        ]
+
+
+def versions(path: str, component_id: int) -> list[ComponentVersion]:
+    """Every version a component has been reported at, oldest first.
+
+    A span runs from the earliest analysis that saw the version to the latest, so a
+    version used, dropped, and later rolled back to is one span covering the gap.
+    """
+    session = _session(path)
+    if session is None:
+        return []
+    with session:
+        return [
+            ComponentVersion(
+                version=str(version),
+                first_seen_analysis=int(first_seen),
+                last_seen_analysis=int(last_seen),
+                analysis_count=int(count),
+            )
+            for version, first_seen, last_seen, count in session.query(
+                schema.SELECT_COMPONENT_VERSIONS, (component_id,)
             )
         ]
 

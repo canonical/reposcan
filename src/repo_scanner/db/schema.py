@@ -424,10 +424,32 @@ def unusable(path: str) -> str | None:
     )
 
 
+# A component keeps one row regardless of upgrades. Its identity is the versionless
+# purl. The versions it has been pinned at, and when, is an aggregate of the reports.
+VIEWS = (
+    "CREATE VIEW IF NOT EXISTS component_version AS "
+    "SELECT r.component_id AS component_id, "
+    "r.version AS version, "
+    "MIN(s.analysis_id) AS first_seen_analysis, "
+    "MAX(s.analysis_id) AS last_seen_analysis, "
+    "COUNT(DISTINCT s.analysis_id) AS analysis_count "
+    "FROM component_report r JOIN scan s ON s.scan_id = r.scan_id "
+    "WHERE r.version <> '' "
+    "GROUP BY r.component_id, r.version",
+)
+SELECT_COMPONENT_VERSIONS = (
+    "SELECT version, first_seen_analysis, last_seen_analysis, analysis_count "
+    "FROM component_version WHERE component_id = ? "
+    "ORDER BY first_seen_analysis, version"
+)
+
+
 def create_all(session: Session) -> None:
-    """Create every table if absent and stamp the schema version."""
+    """Create every table, index, and view if absent, and stamp the version."""
     for table in TABLES:
         session.create(table)
     for index in INDEXES:
         session.execute(index)
+    for view in VIEWS:
+        session.execute(view)
     session.set_version(SCHEMA_VERSION)

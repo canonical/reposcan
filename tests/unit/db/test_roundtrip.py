@@ -70,7 +70,7 @@ def _findings_scan() -> ScanRecord:
     )
 
 
-def _sbom_scan(version: str = "3.0.0") -> ScanRecord:
+def _sbom_scan(*versions: str) -> ScanRecord:
     document = cyclonedx.CycloneDxDocument(
         {
             "bomFormat": "CycloneDX",
@@ -82,6 +82,7 @@ def _sbom_scan(version: str = "3.0.0") -> ScanRecord:
                     "version": version,
                     "purl": f"pkg:pypi/flask@{version}",
                 }
+                for version in (versions or ("3.0.0",))
             ],
         }
     )
@@ -253,6 +254,42 @@ def test_a_component_survives_a_version_change() -> None:
         versions = _query(path, "SELECT version FROM component_report ORDER BY scan_id")
     assert (issue.first_seen_analysis, issue.last_seen_analysis) == (1, 2)
     assert versions == [("3.0.0",), ("3.1.0",)]  # one issue, two observed versions
+
+
+def _spans(path: str) -> list[tuple[str, int, int, int]]:
+    """Every version span of the only component in the only project."""
+    (component,) = read.components(path, project_id=1)
+    return [
+        (
+            span.version,
+            span.first_seen_analysis,
+            span.last_seen_analysis,
+            span.analysis_count,
+        )
+        for span in read.versions(path, component.component_id)
+    ]
+
+
+def test_one_version_pinned_twice_in_an_analysis_counts_as_one_sighting() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        # Two lockfiles in the repository pin the same version of the same package.
+        write.analysis(path, _analysis("u1"), [_sbom_scan("3.0.0", "3.0.0")])
+        spans = _spans(path)
+    assert spans == [("3.0.0", 1, 1, 1)]
+
+
+def test_each_version_spans_from_its_first_sighting_to_its_last() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        write.analysis(path, _analysis("u1"), [_sbom_scan("1.0.0")])
+        write.analysis(path, _analysis("u2"), [_sbom_scan("2.0.0")])
+        write.analysis(path, _analysis("u3"), [_sbom_scan("1.0.0")])
+        spans = _spans(path)
+    # A span per version, running from the earliest analysis that saw it to the
+    # latest. 1.0.0 was rolled back to, so its span covers all three analyses while
+    # only two of them saw it: the count is the only thing that says so.
+    assert spans == [("1.0.0", 1, 3, 2), ("2.0.0", 2, 2, 1)]
 
 
 def test_an_issues_analysis_span_never_rewinds() -> None:
