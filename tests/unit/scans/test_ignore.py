@@ -31,15 +31,12 @@ def _finding(
     return sarif.SarifResult(_result(rule_id, uri, scanners or ["x"], line))
 
 
-def _document(*results: dict) -> sarif.SarifDocument:
-    return sarif.SarifDocument(
-        {
-            "version": "2.1.0",
-            "runs": [
-                {"tool": {"driver": {"name": "reposcan"}}, "results": list(results)}
-            ],
-        }
-    )
+def _runs(*results: dict) -> list[sarif.SarifRun]:
+    return [
+        sarif.SarifRun(
+            {"tool": {"driver": {"name": "reposcan"}}, "results": list(results)}
+        )
+    ]
 
 
 def test_parse_reads_entries_and_reports_malformed_lines() -> None:
@@ -106,7 +103,7 @@ def test_apply_drops_only_the_matching_findings() -> None:
         "trufflehog SentryToken tools/locks/*.txt\n* CKV_AWS_18 **/*.tf\n"
     )
     assert errors == []
-    doc = _document(
+    runs = _runs(
         # dropped: tool, rule, and path all match
         _result("SentryToken", "tools/locks/checkov.txt", ["trufflehog"]),
         # kept: same rule and path, but a different tool
@@ -116,9 +113,9 @@ def test_apply_drops_only_the_matching_findings() -> None:
         # kept: a rule that no entry ignores
         _result("CKV_AWS_20", "infra/main.tf", ["checkov"]),
     )
-    removed = ignore.apply(doc, rules)
+    removed = ignore.apply(runs, rules)
     assert removed == 2
-    assert [r.rule_id for r in doc.results()] == ["SentryToken", "CKV_AWS_20"]
+    assert [r.rule_id for r in runs[0].results()] == ["SentryToken", "CKV_AWS_20"]
 
 
 def test_content_pattern_drops_a_finding_only_when_the_offending_line_matches() -> None:
@@ -134,13 +131,13 @@ def test_content_pattern_drops_a_finding_only_when_the_offending_line_matches() 
             'poutine unverified_creator .github/workflows/*.yml "uses: sketchy/"\n'
         )
         assert errors == []
-        doc = _document(
+        runs = _runs(
             _result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 2),
             _result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 3),
         )
-        removed = ignore.apply(doc, rules, root)
+        removed = ignore.apply(runs, rules, root)
         assert removed == 1  # only the sketchy/ line; actions/checkout is kept
-        assert [r.line for r in doc.results()] == [3]
+        assert [r.line for r in runs[0].results()] == [3]
 
 
 def test_content_pattern_keeps_the_finding_when_the_content_cannot_be_read() -> None:
@@ -149,6 +146,6 @@ def test_content_pattern_keeps_the_finding_when_the_content_cannot_be_read() -> 
     with tempfile.TemporaryDirectory() as root:
         rules, errors = ignore.parse("* R *.yml anything\n")
         assert errors == []
-        doc = _document(_result("R", "missing.yml", ["x"], 3))
-        assert ignore.apply(doc, rules, root) == 0
-        assert [r.rule_id for r in doc.results()] == ["R"]
+        runs = _runs(_result("R", "missing.yml", ["x"], 3))
+        assert ignore.apply(runs, rules, root) == 0
+        assert [r.rule_id for r in runs[0].results()] == ["R"]

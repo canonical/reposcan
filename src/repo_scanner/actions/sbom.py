@@ -5,16 +5,27 @@
 
 import logging
 import os
+import uuid
 from pathlib import Path
 
 from repo_scanner.actions.base import Action
 from repo_scanner.backends import start_session
 from repo_scanner.cli_kit import flag, option, positional
+from repo_scanner.db import write as db_write
+from repo_scanner.db.model import (
+    AnalysisRecord,
+    ScanRecord,
+    ScanStatus,
+    reposcan_version,
+    utc_now,
+)
 from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
 from repo_scanner.scans import output
+from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
+from repo_scanner.scans.repo import read_repository_state
 from repo_scanner.scans.run import generate_sbom
 from repo_scanner.scans.sbom import SbomScan
 
@@ -31,6 +42,10 @@ class SbomCommand(Action):
 
     path: str = positional(help="Path to the repository to inventory.")
     output: str | None = option("-o", help="Write the SBOM to FILE instead of stdout.")
+    db: str | None = option(
+        help="Record this analysis in the database at FILE, creating it if absent. "
+        "(independent of -o)"
+    )
     format: str | None = option("-f", choices=FORMATS, help="Output format.")
     limit: int = option(
         "-n",
@@ -88,6 +103,7 @@ class SbomCommand(Action):
                 include_dev_dependencies=self.include_dev_dependencies,
                 allow_code_execution=self.allow_code_execution,
             )
+            started_at = utc_now()
             artifact = generate_sbom(
                 scan,
                 session.context,
@@ -99,6 +115,28 @@ class SbomCommand(Action):
             if isinstance(artifact, Failure):
                 logger.error("sbom failed: %s", artifact.reason)
                 return 1
+            if self.db is not None:
+                finished_at = utc_now()
+                analysis = AnalysisRecord(
+                    uuid=str(uuid.uuid4()),
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    reposcan_version=reposcan_version(),
+                    repository=read_repository_state(session.context, session.target),
+                )
+                recorded = ScanRecord(
+                    category=scan.name,
+                    kind=ArtifactKind.CYCLONEDX,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    status=ScanStatus.COMPLETE,
+                    produced=artifact,
+                )
+                failed = db_write.analysis(self.db, analysis, [recorded])
+                if failed is not None:
+                    logger.error(failed.reason)
+                    return 1
+                logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
             failure = output.emit_all(
                 [artifact],
                 output=self.output,

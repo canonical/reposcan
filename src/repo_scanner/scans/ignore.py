@@ -27,6 +27,7 @@ the finding has no line); if it cannot be read, the finding is kept. Quote the r
 
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from repo_scanner.scans import sarif
@@ -142,9 +143,9 @@ def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
 
 
 def apply(
-    document: sarif.SarifDocument, rules: list[IgnoreRule], root: str = ""
+    runs: Sequence[sarif.SarifRun], rules: list[IgnoreRule], root: str = ""
 ) -> int:
-    """Drop ignored findings from `document` in place; return the number removed.
+    """Drop ignored findings from each run in place; return the number removed.
 
     `root` is the repository root, used to read the offending content for rules that
     carry a content pattern (see the module docstring).
@@ -152,15 +153,14 @@ def apply(
     if not rules:
         return 0
     removed = 0
-    for run in document.content.get("runs", []):
+    for run in runs:
         kept = []
-        for result in run.get("results", []):
-            finding = sarif.SarifResult(result)
+        for finding in run.results():
             if any(rule.matches(finding, root) for rule in rules):
                 removed += 1
             else:
-                kept.append(result)
-        run["results"] = kept
+                kept.append(finding)
+        run.set_results(kept)
     return removed
 
 

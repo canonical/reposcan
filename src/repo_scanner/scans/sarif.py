@@ -190,6 +190,10 @@ class SarifRun:
         """The run's tool-driver rule objects (rule metadata), or an empty list."""
         return self.run.get("tool", {}).get("driver", {}).get("rules", [])
 
+    def set_results(self, results: list[SarifResult]) -> None:
+        """Replace the run's findings with `results`."""
+        self.run["results"] = [finding.result for finding in results]
+
     def set_automation_id(self, automation_id: str) -> None:
         """Set the run's `automationDetails.id` (its code-scanning category)."""
         self.run["automationDetails"] = {"id": automation_id}

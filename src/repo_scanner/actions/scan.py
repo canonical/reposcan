@@ -16,11 +16,20 @@ scan be among the selected types, so an option for an unselected scan is a usage
 import copy
 import logging
 import os
+import uuid
 from pathlib import Path
 
 from repo_scanner.actions.base import Action
 from repo_scanner.backends import start_session
 from repo_scanner.cli_kit import Param, flag, option, params_of, positional
+from repo_scanner.db import write as db_write
+from repo_scanner.db.model import (
+    AnalysisRecord,
+    ScanRecord,
+    ScanStatus,
+    reposcan_version,
+    utc_now,
+)
 from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
@@ -29,6 +38,7 @@ from repo_scanner.scans.base import SecurityScan
 from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.registry import SCANS
+from repo_scanner.scans.repo import read_repository_state
 from repo_scanner.scans.run import run_scan
 
 logger = logging.getLogger(__name__)
@@ -104,6 +114,10 @@ class ScanCommand(Action):
     output: str | None = option(
         "-o", help="Write the report to FILE instead of stdout."
     )
+    db: str | None = option(
+        help="Record this analysis in the database at FILE, creating it if absent. "
+        "(independent of -o)"
+    )
     format: str | None = option("-f", choices=FORMATS, help="Output format.")
     limit: int = option(
         "-n",
@@ -176,7 +190,9 @@ class ScanCommand(Action):
             if not session.ok:
                 return session.exit_code
             assert session.target is not None  # a source was given, so target is set
+            started_at = utc_now()
             runs: list[sarif.SarifRun] = []
+            recorded: list[ScanRecord] = []
             for name in names:
                 scan_cls = SCANS[name]
                 scan = scan_cls(
@@ -185,6 +201,7 @@ class ScanCommand(Action):
                         for param in params_of(scan_cls)
                     }
                 )
+                scan_started = utc_now()
                 run = run_scan(
                     scan,
                     session.context,
@@ -197,11 +214,37 @@ class ScanCommand(Action):
                     logger.error("%s scan failed: %s", name, run.reason)
                     return 1
                 runs.append(run)
+                recorded.append(
+                    ScanRecord(
+                        category=name,
+                        kind=ArtifactKind.SARIF,
+                        started_at=scan_started,
+                        finished_at=utc_now(),
+                        status=ScanStatus.COMPLETE,
+                        produced=run,
+                    )
+                )
 
-            report = sarif.SarifDocument.from_runs(runs)
-            removed = ignore.apply(report, ignore_rules, path)
+            # Filter the runs before anything is built from them, so a suppressed
+            # finding reaches neither the report nor the database.
+            removed = ignore.apply(runs, ignore_rules, path)
             if removed:
                 logger.info("ignored %d finding(s) via %s", removed, ignore_path)
+            report = sarif.SarifDocument.from_runs(runs)
+
+            if self.db is not None:
+                analysis = AnalysisRecord(
+                    uuid=str(uuid.uuid4()),
+                    started_at=started_at,
+                    finished_at=utc_now(),
+                    reposcan_version=reposcan_version(),
+                    repository=read_repository_state(session.context, session.target),
+                )
+                failed = db_write.analysis(self.db, analysis, recorded)
+                if failed is not None:
+                    logger.error(failed.reason)
+                    return 1
+                logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
             failure = output.emit_all(
                 [report],
                 output=self.output,

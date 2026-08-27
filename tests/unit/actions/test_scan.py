@@ -18,10 +18,12 @@ import pytest
 
 import repo_scanner.actions.scan as scan_cmd
 from repo_scanner.cli_kit import params_of
+from repo_scanner.db import read as db_read
 from repo_scanner.execution.process import Failure
 from repo_scanner.scans import sarif
 from repo_scanner.scans.output import Format
 from repo_scanner.scans.registry import SCANS
+from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
 from tests.unit.actions.helpers import patch_run_scan, sarif_run
 
 
@@ -96,6 +98,33 @@ def test_refuses_to_overwrite_an_existing_output_file() -> None:
         assert out.getvalue() == ""
         with open(path, encoding="ascii") as handle:
             assert handle.read() == "existing report"  # untouched
+
+
+def test_db_records_the_analysis_and_composes_with_an_output_file() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database = os.path.join(directory, "history.db")
+        report = os.path.join(directory, "report.sarif")
+        action = scan_cmd.ScanCommand(
+            scans=["secrets"], path=directory, output=report, db=database
+        )
+        # The fake session has no context to run git in, so name the repository here.
+        saved = scan_cmd.read_repository_state
+        scan_cmd.read_repository_state = lambda ctx, target: RepositoryState(
+            identity=ProjectIdentity("acme")
+        )
+        try:
+            with patch_run_scan(scan_cmd, sarif_run(1)):
+                code = action.run()
+        finally:
+            scan_cmd.read_repository_state = saved
+        # -o and --db are independent: passing both emits the report and records it.
+        assert code == 3
+        assert os.path.exists(report)
+        (analysis,) = db_read.analyses(database)
+        assert analysis.categories == ("secrets",)
+        (project,) = db_read.projects(database)
+        assert project.name == "acme"
+        assert len(db_read.issues(database, project.project_id)) == 1
 
 
 def test_scan_names_splits_dedups_strips_and_rejects() -> None:

@@ -4,11 +4,26 @@
 """Intermediate Python objects for working with the databasel."""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
+from importlib.metadata import PackageNotFoundError, version
 
 from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.repo import RepositoryState
+
+
+def utc_now() -> str:
+    """The current time, in the ISO-8601 UTC form the records carry."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def reposcan_version() -> str:
+    """The running reposcan's version, or "unknown" if its metadata is unavailable."""
+    try:
+        return version("repo-scanner")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 class ScanStatus(str, Enum):
