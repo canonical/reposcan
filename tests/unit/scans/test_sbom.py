@@ -4,6 +4,7 @@
 """Tests for the SBOM scan (repo_scanner.scans.sbom) and CycloneDX merge."""
 
 import json
+from dataclasses import asdict
 from typing import cast
 
 from repo_scanner.execution.context import ExecutionContext
@@ -113,3 +114,47 @@ def test_record_invocations_adds_a_formulation_workflow_with_command_and_env() -
     assert executed == "/opt/reposcan/bin/syft dir:/scan/acme -o cyclonedx-json"
     env_vars = workflow["inputs"][0]["environmentVars"]
     assert {"name": "SYFT_CHECK_FOR_APP_UPDATE", "value": "false"} in env_vars
+
+
+def test_recorded_invocations_survive_a_json_round_trip_as_records() -> None:
+    # Every field set, so the round trip is checked against the whole record rather
+    # than against whichever fields happen not to be at their defaults.
+    inv = ToolInvocationRecord(
+        tool="govulncheck",
+        args=["-format", "sarif", "./..."],
+        ok_codes=(0, 3),
+        cwd="/scan/x/sub",
+        env={"GOFLAGS": "-mod=mod"},
+        output_file="govulncheck.json",
+        optional=True,
+        version="1.1.4",
+        command=("/opt/govulncheck", "-format", "sarif", "./...", "--exclude", "v"),
+        working_directory="/scan/x/sub",
+        environment={"GOFLAGS": "-mod=mod"},
+        exit_code=3,
+        successful=True,
+    )
+    doc = CycloneDxDocument({"bomFormat": "CycloneDX", "components": []})
+    doc.record_invocations([inv])
+    rendered = doc.to_dict()
+
+    # As for SARIF: parsing gives records back, so a document that was read behaves
+    # like one that was just produced.
+    reread = CycloneDxDocument(json.loads(json.dumps(rendered)))
+    (restored,) = reread.tool_invocations
+    # Field by field, so a mismatch names the field rather than the whole record.
+    assert asdict(restored) == asdict(inv)
+    assert reread.to_dict() == rendered  # and rendering again changes nothing
+
+
+def test_formulation_another_producer_wrote_is_left_alone() -> None:
+    theirs = {"bom-ref": "their-build", "workflows": [{"uid": "build-0"}]}
+    doc = CycloneDxDocument(
+        {"bomFormat": "CycloneDX", "components": [], "formulation": [theirs]}
+    )
+    # Not under reposcan's bom-ref, so not read as records and not overwritten by the
+    # entry reposcan appends.
+    assert doc.tool_invocations == []
+    doc.record_invocations([ToolInvocationRecord(tool="syft", args=[], version="1.0")])
+    refs = [entry["bom-ref"] for entry in doc.to_dict()["formulation"]]
+    assert refs == ["their-build", "reposcan-scan"]

@@ -15,50 +15,70 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
 
-# db schema for components table
-COMPONENTS = TableSchema(
-    name="components",
-    columns=("name", "version", "type", "purl", "scanners", "document"),
-    create=(
-        "CREATE TABLE components (name TEXT, version TEXT, type TEXT, purl TEXT, "
-        "scanners TEXT, document TEXT)"
-    ),
-    insert="INSERT INTO components VALUES (?, ?, ?, ?, ?, ?)",
-    select="SELECT * FROM components ORDER BY rowid",
-)
+# The formulation entry reposcan writes, and the properties that make each workflow
+# in it readable back as a record rather than parsed out of its display strings.
+_FORMULATION_REF = "reposcan-scan"
+_TOOL_PROPERTY = "reposcan:tool"
+_VERSION_PROPERTY = "reposcan:version"
+_COMMAND_PROPERTY = "reposcan:command"
+_ARGS_PROPERTY = "reposcan:args"
+_OK_CODES_PROPERTY = "reposcan:okCodes"
+_OPTIONAL_PROPERTY = "reposcan:optional"
+_CWD_PROPERTY = "reposcan:cwd"
+_ENV_PROPERTY = "reposcan:env"
+_OUTPUT_FILE_PROPERTY = "reposcan:outputFile"
+_DIRECTORY_PROPERTY = "reposcan:workingDirectory"
+_EXIT_CODE_PROPERTY = "reposcan:exitCode"
+_SUCCESSFUL_PROPERTY = "reposcan:successful"
 
 
 @dataclass(frozen=True)
 class CycloneDxDocument:
     """A CycloneDX SBOM artifact (an Artifact of kind CYCLONEDX).
 
-    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`),
-    though some properties (i.e., `invocations`) are held outside of the raw
-    CycloneDX and rendered into the document on `to_dict`.
+    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`).
+
+    Invocations reposcan recorded are held as `ToolInvocationRecord`s rather than as
+    a CycloneDX `formulation`, and `to_dict` renders them back. Constructing a
+    document over content that already holds them reads them back out into records,
+    so a document that was parsed behaves exactly like one that was just produced.
+    Formulation reposcan did not write stays in the content untouched.
     """
 
     kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
     content: dict[str, Any]
-    invocations: list[ToolInvocationRecord] = field(default_factory=list)
+    tool_invocations: list[ToolInvocationRecord] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Read reposcan's own workflows out of the formulation and into records."""
+        kept: list[dict[str, Any]] = []
+        for entry in self.content.get("formulation", []):
+            if entry.get("bom-ref") != _FORMULATION_REF:
+                kept.append(entry)
+                continue
+            for workflow in entry.get("workflows", []):
+                self.tool_invocations.append(_deserialize_invocation(workflow))
+        if "formulation" in self.content:
+            self.content["formulation"] = kept
 
     def to_dict(self) -> dict[str, Any]:
-        """The SBOM as a CycloneDX document, with any invocations rendered in."""
-        if not self.invocations:
+        """The SBOM as a CycloneDX document, with its invocations rendered in."""
+        if not self.tool_invocations:
             return self.content
         workflows = [
-            _workflow_object(index, inv) for index, inv in enumerate(self.invocations)
+            _serialize_invocation(index, inv)
+            for index, inv in enumerate(self.tool_invocations)
         ]
         return {
             **self.content,
             "formulation": [
                 *self.content.get("formulation", []),
-                {"bom-ref": "reposcan-scan", "workflows": workflows},
+                {"bom-ref": _FORMULATION_REF, "workflows": workflows},
             ],
         }
 
@@ -83,34 +103,10 @@ class CycloneDxDocument:
         ]
         return headers, rows
 
-    def records(self) -> Table:
-        """The components as a `COMPONENTS` table, for querying and reconstruction.
-
-        Each row has parsed columns (package URL, the merge's contributing scanners
-        from the `reposcan:scanner` properties) plus `document` (the component's raw
-        JSON, so a single component reconstructs).
-        """
-        components = [
-            (
-                str(component.get("name", "")),
-                str(component.get("version", "")),
-                str(component.get("type", "")),
-                str(component.get("purl", "")),
-                ",".join(
-                    str(prop.get("value", ""))
-                    for prop in component.get("properties", [])
-                    if prop.get("name") == SCANNER_PROPERTY
-                ),
-                json.dumps(component),
-            )
-            for component in self.components()
-        ]
-        return Table(COMPONENTS, components)
-
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
         """Record the tool commands that produced this SBOM, replacing any held."""
-        self.invocations.clear()
-        self.invocations.extend(invocations)
+        self.tool_invocations.clear()
+        self.tool_invocations.extend(invocations)
 
 
 def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
@@ -171,8 +167,8 @@ def _record_scanner(component: dict[str, Any], scanner: str) -> None:
     properties.append({"name": SCANNER_PROPERTY, "value": scanner})
 
 
-def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
-    """A CycloneDX formulation workflow for one executed tool command."""
+def _serialize_invocation(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
+    """One executed tool command, as a CycloneDX formulation workflow."""
     workflow: dict[str, Any] = {
         "bom-ref": f"reposcan-{inv.tool}-{index}",
         "uid": f"{inv.tool}-{index}",
@@ -182,9 +178,26 @@ def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
             {"name": inv.tool, "commands": [{"executed": shlex.join(inv.command)}]}
         ],
         "properties": [
-            {"name": "reposcan:workingDirectory", "value": inv.working_directory},
-            {"name": "reposcan:exitCode", "value": str(inv.exit_code)},
-            {"name": "reposcan:successful", "value": str(inv.successful).lower()},
+            {"name": _TOOL_PROPERTY, "value": inv.tool},
+            {"name": _VERSION_PROPERTY, "value": inv.version},
+            # `commands[].executed` is a display string by spec, so the argv is
+            # carried here instead; otherwise it could not be read back exactly.
+            {"name": _COMMAND_PROPERTY, "value": json.dumps(list(inv.command))},
+            # The argv the scan asked for, before reposcan appended any of its own.
+            {"name": _ARGS_PROPERTY, "value": json.dumps(list(inv.args))},
+            {"name": _OK_CODES_PROPERTY, "value": json.dumps(list(inv.ok_codes))},
+            {"name": _OPTIONAL_PROPERTY, "value": str(inv.optional).lower()},
+            # JSON so that "unset" stays distinct from "set to the empty string";
+            # CycloneDX property values are strings by spec.
+            {"name": _CWD_PROPERTY, "value": json.dumps(inv.cwd)},
+            {
+                "name": _ENV_PROPERTY,
+                "value": json.dumps(None if inv.env is None else dict(inv.env)),
+            },
+            {"name": _OUTPUT_FILE_PROPERTY, "value": json.dumps(inv.output_file)},
+            {"name": _DIRECTORY_PROPERTY, "value": inv.working_directory},
+            {"name": _EXIT_CODE_PROPERTY, "value": str(inv.exit_code)},
+            {"name": _SUCCESSFUL_PROPERTY, "value": str(inv.successful).lower()},
         ],
     }
     if inv.environment:
@@ -197,6 +210,39 @@ def _workflow_object(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
             }
         ]
     return workflow
+
+
+def _deserialize_invocation(workflow: dict[str, Any]) -> ToolInvocationRecord:
+    """The record `_serialize_invocation` wrote.
+
+    Only called for workflows under reposcan's own formulation entry, so every
+    property it reads is one reposcan wrote. Every field of the record is written and
+    read back, so the pair is a true inverse: a document that is serialized and parsed
+    again holds the records it started with.
+    """
+    properties = {
+        str(prop.get("name", "")): str(prop.get("value", ""))
+        for prop in workflow.get("properties", [])
+    }
+    return ToolInvocationRecord(
+        tool=properties.get(_TOOL_PROPERTY, ""),
+        args=json.loads(properties.get(_ARGS_PROPERTY, "[]")),
+        ok_codes=tuple(json.loads(properties.get(_OK_CODES_PROPERTY, "[0]"))),
+        optional=properties.get(_OPTIONAL_PROPERTY, "") == "true",
+        cwd=json.loads(properties.get(_CWD_PROPERTY, "null")),
+        env=json.loads(properties.get(_ENV_PROPERTY, "null")),
+        output_file=json.loads(properties.get(_OUTPUT_FILE_PROPERTY, "null")),
+        version=properties.get(_VERSION_PROPERTY, ""),
+        command=tuple(json.loads(properties.get(_COMMAND_PROPERTY, "[]"))),
+        working_directory=properties.get(_DIRECTORY_PROPERTY, ""),
+        environment={
+            str(var.get("name", "")): str(var.get("value", ""))
+            for entry in workflow.get("inputs", [])
+            for var in entry.get("environmentVars", [])
+        },
+        exit_code=int(properties.get(_EXIT_CODE_PROPERTY, "-1")),
+        successful=properties.get(_SUCCESSFUL_PROPERTY, "") == "true",
+    )
 
 
 def _merge_scanners(into: dict[str, Any], other: dict[str, Any]) -> None:

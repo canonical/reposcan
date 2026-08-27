@@ -7,7 +7,7 @@ reported it.
 
 Scans run via `reposcan scan` and exit `0` (no findings), `3` (findings), `1`
 (error), or `2` (usage). All accept the shared output options (`-o`,
-`-f/--format`, `-n/--limit`, `--wrap`); see [commands](commands.md).
+`--db`, `-f/--format`, `-n/--limit`, `--wrap`); see [commands](commands.md).
 
 ## secrets
 

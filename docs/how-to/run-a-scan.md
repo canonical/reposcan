@@ -44,30 +44,43 @@ pipelines:
 ## Choose the output format
 
 By default reposcan prints a concise table to stdout, capped at a row limit.
-Override the format with `--format` and the destination with `-o`:
+`--format json` prints the SARIF instead, and `-o` writes it to a file:
 
 ```
 reposcan scan sast ./repo                        # table on stdout
 reposcan scan sast ./repo --format json          # SARIF JSON on stdout
-reposcan scan sast ./repo --format json -o out.sarif
+reposcan scan sast ./repo -o out.sarif           # SARIF JSON in a file
+reposcan scan sast ./repo > report.txt           # the table, redirected
 ```
 
-Scans emit SARIF. The `sqlite` format is queryable and fully reconstructable, and
-it requires a file (`-o`). Two table options tune the stdout view:
+A file always receives SARIF, so `--format` only affects stdout. Two table
+options tune the stdout view:
 
 - `--limit N` (`-n`) sets the maximum rows shown (the rest are counted in a log
   line).
 - `--wrap N` sets the maximum lines a long cell may wrap across (default 4;
   `--wrap 1` keeps each cell to a single clipped line).
 
-To convert a report you already saved, use
+To look at a report you already saved, use
 [`render`](../reference/commands.md#render) rather than re-running the scan.
+
+## Record a scan
+
+`--db FILE` records the analysis in a database as well as, or instead of,
+emitting a report:
+
+```
+reposcan scan sast ./repo --db history.db                # record only
+reposcan scan sast ./repo -o out.sarif --db history.db   # emit and record
+```
+
+`-o` and `--db` are independent.
 
 ## Pass scan-specific options
 
 Some scans take their own options. The `secrets` scan, for example, chooses
-between git-history and working-tree mode and can limit the history depth. With no
-`--mode`, it scans the git history for a git repository and the working tree
+between git-history and working-tree mode and can limit the history depth. With
+no `--mode`, it scans the git history for a git repository and the working tree
 otherwise:
 
 ```

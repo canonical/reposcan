@@ -141,6 +141,38 @@ def test_reports_land_in_queryable_tables_alongside_their_raw_json() -> None:
     assert '"automationDetails"' in shells[0][1]
 
 
+def test_provenance_is_not_lost() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        run = sarif.SarifRun(
+            {
+                "tool": {"driver": {"name": "some-tool"}},
+                "results": [],
+                "invocations": [{"commandLine": "some-tool --scan", "exitCode": 0}],
+            }
+        )
+        assert run.tool_invocations == []  # nothing recorded; only the raw JSON
+        write.analysis(
+            path,
+            _analysis(),
+            [
+                ScanRecord(
+                    category="sast",
+                    kind=ArtifactKind.SARIF,
+                    started_at="2026-08-24T10:00:00Z",
+                    finished_at="2026-08-24T10:00:30Z",
+                    status=ScanStatus.COMPLETE,
+                    produced=run,
+                )
+            ],
+        )
+        (restored,) = read.artifacts(path)
+    (rebuilt,) = restored.to_dict()["runs"]
+    assert rebuilt["invocations"] == [
+        {"commandLine": "some-tool --scan", "exitCode": 0}
+    ]
+
+
 def test_the_analysis_records_the_repository_it_covered() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")

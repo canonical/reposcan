@@ -18,7 +18,7 @@ from repo_scanner.db.model import (
 )
 from repo_scanner.ioutil import sqlitedb
 from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.model import Artifact, ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import Artifact, ArtifactKind
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +52,10 @@ def artifacts(
             schema.SELECT_SCANS_FOR_ANALYSIS, (chosen,)
         ):
             shell = json.loads(str(artifact_shell))
-            invocations = _read_invocations(session, int(scan_id))
             if str(artifact_kind) == ArtifactKind.SARIF.value:
-                runs.append(_rebuild_run(session, int(scan_id), shell, invocations))
+                runs.append(_rebuild_run(session, int(scan_id), shell))
             else:
-                inventories.append(
-                    _rebuild_cyclonedx(session, int(scan_id), shell, invocations)
-                )
+                inventories.append(_rebuild_cyclonedx(session, int(scan_id), shell))
             logger.debug("read %s scan from analysis %s", category, chosen)
     # The scan types share one document, exactly as the analysis emitted them: each is
     # a run of its own, told apart by its automation id.
@@ -207,59 +204,27 @@ def _choose_analysis(
 
 
 def _rebuild_run(
-    session: sqlitedb.Session,
-    scan_id: int,
-    shell: dict[str, Any],
-    invocations: list[ToolInvocationRecord],
+    session: sqlitedb.Session, scan_id: int, shell: dict[str, Any]
 ) -> sarif.SarifRun:
-    """Splice a scan's results and invocations back into its emptied run."""
+    """Splice a scan's results back into its emptied run.
+
+    The invocations need no splicing: the shell is the document the scan produced, so
+    constructing a run over it reads them back into records. The invocation table is a
+    projection of those for querying.
+    """
     for (result_json,) in session.query(schema.ISSUE_REPORT.select, (scan_id,)):
         shell["results"].append(json.loads(str(result_json)))
-    rebuilt = sarif.SarifRun(shell)
-    rebuilt.record_invocations(invocations)
-    return rebuilt
+    return sarif.SarifRun(shell)
 
 
 def _rebuild_cyclonedx(
-    session: sqlitedb.Session,
-    scan_id: int,
-    shell: dict[str, Any],
-    invocations: list[ToolInvocationRecord],
+    session: sqlitedb.Session, scan_id: int, shell: dict[str, Any]
 ) -> cyclonedx.CycloneDxDocument:
-    """Splice a scan's components and invocations back into its emptied document."""
+    """Splice a scan's components back into its emptied document."""
     shell["components"] = [
         json.loads(str(component_json))
         for (component_json,) in session.query(
             schema.COMPONENT_REPORT.select, (scan_id,)
         )
     ]
-    rebuilt = cyclonedx.CycloneDxDocument(shell)
-    rebuilt.record_invocations(invocations)
-    return rebuilt
-
-
-def _read_invocations(
-    session: sqlitedb.Session, scan_id: int
-) -> list[ToolInvocationRecord]:
-    """The tool commands a scan executed, in the order they ran."""
-    return [
-        ToolInvocationRecord(
-            tool=str(tool),
-            args=[],
-            version=str(version),
-            command=tuple(json.loads(str(command))),
-            working_directory=str(working_directory),
-            environment=json.loads(str(environment)),
-            exit_code=int(exit_code),
-            successful=bool(successful),
-        )
-        for (
-            tool,
-            version,
-            command,
-            working_directory,
-            environment,
-            exit_code,
-            successful,
-        ) in session.query(schema.INVOCATION.select, (scan_id,))
-    ]
+    return cyclonedx.CycloneDxDocument(shell)

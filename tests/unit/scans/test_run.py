@@ -154,7 +154,7 @@ def test_run_scan_records_tool_invocations_as_provenance() -> None:
     assert invocation["commandLine"] == "/opt/reposcan/bin/trufflehog --version"
     assert invocation["environmentVariables"] == {"K": "V"}
     assert invocation["exitCode"] == 0 and invocation["executionSuccessful"] is True
-    assert invocation["properties"]["tool"] == "trufflehog"
+    assert invocation["properties"]["reposcan:tool"] == "trufflehog"
 
 
 def test_run_scan_reads_output_file_and_passes_env() -> None:

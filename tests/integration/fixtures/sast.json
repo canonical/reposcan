@@ -159,8 +159,8 @@
           "exitCode": 0,
           "executionSuccessful": true,
           "properties": {
-            "tool": "semgrep",
-            "version": "1.168.0"
+            "reposcan:tool": "semgrep",
+            "reposcan:version": "1.168.0"
           }
         }
       ]

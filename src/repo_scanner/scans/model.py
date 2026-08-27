@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar, Protocol
 
-from repo_scanner.ioutil.sqlitedb import Table
-
 
 @dataclass(frozen=True)
 class ToolInvocation:
@@ -74,8 +72,4 @@ class Artifact(Protocol):
 
     def rows(self) -> tuple[list[str], list[list[str]]]:
         """A table view of the artifact: column headers and one row per entry."""
-        ...
-
-    def records(self) -> Table:
-        """The artifact as a db table: schema plus one row per entry."""
         ...

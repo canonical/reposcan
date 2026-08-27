@@ -1472,6 +1472,18 @@
           ],
           "properties": [
             {
+              "name": "reposcan:tool",
+              "value": "trivy"
+            },
+            {
+              "name": "reposcan:version",
+              "value": "0.72.0"
+            },
+            {
+              "name": "reposcan:command",
+              "value": "[\"/opt/reposcan/bin/trivy\", \"fs\", \"--format\", \"cyclonedx\", \"/resolved-deps/repo-scanner\", \"--skip-dirs\", \".pytest_cache\", \"--skip-dirs\", \".ruff_cache\", \"--skip-dirs\", \".tox\", \"--skip-dirs\", \".venv\", \"--skip-dirs\", \"src/repo_scanner/__pycache__\", \"--skip-dirs\", \"src/repo_scanner/commands/__pycache__\", \"--skip-dirs\", \"src/repo_scanner/execution/__pycache__\", \"--skip-dirs\", \"src/repo_scanner/image/__pycache__\", \"--skip-dirs\", \"src/repo_scanner/scans/__pycache__\", \"--skip-dirs\", \"src/repo_scanner/tools/__pycache__\", \"--skip-dirs\", \"tests/integration/__pycache__\", \"--skip-dirs\", \"tests/scans/__pycache__\", \"--skip-dirs\", \"tests/scans/fixtures/__pycache__\", \"--skip-dirs\", \"tests/unit/__pycache__\", \"--skip-files\", \"uv.lock\"]"
+            },
+            {
               "name": "reposcan:workingDirectory",
               "value": "/resolved-deps/repo-scanner"
             },
@@ -1503,6 +1515,18 @@
             }
           ],
           "properties": [
+            {
+              "name": "reposcan:tool",
+              "value": "syft"
+            },
+            {
+              "name": "reposcan:version",
+              "value": "1.46.0"
+            },
+            {
+              "name": "reposcan:command",
+              "value": "[\"/opt/reposcan/bin/syft\", \"dir:/resolved-deps/repo-scanner\", \"-o\", \"cyclonedx-json\", \"--override-default-catalogers\", \"all\", \"--exclude\", \"./.pytest_cache/**\", \"--exclude\", \"./.ruff_cache/**\", \"--exclude\", \"./.tox/**\", \"--exclude\", \"./.venv/**\", \"--exclude\", \"./src/repo_scanner/__pycache__/**\", \"--exclude\", \"./src/repo_scanner/commands/__pycache__/**\", \"--exclude\", \"./src/repo_scanner/execution/__pycache__/**\", \"--exclude\", \"./src/repo_scanner/image/__pycache__/**\", \"--exclude\", \"./src/repo_scanner/scans/__pycache__/**\", \"--exclude\", \"./src/repo_scanner/tools/__pycache__/**\", \"--exclude\", \"./tests/integration/__pycache__/**\", \"--exclude\", \"./tests/scans/__pycache__/**\", \"--exclude\", \"./tests/scans/fixtures/__pycache__/**\", \"--exclude\", \"./tests/unit/__pycache__/**\", \"--exclude\", \"./uv.lock\"]"
+            },
             {
               "name": "reposcan:workingDirectory",
               "value": "/resolved-deps/repo-scanner"
@@ -1549,6 +1573,18 @@
             }
           ],
           "properties": [
+            {
+              "name": "reposcan:tool",
+              "value": "cdxgen"
+            },
+            {
+              "name": "reposcan:version",
+              "value": "12.7.0"
+            },
+            {
+              "name": "reposcan:command",
+              "value": "[\"/opt/reposcan/bin/cdxgen\", \"--no-install-deps\", \"--lifecycle\", \"pre-build\", \"--no-banner\", \"-o\", \"/tmp/cdxgen-sbom.json\", \"/resolved-deps/repo-scanner\", \"--exclude\", \".pytest_cache/**\", \"--exclude\", \".ruff_cache/**\", \"--exclude\", \".tox/**\", \"--exclude\", \".venv/**\", \"--exclude\", \"src/repo_scanner/__pycache__/**\", \"--exclude\", \"src/repo_scanner/commands/__pycache__/**\", \"--exclude\", \"src/repo_scanner/execution/__pycache__/**\", \"--exclude\", \"src/repo_scanner/image/__pycache__/**\", \"--exclude\", \"src/repo_scanner/scans/__pycache__/**\", \"--exclude\", \"src/repo_scanner/tools/__pycache__/**\", \"--exclude\", \"tests/integration/__pycache__/**\", \"--exclude\", \"tests/scans/__pycache__/**\", \"--exclude\", \"tests/scans/fixtures/__pycache__/**\", \"--exclude\", \"tests/unit/__pycache__/**\", \"--exclude\", \"uv.lock\"]"
+            },
             {
               "name": "reposcan:workingDirectory",
               "value": "/resolved-deps/repo-scanner"

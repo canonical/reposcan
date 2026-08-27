@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+from dataclasses import asdict
 from typing import cast
 
 from repo_scanner.execution.context import ExecutionContext
@@ -197,7 +198,9 @@ def test_merge_runs_dedups_unions_scanners_and_carries_invocations() -> None:
     assert len(results) == 2  # the shared finding is deduped
     (shared,) = [result for result in results if result.rule_id == "AWS"]
     assert sorted(shared.scanners) == ["grype", "trivy"]  # scanner lists unioned
-    tools = [inv["properties"]["tool"] for inv in merged.to_dict()["invocations"]]
+    tools = [
+        inv["properties"]["reposcan:tool"] for inv in merged.to_dict()["invocations"]
+    ]
     assert tools == ["trivy", "grype"]  # each run's invocations carried
 
 
@@ -226,3 +229,44 @@ def test_from_runs_keeps_one_run_per_scan_without_cross_scan_dedup() -> None:
         "reposcan/secrets/",
     ]
     assert report.count() == 2  # both kept: no cross-scan dedup
+
+
+def test_recorded_invocations_survive_a_json_round_trip_as_records() -> None:
+    # Every field set, so the round trip is checked against the whole record rather
+    # than against whichever fields happen not to be at their defaults.
+    inv = ToolInvocationRecord(
+        tool="govulncheck",
+        args=["-format", "sarif", "./..."],
+        ok_codes=(0, 3),
+        cwd="/scan/x/sub",
+        env={"GOFLAGS": "-mod=mod"},
+        output_file="govulncheck.json",
+        optional=True,
+        version="1.1.4",
+        command=("/opt/govulncheck", "-format", "sarif", "./...", "--exclude", "v"),
+        working_directory="/scan/x/sub",
+        environment={"GOFLAGS": "-mod=mod"},
+        exit_code=3,
+        successful=True,
+    )
+    run = sarif.SarifRun.from_results("govulncheck", "1.1.4", [])
+    run.record_invocations([inv])
+    rendered = run.to_dict()
+
+    # Reading the document back gives records again, not opaque JSON, so a
+    # read-modify-write keeps provenance the next writer can account for.
+    reread = sarif.SarifRun(json.loads(json.dumps(rendered)))
+    (restored,) = reread.tool_invocations
+    # Field by field, so a mismatch names the field rather than the whole record.
+    assert asdict(restored) == asdict(inv)
+    assert reread.to_dict() == rendered  # and rendering again changes nothing
+
+
+def test_invocations_another_producer_wrote_are_left_alone() -> None:
+    theirs = {"commandLine": "other-tool --go", "exitCode": 0}
+    run = sarif.SarifRun(
+        {"tool": {"driver": {"name": "other"}}, "results": [], "invocations": [theirs]}
+    )
+    # Not reposcan's, so not read as a record and not reshaped into one.
+    assert run.tool_invocations == []
+    assert run.to_dict()["invocations"] == [theirs]

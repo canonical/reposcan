@@ -40,10 +40,10 @@ any, or 0 when it finds none.
 By default reposcan prints a concise table to stdout. To keep the full,
 machine-readable report, choose a format and write it to a file:
 
-    reposcan scan secrets ./path/to/repo --format json -o findings.sarif
+    reposcan scan secrets ./path/to/repo -o findings.sarif
 
-Security scans emit SARIF. The `render` command converts a saved report between
-a table, JSON, and a sqlite database without re-running the scan:
+Security scans emit SARIF. The `render` command prints a saved report as a
+table without re-running the scan:
 
     reposcan render findings.sarif
 

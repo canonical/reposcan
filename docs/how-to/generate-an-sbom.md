@@ -13,18 +13,20 @@ Run `reposcan sbom --help` for the option list.
 
 ## Output formats
 
-By default reposcan prints a component table to stdout. Override the format with
-`--format` and the destination with `-o`:
+By default reposcan prints a component table to stdout. `--format json` prints
+the CycloneDX instead, and `-o` writes it to a file:
 
 ```
 reposcan sbom ./repo                             # table on stdout
 reposcan sbom ./repo --format json               # CycloneDX JSON on stdout
-reposcan sbom ./repo --format json -o sbom.json
-reposcan sbom ./repo --format sqlite -o sbom.db
+reposcan sbom ./repo -o sbom.json                # CycloneDX JSON in a file
+reposcan sbom ./repo --db history.db             # recorded in the database
 ```
 
-The `sqlite` format is queryable and fully reconstructable, and it requires a
-file (`-o`). `-n/--limit` and `--wrap` tune the stdout table, as for `scan`.
+A file always receives CycloneDX, so `--format` only affects stdout. `--db`
+records the inventory in a database instead of, or as well as, writing a file;
+see [run a scan](run-a-scan.md#record-a-history). `-n/--limit` and `--wrap` tune
+the stdout table, as for `scan`.
 
 ## Dependency resolution options
 

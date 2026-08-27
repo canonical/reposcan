@@ -130,7 +130,10 @@ def insert_scan(
         ),
     )
     session.insert(
-        Table(schema.INVOCATION, _invocation_rows(scan_id, record.produced.invocations))
+        Table(
+            schema.INVOCATION,
+            _invocation_rows(scan_id, record.produced.tool_invocations),
+        )
     )
     tracker = _Tracker(session, project_id, record.category)
     if isinstance(record.produced, sarif.SarifRun):
@@ -145,14 +148,12 @@ def insert_scan(
 
 
 def get_shell(record: ScanRecord) -> dict[str, Any]:
-    """What the scan produced, with its entries and its invocations emptied."""
+    """Return the record's document without results or components."""
     shell = copy.deepcopy(record.produced.to_dict())
     if isinstance(record.produced, sarif.SarifRun):
         shell["results"] = []
-        shell.pop("invocations", None)
     else:
         shell["components"] = []
-        shell.pop("formulation", None)
     return shell
 
 

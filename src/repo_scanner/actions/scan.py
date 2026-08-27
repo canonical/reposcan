@@ -158,16 +158,7 @@ class ScanCommand(Action):
                 "output file already exists, refusing to overwrite: %s", self.output
             )
             return 2
-        fmt, error = output.choose_format(self.format, self.output)
-        if error is not None:
-            logger.warning("%s", error)
-            return 2
-
-        # throw an error upfront if selected output type is invalid (findings are SARIF)
-        error = output.unwritable({ArtifactKind.SARIF}, fmt, self.output)
-        if error is not None:
-            logger.error("%s", error)
-            return 2
+        fmt = Format(self.format) if self.format else None
 
         ignore_path = self.ignore_file
         if not self.no_ignore_file and ignore_path is None:
@@ -245,8 +236,8 @@ class ScanCommand(Action):
                     logger.error(failed.reason)
                     return 1
                 logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
-            failure = output.emit_all(
-                [report],
+            failure = output.emit(
+                report,
                 output=self.output,
                 fmt=fmt,
                 limit=self.limit,

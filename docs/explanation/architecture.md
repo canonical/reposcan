@@ -83,8 +83,12 @@ enabled with `--allow-code-execution`. The mechanism and its rationale are in
 
 ## Output
 
-Every report reposcan prints is routed through one output module. The default is
-a concise table on stdout; `--format` selects the native SARIF or CycloneDX
-JSON, or a sqlite database that is both queryable and losslessly
-reconstructable. The `render` command reads a saved report back and converts it
-between the same formats without re-running the scan.
+reposcan's default output is a concise table on stdout, `--format json` gives
+the native SARIF or CycloneDX instead. Files written with `-o` are always
+formatted as SARIF or CycloneDX JSON. The `render` command prints a saved report
+as a table without re-running the scan.
+
+Recording is separate from emitting. `--db FILE` appends the analysis to a
+database, which is an accumulating history of a repository rather than a report:
+it tracks the issues and components a scan reported, which analysis first and
+last saw each of them, and every version a dependency has been pinned at.

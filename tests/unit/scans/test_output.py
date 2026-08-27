@@ -7,20 +7,15 @@ import io
 import json
 import os
 import shutil
-import sqlite3
 import tempfile
 from contextlib import redirect_stdout
 
 from repo_scanner.execution.process import Failure
 from repo_scanner.ioutil import table
 from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.output import (
     Format,
-    choose_format,
     emit,
-    emit_all,
-    unwritable,
 )
 
 
@@ -108,32 +103,6 @@ def test_sbom_renders_a_component_table() -> None:
     assert "COMPONENT" in out.getvalue() and "flask" in out.getvalue()
 
 
-def test_unwritable_guards_mixed_kinds_but_allows_sqlite() -> None:
-    both = {ArtifactKind.SARIF, ArtifactKind.CYCLONEDX}
-    # Findings and an SBOM cannot share one JSON document (a file, or stdout as JSON).
-    assert unwritable(both, Format.JSON, None) is not None
-    assert unwritable(both, None, "report.json") is not None
-    # sqlite holds both kinds; a single kind is fine either way.
-    assert unwritable(both, Format.SQLITE, "report.db") is None
-    assert unwritable({ArtifactKind.SARIF}, Format.JSON, None) is None
-
-
-def test_emit_all_renders_mixed_kinds_to_stdout_and_into_one_sqlite() -> None:
-    artifacts = [_sarif("error"), _cyclonedx("flask")]
-    out = io.StringIO()
-    with redirect_stdout(out):
-        assert emit_all(artifacts) is None  # stdout renders each artifact's own table
-    assert "LEVEL" in out.getvalue() and "COMPONENT" in out.getvalue()
-
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, "r.db")
-        assert emit_all(artifacts, output=path, fmt=Format.SQLITE) is None
-        connection = sqlite3.connect(path)
-        findings = connection.execute("SELECT count(*) FROM findings").fetchone()
-        components = connection.execute("SELECT count(*) FROM components").fetchone()
-    assert findings == (1,) and components == (1,)  # one database, both kinds
-
-
 def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None:
     out = io.StringIO()
     with redirect_stdout(out):
@@ -176,27 +145,3 @@ def test_emit_refuses_to_overwrite_an_existing_file() -> None:
         assert isinstance(result, Failure) and "already exists" in result.reason
         with open(path) as handle:
             assert handle.read() == "existing"  # left untouched
-
-
-def test_sqlite_format_writes_a_database_and_requires_a_file() -> None:
-    doc = _sarif("error")
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, "r.db")
-        assert emit(doc, output=path, fmt=Format.SQLITE) is None
-        count = (
-            sqlite3.connect(path).execute("SELECT count(*) FROM findings").fetchone()
-        )
-    assert count == (1,)  # a real sqlite db with the parsed findings table
-    assert isinstance(emit(doc, fmt=Format.SQLITE), Failure)  # no file -> Failure
-
-
-def test_choose_format_uses_the_format_or_infers_it_from_the_suffix() -> None:
-    assert choose_format("table", "out.json") == (Format.TABLE, None)  # explicit wins
-    assert choose_format(None, "out.json") == (Format.JSON, None)  # inferred
-    assert choose_format(None, "out.sqlite") == (Format.SQLITE, None)
-    # matching is case-insensitive:
-    assert choose_format(None, "REPORT.SARIF") == (Format.JSON, None)
-    assert choose_format(None, None) == (None, None)  # stdout: leave emit its default
-    chosen, error = choose_format(None, "out.weird")  # unrecognized suffix, no format
-    assert chosen is None
-    assert error is not None and "out.weird" in error

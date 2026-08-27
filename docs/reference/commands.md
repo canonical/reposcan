@@ -72,11 +72,12 @@ Types are `secrets`, `sast`, `iac`, `workflow`, and `sca`, or `all` to run every
 type; see the [scans reference](scans.md) for each scan's tools and options.
 Common options:
 
-- `-o, --output <FILE>`: write the report to a file instead of stdout.
-- `-f, --format <fmt>`: `table` (default, stdout), `json`, or `sqlite`. When
-  writing to a file with no `--format`, the format is inferred from the file's
-  suffix (`.json`/`.sarif`, `.sqlite`/`.sqlite3`/`.db`, `.txt`); an unrecognized
-  suffix is rejected before the scan runs.
+- `-o, --output <FILE>`: write the report to a file instead of stdout. Files are
+  always formatted as JSON (SARIF for scans, CycloneDX for `sbom`).
+- `--db <FILE>`: record the analysis in the database at `FILE`, creating it if
+  absent. Independent of `-o`. See [the database](#the-database).
+- `-f, --format <fmt>`: `table` (the default) or `json`, for stdout only. To put
+  a table in a file, redirect: `reposcan scan sast ./repo > report.txt`.
 - `-n, --limit <N>`: maximum table rows shown (default 20).
 - `--wrap <N>`: maximum lines a long table cell may wrap across (default 4; `1`
   keeps each cell to a single clipped line).
@@ -102,7 +103,7 @@ usage error.
 
 `reposcan sbom <path>` builds a CycloneDX software bill of materials for a
 repository. An SBOM is an inventory rather than a pass/fail check, so it always
-exits `0` when it runs. It shares the `-o/--output`, `-f/--format`,
+exits `0` when it runs. It shares the `-o/--output`, `--db`, `-f/--format`,
 `-n/--limit`, and `--wrap` options with `scan`, and takes
 `--include-dev-dependencies` and `--allow-code-execution`. See the
 [Generate an SBOM](../how-to/generate-an-sbom.md) guide and
@@ -112,10 +113,15 @@ Exit codes: `0` on success, `1` on a tool or write error, `2` usage error.
 
 ## render
 
-`reposcan render <path>` converts a saved report between formats without
-re-running a scan. The input is a SARIF or CycloneDX JSON file, or a reposcan
-sqlite database (detected by content). Options: `-o/--output`, `-f/--format`,
-`-n/--limit`, and `--wrap`, as for `scan`. Runs locally with no backend.
+`reposcan render <path>` prints a saved SARIF or CycloneDX JSON report as a
+table, without re-running the scan. Options: `-n/--limit` and `--wrap`, as for
+`scan`. Runs locally with no backend.
+
+## the database
+
+`--db FILE` records an analysis in a SQLite database: one pass of reposcan over
+a repository, holding one scan per scan type. Re-running against the same file
+appends a second analysis without overwriting.
 
 ## exec
 

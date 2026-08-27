@@ -13,25 +13,23 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from repo_scanner.execution.context import ExecutionContext, read_file
-from repo_scanner.ioutil.sqlitedb import Table, TableSchema
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
 
 logger = logging.getLogger(__name__)
 
+# Namespaced so reposcan's own invocations can be told from another producer's.
+_TOOL_PROPERTY = "reposcan:tool"
+_VERSION_PROPERTY = "reposcan:version"
+_ARGS_PROPERTY = "reposcan:args"
+_OK_CODES_PROPERTY = "reposcan:okCodes"
+_OPTIONAL_PROPERTY = "reposcan:optional"
+_CWD_PROPERTY = "reposcan:cwd"
+_ENV_PROPERTY = "reposcan:env"
+_OUTPUT_FILE_PROPERTY = "reposcan:outputFile"
+
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 
 # db schema for findings table
-FINDINGS = TableSchema(
-    name="findings",
-    columns=("rule", "level", "uri", "line", "message", "scanners", "run", "document"),
-    create=(
-        "CREATE TABLE findings (rule TEXT, level TEXT, uri TEXT, line TEXT, "
-        "message TEXT, scanners TEXT, run TEXT, document TEXT)"
-    ),
-    insert="INSERT INTO findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    select="SELECT * FROM findings ORDER BY rowid",
-)
-
 # SARIF severity levels from most to least severe; unlisted levels sort last.
 _LEVEL_RANK = {"error": 0, "warning": 1, "note": 2, "none": 3}
 
@@ -145,13 +143,28 @@ class SarifRun:
     """A SARIF run.
 
     `from_results` builds a run from `SarifResult`s; the plain `SarifRun(dict)`
-    constructor is a view over an existing run dict. Some properties
-    (i.e., `invocations`) are held outside of the raw SARIF and rendered into the
-    document on `to_dict`.
+    constructor is a view over an existing run dict.
+
+    Invocations reposcan recorded are held as `ToolInvocationRecord`s rather than as
+    SARIF objects, and `to_dict` renders them back. Constructing a run over a dict
+    that already holds them reads them back out into records, so a run that was
+    parsed behaves exactly like one that was just produced.
     """
 
     run: dict[str, Any]
-    invocations: list[ToolInvocationRecord] = field(default_factory=list)
+    tool_invocations: list[ToolInvocationRecord] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Read reposcan's own invocations out of the run and into records."""
+        kept: list[dict[str, Any]] = []
+        for invocation in self.run.get("invocations", []):
+            record = _deserialize_invocation(invocation)
+            if record is None:
+                kept.append(invocation)
+            else:
+                self.tool_invocations.append(record)
+        if "invocations" in self.run:
+            self.run["invocations"] = kept
 
     @classmethod
     def from_results(
@@ -173,13 +186,12 @@ class SarifRun:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """The run as a SARIF run object, with any recorded invocations rendered in."""
-        if not self.invocations:
+        """The run as a SARIF run object, with its recorded invocations rendered in."""
+        rendered = [_serialize_invocation(inv) for inv in self.tool_invocations]
+        invocations = [*self.run.get("invocations", []), *rendered]
+        if not invocations:
             return self.run
-        return {
-            **self.run,
-            "invocations": [_invocation_object(inv) for inv in self.invocations],
-        }
+        return {**self.run, "invocations": invocations}
 
     def results(self) -> list[SarifResult]:
         """The run's findings, each as a SarifResult."""
@@ -200,8 +212,8 @@ class SarifRun:
 
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
         """Record the tool commands that produced this run, replacing any held."""
-        self.invocations.clear()
-        self.invocations.extend(invocations)
+        self.tool_invocations.clear()
+        self.tool_invocations.extend(invocations)
 
 
 @dataclass(frozen=True)
@@ -256,31 +268,6 @@ class SarifDocument:
         ]
         rows.sort(key=lambda row: _LEVEL_RANK.get(row[0], len(_LEVEL_RANK)))
         return headers, rows
-
-    def records(self) -> Table:
-        """The findings as a `FINDINGS` table, for querying and reconstruction.
-
-        Each row splits the location into `uri`/`line`, joins the merge's
-        `properties.scanners`, and keeps the result's raw JSON in `document` (so a
-        single finding reconstructs) alongside its `run` index.
-        """
-        findings = []
-        for index, run in enumerate(self.content.get("runs", [])):
-            for result in run.get("results", []):
-                finding = SarifResult(result)
-                findings.append(
-                    (
-                        finding.rule_id,
-                        finding.level,
-                        finding.uri,
-                        str(finding.line) if finding.line else "",
-                        finding.message,
-                        ",".join(finding.scanners),
-                        str(index),
-                        json.dumps(result),
-                    )
-                )
-        return Table(FINDINGS, findings)
 
 
 def parse(
@@ -355,7 +342,8 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
         driver["rules"] = rules
     merged: dict[str, Any] = {"tool": {"driver": driver}, "results": results}
     return SarifRun(
-        merged, [invocation for run in runs for invocation in run.invocations]
+        merged,
+        [invocation for run in runs for invocation in run.tool_invocations],
     )
 
 
@@ -473,8 +461,8 @@ def _relative_uri(uri: str, target: str) -> str:
 # --- rendering ---
 
 
-def _invocation_object(inv: ToolInvocationRecord) -> dict[str, Any]:
-    """A SARIF invocation object for one executed tool command."""
+def _serialize_invocation(inv: ToolInvocationRecord) -> dict[str, Any]:
+    """One executed tool command, as a SARIF invocation object."""
     invocation: dict[str, Any] = {
         "commandLine": shlex.join(inv.command),
         "arguments": list(inv.command[1:]),
@@ -482,8 +470,45 @@ def _invocation_object(inv: ToolInvocationRecord) -> dict[str, Any]:
         "workingDirectory": {"uri": inv.working_directory},
         "exitCode": inv.exit_code,
         "executionSuccessful": inv.successful,
-        "properties": {"tool": inv.tool, "version": inv.version},
+        "properties": {
+            _TOOL_PROPERTY: inv.tool,
+            _VERSION_PROPERTY: inv.version,
+            # `arguments` is the whole argv past the executable; these are the ones
+            # the scan asked for, before reposcan appended any of its own.
+            _ARGS_PROPERTY: list(inv.args),
+            _OK_CODES_PROPERTY: list(inv.ok_codes),
+            _OPTIONAL_PROPERTY: inv.optional,
+            _CWD_PROPERTY: inv.cwd,
+            _ENV_PROPERTY: None if inv.env is None else dict(inv.env),
+            _OUTPUT_FILE_PROPERTY: inv.output_file,
+        },
     }
     if inv.environment:
         invocation["environmentVariables"] = dict(inv.environment)
     return invocation
+
+
+def _deserialize_invocation(invocation: dict[str, Any]) -> ToolInvocationRecord | None:
+    """Deserialize invocations written by `_serialize_invocation`."""
+    properties = invocation.get("properties", {})
+    if _TOOL_PROPERTY not in properties:
+        return None
+    executable = invocation.get("executableLocation", {}).get("uri", "")
+    return ToolInvocationRecord(
+        tool=str(properties[_TOOL_PROPERTY]),
+        args=[str(arg) for arg in properties.get(_ARGS_PROPERTY, [])],
+        ok_codes=tuple(int(code) for code in properties.get(_OK_CODES_PROPERTY, (0,))),
+        optional=bool(properties.get(_OPTIONAL_PROPERTY, False)),
+        cwd=properties.get(_CWD_PROPERTY),
+        env=properties.get(_ENV_PROPERTY),
+        output_file=properties.get(_OUTPUT_FILE_PROPERTY),
+        version=str(properties.get(_VERSION_PROPERTY, "")),
+        command=(
+            str(executable),
+            *(str(arg) for arg in invocation.get("arguments", [])),
+        ),
+        working_directory=str(invocation.get("workingDirectory", {}).get("uri", "")),
+        environment=dict(invocation.get("environmentVariables", {})),
+        exit_code=int(invocation.get("exitCode", -1)),
+        successful=bool(invocation.get("executionSuccessful", False)),
+    )
