@@ -132,7 +132,7 @@ def insert_scan(
     session.insert(
         Table(schema.INVOCATION, _invocation_rows(scan_id, record.invocations))
     )
-    tracker = _Tracker(session, project_id, record.category, analysis_id)
+    tracker = _Tracker(session, project_id, record.category)
     if isinstance(record.produced, sarif.SarifRun):
         insert_issue_reports(session, scan_id, record.produced, tracker)
     else:
@@ -168,18 +168,13 @@ class _Tracker:
     against every known issue, looking for sufficient evidence that the two are the
     same issue.
 
-    Either way a record is created on its first sighting and extended on every one
-    after, so `first_seen_analysis` is when it first appeared and `last_seen_analysis`
-    is the newest analysis that reported it.
+    A record is created on its first report and reused on every subsequent report.
     """
 
-    def __init__(
-        self, session: Session, project_id: int, category: str, analysis_id: int
-    ) -> None:
+    def __init__(self, session: Session, project_id: int, category: str) -> None:
         self.session = session
         self.project_id = project_id
         self.category = category
-        self.analysis_id = analysis_id
 
     def resolve_component(self, component: Mapping[str, Any]) -> int:
         """The id of the component this reports, created if it is new.
@@ -192,15 +187,9 @@ class _Tracker:
             schema.SELECT_COMPONENT_ID, (self.project_id, component_key)
         )
         if rows:
-            component_id = int(rows[0][0])
-            self.session.execute(
-                schema.TOUCH_COMPONENT,
-                (self.analysis_id, component_id, self.analysis_id),
-            )
-            return component_id
+            return int(rows[0][0])
         return self.session.insert_row(
-            schema.COMPONENT.insert,
-            (self.project_id, component_key, self.analysis_id, self.analysis_id),
+            schema.COMPONENT.insert, (self.project_id, component_key)
         )
 
     def resolve_issue(self, finding: sarif.SarifResult) -> int:
@@ -208,21 +197,10 @@ class _Tracker:
         incoming = IssueAttributes.from_result(finding)
         for issue_id, known in self._candidates(incoming.rule):
             if same_issue(known, incoming, self.category):
-                self.session.execute(
-                    schema.TOUCH_ISSUE,
-                    (self.analysis_id, issue_id, self.analysis_id),
-                )
                 self._remember(issue_id, incoming)
                 return issue_id
         issue_id = self.session.insert_row(
-            schema.ISSUE.insert,
-            (
-                self.project_id,
-                self.category,
-                incoming.rule,
-                self.analysis_id,
-                self.analysis_id,
-            ),
+            schema.ISSUE.insert, (self.project_id, self.category, incoming.rule)
         )
         self._remember(issue_id, incoming)
         return issue_id

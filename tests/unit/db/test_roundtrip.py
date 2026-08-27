@@ -292,17 +292,6 @@ def test_each_version_spans_from_its_first_sighting_to_its_last() -> None:
     assert spans == [("1.0.0", 1, 3, 2), ("2.0.0", 2, 2, 1)]
 
 
-def test_an_issues_analysis_span_never_rewinds() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, "history.db")
-        write.analysis(path, _analysis("u1"), [_findings_scan()])
-        write.analysis(path, _analysis("u2"), [_findings_scan()])
-        # Re-ingesting the first scan must not drag last_seen back to it.
-        write.analysis(path, _analysis("u1"), [_findings_scan()])
-        (issue,) = read.issues(path, project_id=1)
-    assert (issue.first_seen_analysis, issue.last_seen_analysis) == (1, 2)
-
-
 def test_two_projects_keep_their_issues_apart() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")

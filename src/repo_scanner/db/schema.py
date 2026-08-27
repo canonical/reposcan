@@ -161,26 +161,16 @@ ISSUE = TableSchema(
         "project_id",  # the repository it belongs to (foreign key)
         "category",  # the scan type that reported it, and the scope it is matched in
         "rule",  # the SARIF ruleId that fired, identical for every report
-        "first_seen_analysis",  # the earliest analysis that reported it (foreign key)
-        "last_seen_analysis",  # the most recent analysis that reported it
     ),
     create=(
         "CREATE TABLE IF NOT EXISTS issue ("
         "issue_id INTEGER PRIMARY KEY, "
         "project_id INTEGER NOT NULL REFERENCES project(project_id), "
         "category TEXT NOT NULL, "
-        "rule TEXT NOT NULL, "
-        "first_seen_analysis INTEGER NOT NULL REFERENCES analysis(analysis_id), "
-        "last_seen_analysis INTEGER NOT NULL REFERENCES analysis(analysis_id))"
+        "rule TEXT NOT NULL)"
     ),
-    insert=(
-        "INSERT INTO issue (project_id, category, rule, first_seen_analysis, "
-        "last_seen_analysis) VALUES (?, ?, ?, ?, ?)"
-    ),
-    select=(
-        "SELECT issue_id, project_id, category, rule, first_seen_analysis, "
-        "last_seen_analysis FROM issue ORDER BY issue_id"
-    ),
+    insert="INSERT INTO issue (project_id, category, rule) VALUES (?, ?, ?)",
+    select=("SELECT issue_id, project_id, category, rule FROM issue ORDER BY issue_id"),
 )
 
 # An abstact component. Unlike an issue, it is fully identified by a key derived from
@@ -191,25 +181,18 @@ COMPONENT = TableSchema(
     columns=(
         "project_id",  # the repository it belongs to (foreign key)
         "component_key",  # its derived identity; see db.identity
-        "first_seen_analysis",  # the earliest analysis that reported it (foreign key)
-        "last_seen_analysis",  # the most recent analysis that reported it
     ),
     create=(
         "CREATE TABLE IF NOT EXISTS component ("
         "component_id INTEGER PRIMARY KEY, "
         "project_id INTEGER NOT NULL REFERENCES project(project_id), "
         "component_key TEXT NOT NULL, "
-        "first_seen_analysis INTEGER NOT NULL REFERENCES analysis(analysis_id), "
-        "last_seen_analysis INTEGER NOT NULL REFERENCES analysis(analysis_id), "
         "UNIQUE (project_id, component_key))"
     ),
-    insert=(
-        "INSERT INTO component (project_id, component_key, first_seen_analysis, "
-        "last_seen_analysis) VALUES (?, ?, ?, ?)"
-    ),
+    insert=("INSERT INTO component (project_id, component_key) VALUES (?, ?)"),
     select=(
-        "SELECT component_id, project_id, component_key, first_seen_analysis, "
-        "last_seen_analysis FROM component ORDER BY component_id"
+        "SELECT component_id, project_id, component_key "
+        "FROM component ORDER BY component_id"
     ),
 )
 
@@ -383,21 +366,17 @@ SELECT_COMPONENT_ID = (
     "SELECT component_id FROM component WHERE project_id = ? AND component_key = ?"
 )
 # An issue or component reported again by a later analysis extends its last sighting.
-TOUCH_ISSUE = (
-    "UPDATE issue SET last_seen_analysis = ? "
-    "WHERE issue_id = ? AND last_seen_analysis < ?"
-)
-TOUCH_COMPONENT = (
-    "UPDATE component SET last_seen_analysis = ? "
-    "WHERE component_id = ? AND last_seen_analysis < ?"
-)
 SELECT_ISSUES = (
-    "SELECT issue_id, project_id, category, rule, first_seen_analysis, "
-    "last_seen_analysis FROM issue WHERE project_id = ? ORDER BY issue_id"
+    "SELECT i.issue_id, i.project_id, i.category, i.rule, "
+    "s.first_seen_analysis, s.last_seen_analysis "
+    "FROM issue i JOIN issue_span s ON s.issue_id = i.issue_id "
+    "WHERE i.project_id = ? ORDER BY i.issue_id"
 )
 SELECT_COMPONENTS = (
-    "SELECT component_id, project_id, component_key, first_seen_analysis, "
-    "last_seen_analysis FROM component WHERE project_id = ? ORDER BY component_id"
+    "SELECT c.component_id, c.project_id, c.component_key, "
+    "s.first_seen_analysis, s.last_seen_analysis "
+    "FROM component c JOIN component_span s ON s.component_id = c.component_id "
+    "WHERE c.project_id = ? ORDER BY c.component_id"
 )
 
 
@@ -424,19 +403,43 @@ def unusable(path: str) -> str | None:
     )
 
 
-# A component keeps one row regardless of upgrades. Its identity is the versionless
-# purl. The versions it has been pinned at, and when, is an aggregate of the reports.
-VIEWS = (
-    "CREATE VIEW IF NOT EXISTS component_version AS "
-    "SELECT r.component_id AS component_id, "
-    "r.version AS version, "
-    "MIN(s.analysis_id) AS first_seen_analysis, "
-    "MAX(s.analysis_id) AS last_seen_analysis, "
-    "COUNT(DISTINCT s.analysis_id) AS analysis_count "
-    "FROM component_report r JOIN scan s ON s.scan_id = r.scan_id "
-    "WHERE r.version <> '' "
-    "GROUP BY r.component_id, r.version",
-)
+# When an issue was first and last reported
+ISSUE_SPAN_VIEW = """
+CREATE VIEW IF NOT EXISTS issue_span AS
+    SELECT r.issue_id                AS issue_id,
+           MIN(s.analysis_id)        AS first_seen_analysis,
+           MAX(s.analysis_id)        AS last_seen_analysis
+      FROM issue_report r
+      JOIN scan s ON s.scan_id = r.scan_id
+     GROUP BY r.issue_id
+"""
+
+# When a component was first and last reported
+COMPONENT_SPAN_VIEW = """
+CREATE VIEW IF NOT EXISTS component_span AS
+    SELECT r.component_id            AS component_id,
+           MIN(s.analysis_id)        AS first_seen_analysis,
+           MAX(s.analysis_id)        AS last_seen_analysis
+      FROM component_report r
+      JOIN scan s ON s.scan_id = r.scan_id
+     GROUP BY r.component_id
+"""
+
+COMPONENT_VERSION_VIEW = """
+CREATE VIEW IF NOT EXISTS component_version AS
+    SELECT r.component_id            AS component_id,
+           r.version                 AS version,
+           MIN(s.analysis_id)        AS first_seen_analysis,
+           MAX(s.analysis_id)        AS last_seen_analysis,
+           COUNT(DISTINCT s.analysis_id) AS analysis_count
+      FROM component_report r
+      JOIN scan s ON s.scan_id = r.scan_id
+     WHERE r.version <> ''
+     GROUP BY r.component_id, r.version
+"""
+
+VIEWS = (ISSUE_SPAN_VIEW, COMPONENT_SPAN_VIEW, COMPONENT_VERSION_VIEW)
+
 SELECT_COMPONENT_VERSIONS = (
     "SELECT version, first_seen_analysis, last_seen_analysis, analysis_count "
     "FROM component_version WHERE component_id = ? "
