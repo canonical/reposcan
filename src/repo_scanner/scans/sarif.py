@@ -397,6 +397,9 @@ def add_primarylocationlinehash(
     Applies a stable hash of the primary location's start line, read from the source
     file through `ctx`. Used by GitHub (and others) to de-duplicate.
 
+    The name is deliberately unversioned, against SARIF's `name/vN` convention, because
+    GitHub matches code-scanning alerts on this exact property name.
+
     Identical lines hash identically, so two findings of one rule on two copies of a
     line would be indistinguishable, and a consumer that de-duplicates on the
     fingerprint would treat them as one. Each hash therefore carries the occurrence's

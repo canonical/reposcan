@@ -38,7 +38,11 @@ def _sarif() -> sarif.SarifDocument:
     run = sarif.SarifRun.from_results(
         "t",
         "1.0",
-        [sarif.SarifResult.build("R1", "boom", "a.py", 3, "t", "", level="error")],
+        [
+            sarif.SarifResult.build(
+                "R1", "insecure hash function", "a.py", 3, "t", "", level="error"
+            )
+        ],
     )
     return sarif.SarifDocument.from_runs([run])
 
@@ -78,7 +82,7 @@ def test_findings_get_a_queryable_findings_table_with_split_location() -> None:
         path = os.path.join(directory, "r.db")
         reportdb.write([_sarif()], path)
         rows = _query(path, "SELECT rule, level, uri, line, message FROM findings")
-    assert rows == [("R1", "error", "a.py", "3", "boom")]
+    assert rows == [("R1", "error", "a.py", "3", "insecure hash function")]
 
 
 def test_each_row_keeps_its_raw_json_and_metadata_holds_the_rest() -> None:

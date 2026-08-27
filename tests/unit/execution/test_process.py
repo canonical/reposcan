@@ -53,10 +53,12 @@ def test_streams_tee_output_live_while_still_capturing_and_reporting_failures() 
     assert "out" in live_out.getvalue() and "err" in live_err.getvalue()  # echoed live
 
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-        boom = "import sys; sys.stderr.write('boom\\n'); raise SystemExit(3)"
-        bad = run_process([sys.executable, "-c", boom], check=True, stream_stderr=True)
+        failing = "import sys; sys.stderr.write('no such file\\n'); raise SystemExit(3)"
+        bad = run_process(
+            [sys.executable, "-c", failing], check=True, stream_stderr=True
+        )
         sleep = [sys.executable, "-c", "import time; time.sleep(5)"]
         slow = run_process(sleep, timeout=0.5, stream_stderr=True)
     # bad's reason is the captured stderr, even though it was also shown live.
-    assert isinstance(bad, Failure) and "boom" in bad.reason
+    assert isinstance(bad, Failure) and "no such file" in bad.reason
     assert isinstance(slow, Failure) and slow.timed_out

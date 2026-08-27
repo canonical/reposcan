@@ -47,8 +47,10 @@ def test_build_runs_docker_build_for_the_tag_and_propagates_failure() -> None:
         result = _BUILDER.build(_SPEC)
     assert result == f"reposcan:{_SPEC.short_digest}"
     assert calls[-1][:4] == ["docker", "build", "-t", result]
-    with _patched(Failure(reason="boom")):
-        assert _BUILDER.build(_SPEC) == Failure(reason="boom")  # build error surfaced
+    with _patched(Failure(reason="docker build failed")):
+        assert _BUILDER.build(_SPEC) == Failure(
+            reason="docker build failed"
+        )  # build error surfaced
 
 
 def test_identity_is_the_image_id_or_none_when_absent() -> None:

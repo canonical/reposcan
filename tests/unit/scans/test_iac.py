@@ -32,5 +32,7 @@ def test_create_run_converts_checkov_failed_checks_to_sarif() -> None:
 
 
 def test_create_run_rejects_non_json_output() -> None:
-    result = IacScan().create_run("checkov", ExecResult(0, "boom", ""), "/scan/acme")
+    result = IacScan().create_run(
+        "checkov", ExecResult(0, "not json", ""), "/scan/acme"
+    )
     assert isinstance(result, Failure)

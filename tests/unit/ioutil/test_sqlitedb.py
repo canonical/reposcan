@@ -61,7 +61,7 @@ def test_a_session_commits_on_a_clean_exit_and_rolls_back_on_an_error() -> None:
         assert session is not None
         with pytest.raises(RuntimeError), session:
             session.insert(Table(_ITEMS, [("2", "discarded")]))
-            raise RuntimeError("boom")
+            raise RuntimeError("the caller failed mid-transaction")
 
         session, _ = connect(path)
         assert session is not None

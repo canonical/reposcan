@@ -112,10 +112,7 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
 
 
 def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.SarifResult:
-    """Build a SARIF finding from one trufflehog finding.
-
-    The detected secret's hash is recorded as a `fingerprints.secretHash`.
-    """
+    """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
     uri, line = _finding_location(finding)
@@ -128,7 +125,8 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
     secret = finding.get("RawV2") or finding.get("Raw") or ""
     if secret:
         digest = hashlib.sha256(secret.encode("utf-8", "surrogatepass")).hexdigest()
-        result.add_fingerprint("secretHash", digest)
+        # use sarif's 'name/vN' convention
+        result.add_fingerprint("secretHash/v1", digest)
     return result
 
 

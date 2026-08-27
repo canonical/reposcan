@@ -125,8 +125,8 @@ def test_create_run_fingerprints_each_finding_by_its_secret() -> None:
     run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
     aws, github = run.results()
     aws_hash = hashlib.sha256(b"AKIAEXAMPLE:secretpart").hexdigest()
-    assert aws.result["fingerprints"] == {"secretHash": aws_hash}
-    assert github.result["fingerprints"]["secretHash"] == (
+    assert aws.result["fingerprints"] == {"secretHash/v1": aws_hash}
+    assert github.result["fingerprints"]["secretHash/v1"] == (
         hashlib.sha256(b"ghp_example").hexdigest()
     )
     # the secret hash is a complete fingerprint, not a GitHub partialFingerprint

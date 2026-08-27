@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The records handed to the report database, and the summaries read back out."""
+"""Intermediate Python objects for working with the databasel."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,8 +12,8 @@ from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
 from repo_scanner.scans.repo import RepositoryState
 
 
-class RunStatus(str, Enum):
-    """Status of a completed, partially-complete, or failed run."""
+class ScanStatus(str, Enum):
+    """Status of a completed, partially-complete, or failed scan."""
 
     COMPLETE = "complete"
     PARTIAL = "partial"
@@ -21,7 +21,7 @@ class RunStatus(str, Enum):
 
 
 @dataclass(frozen=True)
-class ScanRecord:
+class AnalysisRecord:
     """The record of one `reposcan scan` or `reposcan sbom` invocation."""
 
     uuid: str
@@ -30,12 +30,12 @@ class ScanRecord:
     reposcan_version: str
     repository: RepositoryState
     produced_by: str = ""
-    status: RunStatus = RunStatus.COMPLETE
+    status: ScanStatus = ScanStatus.COMPLETE
 
 
 @dataclass(frozen=True)
-class RunRecord:
-    """Record of one scan run, including its results and provenance.
+class ScanRecord:
+    """Record of one scan type's execution, including its results and provenance.
 
     `produced` is a single SARIF run, or the whole CycloneDX document for an SBOM.
     """
@@ -44,9 +44,32 @@ class RunRecord:
     kind: ArtifactKind
     started_at: str
     finished_at: str
-    status: RunStatus
+    status: ScanStatus
     produced: "sarif.SarifRun | cyclonedx.CycloneDxDocument"
     invocations: Sequence[ToolInvocationRecord] = ()
+
+
+@dataclass(frozen=True)
+class Issue:
+    """One issue and the span of analyses that have reported it."""
+
+    issue_id: int
+    project_id: int
+    category: str
+    rule: str
+    first_seen_analysis: int
+    last_seen_analysis: int
+
+
+@dataclass(frozen=True)
+class Component:
+    """One component and the span of analyses that have reported it."""
+
+    component_id: int
+    project_id: int
+    component_key: str
+    first_seen_analysis: int
+    last_seen_analysis: int
 
 
 @dataclass(frozen=True)
@@ -61,14 +84,14 @@ class ProjectSummary:
 
 
 @dataclass(frozen=True)
-class ScanSummary:
-    """Summary of a scan."""
+class AnalysisSummary:
+    """Summary of an analysis."""
 
-    scan_id: int
+    analysis_id: int
     project_id: int
     uuid: str
     started_at: str
-    status: RunStatus
+    status: ScanStatus
     produced_by: str = ""
     commit_sha: str = ""
     branch: str = ""

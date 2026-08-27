@@ -49,7 +49,7 @@ class _FakeContext:
         self.argvs.append(list(command))
         self.scripts.append(script)
         if self._fail_on is not None and self._fail_on in script:
-            return ExecResult(exit_code=1, stdout="", stderr="boom")
+            return ExecResult(exit_code=1, stdout="", stderr="download failed")
         return ExecResult(exit_code=0, stdout="", stderr="")
 
     def stop(self) -> None:

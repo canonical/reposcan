@@ -25,7 +25,11 @@ def _sarif_doc() -> dict:
     run = sarif.SarifRun.from_results(
         "tool",
         "1.0",
-        [sarif.SarifResult.build("X", "boom", "a.py", 3, "tool", "", level="error")],
+        [
+            sarif.SarifResult.build(
+                "X", "insecure hash function", "a.py", 3, "tool", "", level="error"
+            )
+        ],
     )
     return sarif.SarifDocument.from_runs([run]).to_dict()
 
