@@ -56,8 +56,6 @@ def _findings_scan() -> ScanRecord:
             successful=True,
         )
     ]
-    # The driver records provenance onto the artifact and hands the same records to
-    # the store, so the round trip is against a document that already carries them.
     run.record_invocations(invocations)
     return ScanRecord(
         category="sast",
@@ -66,7 +64,6 @@ def _findings_scan() -> ScanRecord:
         finished_at="2026-08-24T10:00:30Z",
         status=ScanStatus.COMPLETE,
         produced=run,
-        invocations=invocations,
     )
 
 

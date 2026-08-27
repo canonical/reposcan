@@ -3,12 +3,11 @@
 
 """Intermediate Python objects for working with the databasel."""
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
 from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.model import ArtifactKind
 from repo_scanner.scans.repo import RepositoryState
 
 
@@ -35,7 +34,7 @@ class AnalysisRecord:
 
 @dataclass(frozen=True)
 class ScanRecord:
-    """Record of one scan type's execution, including its results and provenance.
+    """Record of one scan type's execution.
 
     `produced` is a single SARIF run, or the whole CycloneDX document for an SBOM.
     """
@@ -45,8 +44,7 @@ class ScanRecord:
     started_at: str
     finished_at: str
     status: ScanStatus
-    produced: "sarif.SarifRun | cyclonedx.CycloneDxDocument"
-    invocations: Sequence[ToolInvocationRecord] = ()
+    produced: sarif.SarifRun | cyclonedx.CycloneDxDocument
 
 
 @dataclass(frozen=True)

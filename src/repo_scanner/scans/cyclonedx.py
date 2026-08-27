@@ -12,7 +12,7 @@ import copy
 import json
 import shlex
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from repo_scanner.ioutil.sqlitedb import Table, TableSchema
@@ -38,15 +38,29 @@ COMPONENTS = TableSchema(
 class CycloneDxDocument:
     """A CycloneDX SBOM artifact (an Artifact of kind CYCLONEDX).
 
-    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`).
+    Wraps the rendered CycloneDX `content` (a tool's output, or a `merge`),
+    though some properties (i.e., `invocations`) are held outside of the raw
+    CycloneDX and rendered into the document on `to_dict`.
     """
 
     kind: ClassVar[ArtifactKind] = ArtifactKind.CYCLONEDX
     content: dict[str, Any]
+    invocations: list[ToolInvocationRecord] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """The artifact as a CycloneDX document object."""
-        return self.content
+        """The SBOM as a CycloneDX document, with any invocations rendered in."""
+        if not self.invocations:
+            return self.content
+        workflows = [
+            _workflow_object(index, inv) for index, inv in enumerate(self.invocations)
+        ]
+        return {
+            **self.content,
+            "formulation": [
+                *self.content.get("formulation", []),
+                {"bom-ref": "reposcan-scan", "workflows": workflows},
+            ],
+        }
 
     def components(self) -> list[dict[str, Any]]:
         """Every component object the SBOM lists."""
@@ -94,19 +108,9 @@ class CycloneDxDocument:
         return Table(COMPONENTS, components)
 
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
-        """Record each executed tool command in the SBOM's CycloneDX `formulation`.
-
-        Each command is a workflow (a "scan" task) whose step holds the executed
-        command line and whose input holds the environment reposcan set.
-        """
-        if not invocations:
-            return
-        workflows = [
-            _workflow_object(index, inv) for index, inv in enumerate(invocations)
-        ]
-        self.content.setdefault("formulation", []).append(
-            {"bom-ref": "reposcan-scan", "workflows": workflows}
-        )
+        """Record the tool commands that produced this SBOM, replacing any held."""
+        self.invocations.clear()
+        self.invocations.extend(invocations)
 
 
 def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:

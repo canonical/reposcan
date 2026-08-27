@@ -9,7 +9,7 @@ import json
 import logging
 import shlex
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from repo_scanner.execution.context import ExecutionContext, read_file
@@ -145,10 +145,13 @@ class SarifRun:
     """A SARIF run.
 
     `from_results` builds a run from `SarifResult`s; the plain `SarifRun(dict)`
-    constructor is a view over an existing run dict.
+    constructor is a view over an existing run dict. Some properties
+    (i.e., `invocations`) are held outside of the raw SARIF and rendered into the
+    document on `to_dict`.
     """
 
     run: dict[str, Any]
+    invocations: list[ToolInvocationRecord] = field(default_factory=list)
 
     @classmethod
     def from_results(
@@ -170,8 +173,13 @@ class SarifRun:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """The run as a SARIF run object."""
-        return self.run
+        """The run as a SARIF run object, with any recorded invocations rendered in."""
+        if not self.invocations:
+            return self.run
+        return {
+            **self.run,
+            "invocations": [_invocation_object(inv) for inv in self.invocations],
+        }
 
     def results(self) -> list[SarifResult]:
         """The run's findings, each as a SarifResult."""
@@ -182,19 +190,14 @@ class SarifRun:
         """The run's tool-driver rule objects (rule metadata), or an empty list."""
         return self.run.get("tool", {}).get("driver", {}).get("rules", [])
 
-    @property
-    def invocations(self) -> list[dict[str, Any]]:
-        """The run's recorded tool invocations, or an empty list."""
-        return self.run.get("invocations", [])
-
     def set_automation_id(self, automation_id: str) -> None:
         """Set the run's `automationDetails.id` (its code-scanning category)."""
         self.run["automationDetails"] = {"id": automation_id}
 
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
-        """Record each executed tool command under the run's SARIF `invocations`."""
-        if invocations:
-            self.run["invocations"] = [_invocation_object(inv) for inv in invocations]
+        """Record the tool commands that produced this run, replacing any held."""
+        self.invocations.clear()
+        self.invocations.extend(invocations)
 
 
 @dataclass(frozen=True)
@@ -347,10 +350,9 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
     if rules:
         driver["rules"] = rules
     merged: dict[str, Any] = {"tool": {"driver": driver}, "results": results}
-    invocations = [invocation for run in runs for invocation in run.invocations]
-    if invocations:
-        merged["invocations"] = invocations
-    return SarifRun(merged)
+    return SarifRun(
+        merged, [invocation for run in runs for invocation in run.invocations]
+    )
 
 
 # --- normalization: turn raw tool results into reposcan's canonical shape ---

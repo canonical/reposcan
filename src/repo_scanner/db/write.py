@@ -130,7 +130,7 @@ def insert_scan(
         ),
     )
     session.insert(
-        Table(schema.INVOCATION, _invocation_rows(scan_id, record.invocations))
+        Table(schema.INVOCATION, _invocation_rows(scan_id, record.produced.invocations))
     )
     tracker = _Tracker(session, project_id, record.category)
     if isinstance(record.produced, sarif.SarifRun):
