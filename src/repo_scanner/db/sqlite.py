@@ -3,7 +3,7 @@
 
 """Read and write tabular data as a sqlite database.
 
-A `TableSchema` carries a table's name, column names, and literal CREATE/INSERT/SELECT
+A `TableSchema` carries a table's name, column names, and literal CREATE/INSERT
 statements to run. A `Table` pairs a schema with its rows. Callers serialize their own
 values. All reads and writes occur within a `Session`.
 """
@@ -34,7 +34,7 @@ class TableSchema:
     columns: tuple[str, ...]
     create: str
     insert: str
-    select: str
+    select: str | None = None
 
     def __post_init__(self) -> None:
         if self.insert.count("?") != len(self.columns):

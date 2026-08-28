@@ -12,7 +12,7 @@ from repo_scanner import settings
 from repo_scanner.actions.base import Action
 from repo_scanner.app import Reposcan, main
 from repo_scanner.cli_kit import Group, option, parse
-from repo_scanner.ioutil.logging import LOG_LEVELS
+from repo_scanner.logging import LOG_LEVELS
 
 
 def _resolve_isolated(scope, cli_values, env):

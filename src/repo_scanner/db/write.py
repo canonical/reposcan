@@ -9,16 +9,15 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from repo_scanner.db import schema
+from repo_scanner.db import schema, sqlite
 from repo_scanner.db.identity import (
     IssueAttributes,
     derive_component_key,
     same_issue,
 )
 from repo_scanner.db.model import AnalysisRecord, ScanRecord
+from repo_scanner.db.sqlite import Session, Table
 from repo_scanner.execution.process import Failure
-from repo_scanner.ioutil import sqlitedb
-from repo_scanner.ioutil.sqlitedb import Session, Table
 from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import ToolInvocationRecord
 from repo_scanner.scans.repo import ProjectIdentity
@@ -48,7 +47,7 @@ def analysis(
     refusal = schema.unusable(path)
     if refusal is not None:
         return Failure(reason=refusal)
-    session, error = sqlitedb.connect(path)
+    session, error = sqlite.connect(path)
     if session is None:
         return Failure(reason=error or f"could not open {path}")
     with session:

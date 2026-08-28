@@ -8,6 +8,7 @@ import os
 import uuid
 from pathlib import Path
 
+from repo_scanner import output
 from repo_scanner.actions.base import Action
 from repo_scanner.backends import start_session
 from repo_scanner.cli_kit import flag, option, positional
@@ -21,13 +22,12 @@ from repo_scanner.db.model import (
 )
 from repo_scanner.execution.context import RunUser, host_user
 from repo_scanner.execution.process import Failure
-from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
-from repo_scanner.scans import output
+from repo_scanner.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.model import ArtifactKind
-from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
 from repo_scanner.scans.repo import read_repository_state
 from repo_scanner.scans.run import generate_sbom
 from repo_scanner.scans.sbom import SbomScan
+from repo_scanner.table import DEFAULT_WRAP_LINES
 
 logger = logging.getLogger(__name__)
 

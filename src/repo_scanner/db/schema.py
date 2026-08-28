@@ -12,7 +12,7 @@ reposcan.
 
 from pathlib import Path
 
-from repo_scanner.ioutil.sqlitedb import Session, TableSchema, read_version
+from repo_scanner.db.sqlite import Session, TableSchema, read_version
 
 SCHEMA_VERSION = 1
 
@@ -84,12 +84,6 @@ INSERT INTO analysis (uuid, produced_by, project_id, started_at, finished_at,
                       shallow, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """,
-    select="""
-SELECT analysis_id, uuid, produced_by, project_id, started_at, finished_at,
-       target_name, branch, commit_sha, dirty, shallow, status
-  FROM analysis
- ORDER BY analysis_id
-""",
 )
 
 # One row per scan within an analysis. A scan is one scan type's execution, which may
@@ -121,12 +115,6 @@ CREATE TABLE IF NOT EXISTS scan (
 INSERT INTO scan (analysis_id, category, artifact_kind, started_at, finished_at,
                   status, artifact_shell)
      VALUES (?, ?, ?, ?, ?, ?, ?)
-""",
-    select="""
-SELECT scan_id, analysis_id, category, artifact_kind, started_at, finished_at,
-       status, artifact_shell
-  FROM scan
- ORDER BY scan_id
 """,
 )
 
@@ -162,13 +150,6 @@ CREATE TABLE IF NOT EXISTS invocation (
     insert="""
 INSERT INTO invocation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 """,
-    select="""
-SELECT tool, version, command_json, working_directory, environment_json,
-       exit_code, successful
-  FROM invocation
- WHERE scan_id = ?
- ORDER BY command_index
-""",
 )
 
 # The abstract issue that reports are matched onto. `rule` is here rather than on the
@@ -193,11 +174,6 @@ CREATE TABLE IF NOT EXISTS issue (
 INSERT INTO issue (project_id, category, rule)
      VALUES (?, ?, ?)
 """,
-    select="""
-SELECT issue_id, project_id, category, rule
-  FROM issue
- ORDER BY issue_id
-""",
 )
 
 # An abstract component. Unlike an issue, it is fully identified by a key derived from
@@ -220,11 +196,6 @@ CREATE TABLE IF NOT EXISTS component (
     insert="""
 INSERT INTO component (project_id, component_key)
      VALUES (?, ?)
-""",
-    select="""
-SELECT component_id, project_id, component_key
-  FROM component
- ORDER BY component_id
 """,
 )
 
@@ -332,12 +303,6 @@ CREATE TABLE IF NOT EXISTS issue_fingerprint (
 """,
     insert="""
 INSERT INTO issue_fingerprint VALUES (?, ?, ?, ?)
-""",
-    select="""
-SELECT complete, name, value
-  FROM issue_fingerprint
- WHERE issue_id = ?
- ORDER BY complete, name
 """,
 )
 

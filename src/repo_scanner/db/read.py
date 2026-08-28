@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any
 
-from repo_scanner.db import schema
+from repo_scanner.db import schema, sqlite
 from repo_scanner.db.model import (
     AnalysisSummary,
     Component,
@@ -16,7 +16,6 @@ from repo_scanner.db.model import (
     ProjectSummary,
     ScanStatus,
 )
-from repo_scanner.ioutil import sqlitedb
 from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import Artifact, ArtifactKind
 
@@ -180,18 +179,18 @@ def analyses(path: str) -> list[AnalysisSummary]:
         return summaries
 
 
-def _session(path: str) -> sqlitedb.Session | None:
+def _session(path: str) -> sqlite.Session | None:
     """A session on `path`, or None when it is not a database we can read."""
     if not schema.is_current(path):
         return None
-    session, error = sqlitedb.connect(path)
+    session, error = sqlite.connect(path)
     if session is None:
         logger.warning("%s", error)
     return session
 
 
 def _choose_analysis(
-    session: sqlitedb.Session, analysis_id: int | None, project_id: int | None
+    session: sqlite.Session, analysis_id: int | None, project_id: int | None
 ) -> int | None:
     """The analysis to read: the one asked for, else the most recent available."""
     if analysis_id is not None:
@@ -204,7 +203,7 @@ def _choose_analysis(
 
 
 def _rebuild_run(
-    session: sqlitedb.Session, scan_id: int, shell: dict[str, Any]
+    session: sqlite.Session, scan_id: int, shell: dict[str, Any]
 ) -> sarif.SarifRun:
     """Splice a scan's results back into its emptied run.
 
@@ -218,7 +217,7 @@ def _rebuild_run(
 
 
 def _rebuild_cyclonedx(
-    session: sqlitedb.Session, scan_id: int, shell: dict[str, Any]
+    session: sqlite.Session, scan_id: int, shell: dict[str, Any]
 ) -> cyclonedx.CycloneDxDocument:
     """Splice a scan's components back into its emptied document."""
     shell["components"] = [

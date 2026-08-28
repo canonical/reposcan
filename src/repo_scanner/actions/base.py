@@ -13,7 +13,7 @@ inferred from its name, so only the short `-v` is spelled out here.
 from repo_scanner.backends import BACKEND_NAMES
 from repo_scanner.cli_kit import Action as _Action
 from repo_scanner.cli_kit import option
-from repo_scanner.ioutil.logging import LOG_LEVELS
+from repo_scanner.logging import LOG_LEVELS
 
 
 def _parse_uid(value: str) -> int:

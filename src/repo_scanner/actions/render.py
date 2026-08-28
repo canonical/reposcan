@@ -5,13 +5,14 @@
 
 import logging
 
+from repo_scanner import output
 from repo_scanner.actions.base import Action
 from repo_scanner.cli_kit import option, positional
 from repo_scanner.execution.process import Failure
-from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES
-from repo_scanner.scans import cyclonedx, output, sarif
+from repo_scanner.output import DEFAULT_ROW_LIMIT, Format
+from repo_scanner.scans import cyclonedx, sarif
 from repo_scanner.scans.model import Artifact
-from repo_scanner.scans.output import DEFAULT_ROW_LIMIT, Format
+from repo_scanner.table import DEFAULT_WRAP_LINES
 
 logger = logging.getLogger(__name__)
 

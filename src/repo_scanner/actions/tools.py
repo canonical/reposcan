@@ -7,8 +7,8 @@ import os
 import sys
 
 from repo_scanner.actions.base import Action
-from repo_scanner.ioutil.table import render_table
 from repo_scanner.paths import tools_root
+from repo_scanner.table import render_table
 from repo_scanner.tools.registry import TOOLS
 
 

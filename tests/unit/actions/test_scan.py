@@ -20,8 +20,8 @@ import repo_scanner.actions.scan as scan_cmd
 from repo_scanner.cli_kit import params_of
 from repo_scanner.db import read as db_read
 from repo_scanner.execution.process import Failure
+from repo_scanner.output import Format
 from repo_scanner.scans import sarif
-from repo_scanner.scans.output import Format
 from repo_scanner.scans.registry import SCANS
 from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
 from tests.unit.actions.helpers import patch_run_scan, sarif_run

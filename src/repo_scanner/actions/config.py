@@ -8,8 +8,8 @@ import sys
 
 from repo_scanner.actions.base import Action
 from repo_scanner.cli_kit import Group, coerce, params_of, positional
-from repo_scanner.ioutil.config import load, save
-from repo_scanner.ioutil.table import render_table
+from repo_scanner.config import load, save
+from repo_scanner.table import render_table
 
 logger = logging.getLogger(__name__)
 

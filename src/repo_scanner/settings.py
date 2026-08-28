@@ -15,8 +15,8 @@ from typing import Any
 
 from repo_scanner.actions.base import Action
 from repo_scanner.cli_kit import Param, coerce, params_of
-from repo_scanner.ioutil.config import load
-from repo_scanner.ioutil.logging import configure_logging
+from repo_scanner.config import load
+from repo_scanner.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 

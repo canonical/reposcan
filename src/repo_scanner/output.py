@@ -14,8 +14,8 @@ import sys
 from enum import Enum
 
 from repo_scanner.execution.process import Failure
-from repo_scanner.ioutil.table import DEFAULT_WRAP_LINES, render_table
 from repo_scanner.scans.model import Artifact
+from repo_scanner.table import DEFAULT_WRAP_LINES, render_table
 
 logger = logging.getLogger(__name__)
 

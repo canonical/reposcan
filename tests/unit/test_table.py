@@ -1,9 +1,9 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the generic table renderer (repo_scanner.ioutil.table)."""
+"""Tests for the generic table renderer (repo_scanner.table)."""
 
-from repo_scanner.ioutil.table import render_table
+from repo_scanner.table import render_table
 
 
 def test_columns_align_under_a_dashed_header() -> None:

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the generic sqlite tabular store (repo_scanner.ioutil.sqlitedb)."""
+"""Tests for the generic sqlite tabular store (repo_scanner.db.sqlite)."""
 
 import os
 import sqlite3
@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from repo_scanner.ioutil.sqlitedb import (
+from repo_scanner.db.sqlite import (
     Table,
     TableSchema,
     connect,

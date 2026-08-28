@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 
 from repo_scanner.app import main
-from repo_scanner.ioutil.config import load
+from repo_scanner.config import load
 
 
 @contextmanager
