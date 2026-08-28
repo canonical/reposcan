@@ -14,7 +14,8 @@ from repo_scanner.scans.base import SecurityScan
 from repo_scanner.scans.model import ToolInvocation
 from repo_scanner.tools.registry import ZIZMOR
 
-# 3 == no workflows to scan
+# zizmor's exit codes
+_ZIZMOR_FINDINGS_EXIT_CODE = 1
 _ZIZMOR_NO_INPUTS_EXIT_CODE = 3
 
 
@@ -32,13 +33,18 @@ class WorkflowScan(SecurityScan):
             target: The repository path as seen in the execution context.
 
         Returns:
-            One invocation per tool, each producing SARIF on stdout.
+            One invocation per tool, each producing SARIF on stdout. `ok_codes`
+            allows a findings exit or "no inputs" exit.
         """
         return [
             ToolInvocation(
                 "zizmor",
                 ["--format", "sarif", target],
-                ok_codes=(0, _ZIZMOR_NO_INPUTS_EXIT_CODE),
+                ok_codes=(
+                    0,
+                    _ZIZMOR_FINDINGS_EXIT_CODE,
+                    _ZIZMOR_NO_INPUTS_EXIT_CODE,
+                ),
             ),
             ToolInvocation(
                 "poutine",
