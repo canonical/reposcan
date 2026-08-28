@@ -44,8 +44,8 @@ def verify(artifact: sarif.SarifDocument) -> None:
         f"{aws[0].uri} does not end with config.env"
     )
     # the detected secret is fingerprinted for reposcan's own cross-run identity
-    assert aws[0].result.get("fingerprints", {}).get("secretHash"), (
-        f"secret result does not contain secretHash: {aws[0].result}"
+    assert aws[0].result.get("fingerprints", {}).get("secretHash/v1"), (
+        f"secret result does not contain secretHash/v1: {aws[0].result}"
     )
 
 
