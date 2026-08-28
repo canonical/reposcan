@@ -1,7 +1,7 @@
 # reposcan
 
-`reposcan` is a tool for running security scans against a locally-cloned
-repository.
+`reposcan` runs a suite of security scans against a codebase, aggregating and
+normalizing the output.
 
 By default, it executes all scans in ephemeral containers. It defaults to Docker
 and falls back to LXD based on availability. It supports running scans directly
@@ -17,7 +17,7 @@ The rest of the documentation is in [`docs/`](docs/index.md).
 
 ## Scans
 
-`reposcan scan <type>` runs one of six scan types against a repository:
+`reposcan scan <type>` runs one of five scan types against a repository:
 
 - `secrets`: leaked credentials in the git history or working tree.
 - `sast`: static analysis of source code for security bugs.
