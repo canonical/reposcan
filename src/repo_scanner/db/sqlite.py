@@ -8,12 +8,18 @@ statements to run. A `Table` pairs a schema with its rows. Callers serialize the
 values. All reads and writes occur within a `Session`.
 """
 
+import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+
+# How long to wait for a lock before giving up.
+BUSY_TIMEOUT_SECONDS = 30.0
+
+logger = logging.getLogger(__name__)
 
 # The 16-byte header every sqlite 3 database file starts with.
 _MAGIC = b"SQLite format 3\x00"
@@ -61,11 +67,21 @@ def connect(path: str) -> tuple["Session | None", str | None]:
     """A session on the database at `path`, or None and an error message.
 
     Creates the file when it is absent. Returns errors rather than raising.
+
+    sqlite serializes writers. Write-ahead logging lets readers work while a write is in
+    flight, and the busy timeout makes a second writer wait rather than fail.
     """
     try:
         # isolation_level=None turns off sqlite3's implicit transaction handling, so
         # the session's own BEGIN/COMMIT are the only transaction boundaries.
-        connection = sqlite3.connect(path, isolation_level=None)
+        connection = sqlite3.connect(
+            path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
+        )
+        # Not available on every filesystem (notably NFS); sqlite reports the mode it
+        # settled on, and the rollback journal it falls back to is still correct.
+        (mode,) = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+        if str(mode).lower() != "wal":
+            logger.debug("%s is journalled as %s, not wal", path, mode)
     except sqlite3.Error as exc:
         return None, f"could not open {path}: {exc}"
     return Session(connection), None

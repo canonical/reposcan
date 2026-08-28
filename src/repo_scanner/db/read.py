@@ -181,7 +181,17 @@ def analyses(path: str) -> list[AnalysisSummary]:
 
 def _session(path: str) -> sqlite.Session | None:
     """A session on `path`, or None when it is not a database we can read."""
-    if not schema.is_current(path):
+    version = sqlite.read_version(path)
+    if version is None:
+        logger.warning("%s is not a reposcan database", path)
+        return None
+    if version != schema.SCHEMA_VERSION:
+        logger.warning(
+            "%s is a version %d reposcan database; this reposcan reads version %d",
+            path,
+            version,
+            schema.SCHEMA_VERSION,
+        )
         return None
     session, error = sqlite.connect(path)
     if session is None:
