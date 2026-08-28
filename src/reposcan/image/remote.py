@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 CANONICAL_SHORTHAND = "canonical"
 CANONICAL_REF = (
     "ghcr.io/canonical/reposcan@sha256:"
-    "461ba0247c49ebfefb01ccf1e7cf2bb99a3f3599464feab1a85ab46b40d795d1"
+    "4c6a1d4eab499dd0a2a66386ac6fb34aff10020f116fd996d4a4fb50511672bf"
 )
 
 # build the tool image locally instead of pulling the default.

@@ -1,0 +1,751 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "reposcan",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead."
+              },
+              "help": {
+                "markdown": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead.\n\n#### \ud83d\udc8e Enable cross-file analysis and Pro rules for free at <a href='https://sg.run/pro'>sg.run/pro</a>\n\n<b>References:</b>\n - [Semgrep Rule](https://semgrep.dev/r/python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected)\n - [https://cwe.mitre.org/data/definitions/939.html](https://cwe.mitre.org/data/definitions/939.html)\n",
+                "text": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead.\n\ud83d\udc8e Enable cross-file analysis and Pro rules for free at sg.run/pro"
+              },
+              "helpUri": "https://semgrep.dev/r/python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+              "id": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+              "name": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-939: Improper Authorization in Handler for Custom URL Scheme",
+                  "LOW CONFIDENCE",
+                  "OWASP-A01:2017 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Detected a python logger call with a potential hardcoded secret $FORMAT_STRING being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+              },
+              "help": {
+                "markdown": "Detected a python logger call with a potential hardcoded secret $FORMAT_STRING being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information.\n\n#### \ud83d\udc8e Enable cross-file analysis and Pro rules for free at <a href='https://sg.run/pro'>sg.run/pro</a>\n\n<b>References:</b>\n - [Semgrep Rule](https://semgrep.dev/r/python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure)\n - [https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures](https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures)\n",
+                "text": "Detected a python logger call with a potential hardcoded secret $FORMAT_STRING being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information.\n\ud83d\udc8e Enable cross-file analysis and Pro rules for free at sg.run/pro"
+              },
+              "helpUri": "https://semgrep.dev/r/python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+              "id": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+              "name": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-532: Insertion of Sensitive Information into Log File",
+                  "MEDIUM CONFIDENCE",
+                  "OWASP-A09:2021 - Security Logging and Monitoring Failures",
+                  "OWASP-A09:2025 - Security Logging & Alerting Failures",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Found 'subprocess' function '$FUNC' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead."
+              },
+              "help": {
+                "markdown": "Found 'subprocess' function '$FUNC' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead.\n\n#### \ud83d\udc8e Enable cross-file analysis and Pro rules for free at <a href='https://sg.run/pro'>sg.run/pro</a>\n\n<b>References:</b>\n - [Semgrep Rule](https://semgrep.dev/r/python.lang.security.audit.subprocess-shell-true.subprocess-shell-true)\n - [https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess](https://stackoverflow.com/questions/3172470/actual-meaning-of-shell-true-in-subprocess)\n - [https://docs.python.org/3/library/subprocess.html](https://docs.python.org/3/library/subprocess.html)\n",
+                "text": "Found 'subprocess' function '$FUNC' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead.\n\ud83d\udc8e Enable cross-file analysis and Pro rules for free at sg.run/pro"
+              },
+              "helpUri": "https://semgrep.dev/r/python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+              "id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+              "name": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+                  "MEDIUM CONFIDENCE",
+                  "OWASP-A01:2017 - Injection",
+                  "OWASP-A03:2021 - Injection",
+                  "OWASP-A05:2025 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      },
+      "results": [
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/google_admin/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 88,
+                  "endLine": 88,
+                  "snippet": {
+                    "text": "        logger.error(\"Missing mandatory keys in Google admin credentials: %s\", missing)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 88
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Missing mandatory keys in Google admin credentials: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "22c3795b89659a0f:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/google_alertcenter/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 88,
+                  "endLine": 78,
+                  "snippet": {
+                    "text": "        logger.error(\"Missing mandatory keys in Google admin credentials: %s\", missing)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 78
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Missing mandatory keys in Google admin credentials: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "22c3795b89659a0f:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/landscape_corp/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 87,
+                  "endLine": 81,
+                  "snippet": {
+                    "text": "        logger.error(\"Could not retrieve Juju secrets for label %s\", LCL_SECRET_LABEL)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 81
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Could not retrieve Juju secrets for label %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "09f512d2f9a95e30:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/landscape_corp/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 72,
+                  "endLine": 92,
+                  "snippet": {
+                    "text": "        logger.error(\"Missing mandatory Juju secret keys: %s\", missing)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 92
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Missing mandatory Juju secret keys: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "999681031ff9fcf8:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/landscape_is/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 87,
+                  "endLine": 60,
+                  "snippet": {
+                    "text": "        logger.error(\"Could not retrieve Juju secrets for label %s\", LCL_SECRET_LABEL)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 60
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Could not retrieve Juju secrets for label %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "09f512d2f9a95e30:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/landscape_is/main.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 72,
+                  "endLine": 71,
+                  "snippet": {
+                    "text": "        logger.error(\"Missing mandatory Juju secret keys: %s\", missing)"
+                  },
+                  "startColumn": 9,
+                  "startLine": 71
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Missing mandatory Juju secret keys: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "999681031ff9fcf8:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/repos_update/repos_update.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 41,
+                  "endLine": 135,
+                  "snippet": {
+                    "text": "            command, cwd=cwd, shell=True, capture_output=True, text=True, check=True"
+                  },
+                  "startColumn": 37,
+                  "startLine": 135
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Found 'subprocess' function 'run' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use 'shell=False' instead."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+          "level": "error",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "a01fc947f1459839:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 75,
+                  "endLine": 106,
+                  "snippet": {
+                    "text": "            logger.warning(\"Failed to parse secret string as JSON: %s\", e)"
+                  },
+                  "startColumn": 13,
+                  "startLine": 106
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Failed to parse secret string as JSON: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "c7c3b0f051d7df49:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 65,
+                  "endLine": 219,
+                  "snippet": {
+                    "text": "        logger.error(\"Vault secret retrieval error: %s\", str(e))"
+                  },
+                  "startColumn": 9,
+                  "startLine": 219
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Vault secret retrieval error: %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "0da781795d37104c:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 62,
+                  "endLine": 222,
+                  "snippet": {
+                    "text": "    logger.debug(\"Read Vault secret at path %s\", secret_path)"
+                  },
+                  "startColumn": 5,
+                  "startLine": 222
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Read Vault secret at path %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "e34397df48a7ce77:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 14,
+                  "endLine": 272,
+                  "snippet": {
+                    "text": "            logger.warning(\n                \"Juju secret fetch for label %s did not complete within %.0fs\",\n                label,\n                timeout_seconds,\n            )"
+                  },
+                  "startColumn": 13,
+                  "startLine": 268
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Juju secret fetch for label %s did not complete within %.0fs\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "045367396b583536:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 14,
+                  "endLine": 318,
+                  "snippet": {
+                    "text": "            logger.warning(\n                \"Juju secret fetch for label %s failed (attempt %d/%d), \"\n                \"retrying in %.0fs\",\n                juju_label,\n                attempt,\n                JUJU_FALLBACK_MAX_ATTEMPTS,\n                delay,\n            )"
+                  },
+                  "startColumn": 13,
+                  "startLine": 311
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Juju secret fetch for label %s failed (attempt %d/%d), \"\n                \"retrying in %.0fs\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "045367396b583536:2"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "collectors/shared/utils.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 6,
+                  "endLine": 328,
+                  "snippet": {
+                    "text": "    logger.warning(\n        \"Juju secrets unavailable for label %s after %d attempts, \"\n        \"falling back to Vault path %s\",\n        juju_label,\n        JUJU_FALLBACK_MAX_ATTEMPTS,\n        vault_secret_path,\n    )"
+                  },
+                  "startColumn": 5,
+                  "startLine": 322
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Juju secrets unavailable for label %s after %d attempts, \"\n        \"falling back to Vault path %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "045367396b583536:3"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/lcl/auth/bitwarden.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 10,
+                  "endLine": 109,
+                  "snippet": {
+                    "text": "        logger.debug(\n            \"Bitwarden bearer token refreshed; expires at %s\", expiry.isoformat()\n        )"
+                  },
+                  "startColumn": 9,
+                  "startLine": 107
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Bitwarden bearer token refreshed; expires at %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "e8712c4b8f32091d:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/lcl/auth/google_service_account.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 41,
+                  "endLine": 68,
+                  "snippet": {
+                    "text": "        with urllib.request.urlopen(req) as resp:"
+                  },
+                  "startColumn": 14,
+                  "startLine": 68
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "c63fd09b5bd9b394:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/lcl/auth/salesforce.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 86,
+                  "endLine": 108,
+                  "snippet": {
+                    "text": "        logger.debug(\"Salesforce token refreshed; expires at %s\", expiry.isoformat())"
+                  },
+                  "startColumn": 9,
+                  "startLine": 108
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a python logger call with a potential hardcoded secret \"Salesforce token refreshed; expires at %s\" being logged. This may lead to secret credentials being exposed. Make sure that the logger is not logging  sensitive information."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "9237d2c846e370de:1"
+          }
+        },
+        {
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/lcl/processors/ecs.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 43,
+                  "endLine": 80,
+                  "snippet": {
+                    "text": "    with urlopen(ECS_FLAT_URL, timeout=30) as response:"
+                  },
+                  "startColumn": 10,
+                  "startLine": 80
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead."
+          },
+          "properties": {
+            "scanners": [
+              "semgrep"
+            ]
+          },
+          "ruleId": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+          "level": "warning",
+          "partialFingerprints": {
+            "primaryLocationLineHash": "ff0e13efd12ade82:1"
+          }
+        }
+      ],
+      "automationDetails": {
+        "id": "reposcan/sast/",
+        "correlationGuid": "6643e4c8-47fc-410c-85f5-5563f4563863"
+      },
+      "versionControlProvenance": [
+        {
+          "repositoryUri": "github.com/canonical/siem-collectors",
+          "revisionId": "454d3345afc498be89caa88b20ce7552df5ed93d",
+          "branch": "feat/collector-tests"
+        }
+      ],
+      "properties": {
+        "reposcan:schema": 1,
+        "reposcan:repository": {
+          "name": "siem-collectors",
+          "rootCommit": "13c9ed84baf3e96a8f93f10b92e2070f6925b52a",
+          "origin": "github.com/canonical/siem-collectors",
+          "label": "",
+          "commitSha": "454d3345afc498be89caa88b20ce7552df5ed93d",
+          "branch": "feat/collector-tests",
+          "dirty": false,
+          "shallow": false
+        },
+        "reposcan:analysis": {
+          "startedAt": "2026-08-28T16:57:34Z",
+          "finishedAt": "2026-08-28T16:57:41Z"
+        }
+      },
+      "invocations": [
+        {
+          "commandLine": "/opt/reposcan/bin/semgrep scan --sarif --metrics=off --disable-version-check --config p/default /scan/siem-collectors",
+          "arguments": [
+            "scan",
+            "--sarif",
+            "--metrics=off",
+            "--disable-version-check",
+            "--config",
+            "p/default",
+            "/scan/siem-collectors"
+          ],
+          "executableLocation": {
+            "uri": "/opt/reposcan/bin/semgrep"
+          },
+          "workingDirectory": {
+            "uri": "/scan/siem-collectors"
+          },
+          "exitCode": 0,
+          "executionSuccessful": true,
+          "properties": {
+            "reposcan:tool": "semgrep",
+            "reposcan:version": "1.168.0",
+            "reposcan:args": [
+              "scan",
+              "--sarif",
+              "--metrics=off",
+              "--disable-version-check",
+              "--config",
+              "p/default",
+              "/scan/siem-collectors"
+            ],
+            "reposcan:okCodes": [
+              0,
+              1
+            ],
+            "reposcan:optional": false,
+            "reposcan:cwd": null,
+            "reposcan:env": null,
+            "reposcan:outputFile": null
+          }
+        }
+      ]
+    }
+  ]
+}

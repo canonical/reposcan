@@ -4,11 +4,12 @@
 """Test a JSON --> db --> JSON round trip.
 
 Unlike the synthetic round-trip in the unit tests, these exercise the database against
-the real, full-size tool outputs under `fixtures/`: a SARIF document (`sast.json`) and
-a CycloneDX SBOM (`sbom.json`). Recording each and reading it back must reproduce the
-document it was given.
+the real, full-size tool outputs under `fixtures/`: a SARIF document (`sast.sarif`)
+and a CycloneDX SBOM (`sbom.cyclonedx`). Recording each and reading it back must
+reproduce the document it was given.
 """
 
+import json
 import os
 import tempfile
 
@@ -16,7 +17,11 @@ from reposcan.db import read, write
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import Artifact, ArtifactKind
-from reposcan.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.scans.repo import (
+    PROPERTY_SCHEMA,
+    ProjectIdentity,
+    RepositoryState,
+)
 
 _FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -43,7 +48,7 @@ def _round_trip(scan: ScanRecord) -> list[Artifact]:
 
 
 def test_sarif_round_trip() -> None:
-    document = sarif.parse(_read_fixture("sast.json"))
+    document = sarif.parse(_read_fixture("sast.sarif"))
     assert document is not None
     (run,) = document.runs()
     assert [inv.tool for inv in run.tool_invocations] == ["semgrep"]
@@ -59,12 +64,21 @@ def test_sarif_round_trip() -> None:
     )
     expected = sarif.SarifDocument.from_runs([run]).to_dict()
     assert restored.to_dict() == expected
-    # Not a vacuous comparison: the fixture carries real findings.
-    assert expected["runs"][0]["results"]
+    # Not a vacuous comparison: the fixture is a real scan of a real repository, and
+    # everything reposcan wrote into it has to come back out.
+    assert len(expected["runs"][0]["results"]) > 1
+    (rebuilt,) = restored.to_dict()["runs"]
+    assert rebuilt["automationDetails"]["correlationGuid"]
+    assert (
+        rebuilt["versionControlProvenance"]
+        == expected["runs"][0]["versionControlProvenance"]
+    )
+    assert rebuilt["properties"]["reposcan:schema"] == PROPERTY_SCHEMA
+    assert rebuilt["properties"]["reposcan:repository"]["commitSha"]
 
 
 def test_cyclonedx_round_trip() -> None:
-    document = cyclonedx.parse(_read_fixture("sbom.json"))
+    document = cyclonedx.parse(_read_fixture("sbom.cyclonedx"))
     assert document is not None
     assert [inv.tool for inv in document.tool_invocations] == [
         "trivy",
@@ -83,4 +97,10 @@ def test_cyclonedx_round_trip() -> None:
     )
     expected = document.to_dict()
     assert restored.to_dict() == expected
-    assert len(expected["components"]) == 27  # the fixture is a real inventory
+    # A real inventory, with the analysis that produced it alongside.
+    assert len(expected["components"]) > 1
+    metadata = restored.to_dict()["metadata"]
+    assert metadata["tools"] == expected["metadata"]["tools"]
+    properties = {p["name"]: p["value"] for p in metadata["properties"]}
+    assert json.loads(properties["reposcan:schema"]) == PROPERTY_SCHEMA
+    assert json.loads(properties["reposcan:repository"])["commitSha"]
