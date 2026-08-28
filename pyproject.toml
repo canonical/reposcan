@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reposcan"
-version = "0.1.0"
+version = "0.2.0"
 description = """
 Orchestrates security scanners (secrets, SBOM, SCA, SAST, IaC, workflow)
 over a repository, locally or in an ephemeral container.
