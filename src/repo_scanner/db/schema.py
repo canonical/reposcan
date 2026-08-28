@@ -320,7 +320,7 @@ TABLES = (
 
 # --- statements that are not a plain create, insert, or select-all ---
 
-SELECT_PROJECTS = PROJECT.select
+
 SELECT_ANALYSIS_BY_UUID = """
 SELECT analysis_id
   FROM analysis

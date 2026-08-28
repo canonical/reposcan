@@ -12,6 +12,7 @@ from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult
 from repo_scanner.scans import sarif
 from repo_scanner.scans.model import ToolInvocationRecord
+from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
 
 
 def test_build_creates_a_finding_normalized_at_construction() -> None:
@@ -270,3 +271,19 @@ def test_invocations_another_producer_wrote_are_left_alone() -> None:
     # Not reposcan's, so not read as a record and not reshaped into one.
     assert run.tool_invocations == []
     assert run.to_dict()["invocations"] == [theirs]
+
+
+def test_a_repository_with_no_remote_gets_no_version_control_provenance() -> None:
+    run = sarif.SarifRun.from_results("t", "1", [])
+    run.record_provenance(
+        RepositoryState(identity=ProjectIdentity("acme"), commit_sha="abc123"),
+        analysis_uuid="u",
+        started_at="2026-08-24T10:00:00Z",
+        finished_at="2026-08-24T10:05:00Z",
+        reposcan_version="0.2.0",
+    )
+    rendered = run.to_dict()
+    # SARIF requires a repositoryUri, and a repository with no remote has none
+    assert "versionControlProvenance" not in rendered
+    # The commit is retained
+    assert rendered["properties"]["reposcan:repository"]["commitSha"] == "abc123"

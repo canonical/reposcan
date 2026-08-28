@@ -14,10 +14,13 @@ from typing import Any, ClassVar
 
 from repo_scanner.execution.context import ExecutionContext, read_file
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.repo import RepositoryState
 
 logger = logging.getLogger(__name__)
 
 # Namespaced so reposcan's own invocations can be told from another producer's.
+_REPOSITORY_PROPERTY = "reposcan:repository"
+_ANALYSIS_PROPERTY = "reposcan:analysis"
 _TOOL_PROPERTY = "reposcan:tool"
 _VERSION_PROPERTY = "reposcan:version"
 _ARGS_PROPERTY = "reposcan:args"
@@ -205,6 +208,42 @@ class SarifRun:
     def set_results(self, results: list[SarifResult]) -> None:
         """Replace the run's findings with `results`."""
         self.run["results"] = [finding.result for finding in results]
+
+    def record_provenance(
+        self,
+        repository: RepositoryState,
+        *,
+        analysis_uuid: str,
+        started_at: str,
+        finished_at: str,
+        reposcan_version: str,
+    ) -> None:
+        """Record analysis metadata.
+
+        All reposcan-processed attributes are saved in the SARIF property object.
+
+        `correlationGuid` is SARIF's field for runs belonging to one logical analysis,
+        and `versionControlProvenance` its field for the associated repository;
+        `versionControlProvenance` requires a `repositoryUri`, so it is only
+        written for a repository that has a remote.
+        """
+        self.run.setdefault("automationDetails", {})["correlationGuid"] = analysis_uuid
+        driver = self.run.setdefault("tool", {}).setdefault("driver", {})
+        driver["name"] = "reposcan"
+        driver["version"] = reposcan_version
+        if repository.identity.origin:
+            details: dict[str, Any] = {"repositoryUri": repository.identity.origin}
+            if repository.commit_sha:
+                details["revisionId"] = repository.commit_sha
+            if repository.branch:
+                details["branch"] = repository.branch
+            self.run["versionControlProvenance"] = [details]
+        properties = self.run.setdefault("properties", {})
+        properties[_REPOSITORY_PROPERTY] = _repository_properties(repository)
+        properties[_ANALYSIS_PROPERTY] = {
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+        }
 
     def set_automation_id(self, automation_id: str) -> None:
         """Set the run's `automationDetails.id` (its code-scanning category)."""
@@ -459,6 +498,20 @@ def _relative_uri(uri: str, target: str) -> str:
 
 
 # --- rendering ---
+
+
+def _repository_properties(repository: RepositoryState) -> dict[str, Any]:
+    """Serialize repository properties."""
+    return {
+        "name": repository.identity.name,
+        "rootCommit": repository.identity.root_commit,
+        "origin": repository.identity.origin,
+        "label": repository.identity.label,
+        "commitSha": repository.commit_sha,
+        "branch": repository.branch,
+        "dirty": repository.dirty,
+        "shallow": repository.shallow,
+    }
 
 
 def _serialize_invocation(inv: ToolInvocationRecord) -> dict[str, Any]:

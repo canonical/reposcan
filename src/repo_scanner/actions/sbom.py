@@ -112,15 +112,22 @@ class SbomCommand(Action):
             if isinstance(artifact, Failure):
                 logger.error("sbom failed: %s", artifact.reason)
                 return 1
+            finished_at = utc_now()
+            analysis = AnalysisRecord(
+                uuid=str(uuid.uuid4()),
+                started_at=started_at,
+                finished_at=finished_at,
+                reposcan_version=reposcan_version(),
+                repository=read_repository_state(session.context, session.target),
+            )
+            artifact.record_provenance(
+                analysis.repository,
+                analysis_uuid=analysis.uuid,
+                started_at=analysis.started_at,
+                finished_at=analysis.finished_at,
+                reposcan_version=analysis.reposcan_version,
+            )
             if self.db is not None:
-                finished_at = utc_now()
-                analysis = AnalysisRecord(
-                    uuid=str(uuid.uuid4()),
-                    started_at=started_at,
-                    finished_at=finished_at,
-                    reposcan_version=reposcan_version(),
-                    repository=read_repository_state(session.context, session.target),
-                )
                 recorded = ScanRecord(
                     category=scan.name,
                     kind=ArtifactKind.CYCLONEDX,

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
+from repo_scanner.scans.repo import RepositoryState
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
@@ -23,6 +24,8 @@ SCANNER_PROPERTY = "reposcan:scanner"
 # The formulation entry reposcan writes, and the properties that make each workflow
 # in it readable back as a record rather than parsed out of its display strings.
 _FORMULATION_REF = "reposcan-scan"
+_REPOSITORY_PROPERTY = "reposcan:repository"
+_ANALYSIS_PROPERTY = "reposcan:analysis"
 _TOOL_PROPERTY = "reposcan:tool"
 _VERSION_PROPERTY = "reposcan:version"
 _COMMAND_PROPERTY = "reposcan:command"
@@ -103,6 +106,49 @@ class CycloneDxDocument:
         ]
         return headers, rows
 
+    def record_provenance(
+        self,
+        repository: RepositoryState,
+        *,
+        analysis_uuid: str,
+        started_at: str,
+        finished_at: str,
+        reposcan_version: str,
+    ) -> None:
+        """Record analysis metadata.
+
+        `metadata.timestamp` and `metadata.tools` are official CycloneDX fields.
+        CycloneDX has no equivalent of SARIF's version control provenance, so repo
+        data goes in `metadata.properties`, JSON-encoded.
+        """
+        metadata = self.content.setdefault("metadata", {})
+        metadata["timestamp"] = started_at
+        metadata["tools"] = [{"name": "reposcan", "version": reposcan_version}]
+        properties = [
+            property
+            for property in metadata.get("properties", [])
+            if not str(property.get("name", "")).startswith("reposcan:")
+        ]
+        properties.append(
+            {
+                "name": _REPOSITORY_PROPERTY,
+                "value": json.dumps(_repository_properties(repository)),
+            }
+        )
+        properties.append(
+            {
+                "name": _ANALYSIS_PROPERTY,
+                "value": json.dumps(
+                    {
+                        "uuid": analysis_uuid,
+                        "startedAt": started_at,
+                        "finishedAt": finished_at,
+                    }
+                ),
+            }
+        )
+        metadata["properties"] = properties
+
     def record_invocations(self, invocations: list[ToolInvocationRecord]) -> None:
         """Record the tool commands that produced this SBOM, replacing any held."""
         self.tool_invocations.clear()
@@ -165,6 +211,20 @@ def _record_scanner(component: dict[str, Any], scanner: str) -> None:
         ):
             return
     properties.append({"name": SCANNER_PROPERTY, "value": scanner})
+
+
+def _repository_properties(repository: RepositoryState) -> dict[str, Any]:
+    """Serialize repository properties."""
+    return {
+        "name": repository.identity.name,
+        "rootCommit": repository.identity.root_commit,
+        "origin": repository.identity.origin,
+        "label": repository.identity.label,
+        "commitSha": repository.commit_sha,
+        "branch": repository.branch,
+        "dirty": repository.dirty,
+        "shallow": repository.shallow,
+    }
 
 
 def _serialize_invocation(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:

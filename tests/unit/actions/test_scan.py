@@ -19,12 +19,16 @@ import pytest
 import repo_scanner.actions.scan as scan_cmd
 from repo_scanner.cli_kit import params_of
 from repo_scanner.db import read as db_read
+from repo_scanner.db.model import reposcan_version
 from repo_scanner.execution.process import Failure
 from repo_scanner.output import Format
 from repo_scanner.scans import sarif
 from repo_scanner.scans.registry import SCANS
-from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
-from tests.unit.actions.helpers import patch_run_scan, sarif_run
+from tests.unit.actions.helpers import (
+    FAKE_REPOSITORY,
+    patch_run_scan,
+    sarif_run,
+)
 
 
 def _run(
@@ -107,24 +111,40 @@ def test_db_records_the_analysis_and_composes_with_an_output_file() -> None:
         action = scan_cmd.ScanCommand(
             scans=["secrets"], path=directory, output=report, db=database
         )
-        # The fake session has no context to run git in, so name the repository here.
-        saved = scan_cmd.read_repository_state
-        scan_cmd.read_repository_state = lambda ctx, target: RepositoryState(
-            identity=ProjectIdentity("acme")
-        )
-        try:
-            with patch_run_scan(scan_cmd, sarif_run(1)):
-                code = action.run()
-        finally:
-            scan_cmd.read_repository_state = saved
+        with patch_run_scan(scan_cmd, sarif_run(1)):
+            code = action.run()
         # -o and --db are independent: passing both emits the report and records it.
         assert code == 3
         assert os.path.exists(report)
         (analysis,) = db_read.analyses(database)
         assert analysis.categories == ("secrets",)
         (project,) = db_read.projects(database)
-        assert project.name == "acme"
+        assert project.name == FAKE_REPOSITORY.identity.name
         assert len(db_read.issues(database, project.project_id)) == 1
+
+
+def test_the_report_includes_analysis_metadata() -> None:
+    out = io.StringIO()
+    with tempfile.TemporaryDirectory() as repo:
+        action = scan_cmd.ScanCommand(
+            scans=["secrets"], path=repo, format=Format.JSON.value
+        )
+        with patch_run_scan(scan_cmd, sarif_run(1)), redirect_stdout(out):
+            action.run()
+    (run,) = json.loads(out.getvalue())["runs"]
+    assert run["automationDetails"]["correlationGuid"]
+    assert run["tool"]["driver"] == {"name": "reposcan", "version": reposcan_version()}
+    assert run["versionControlProvenance"] == [
+        {
+            "repositoryUri": FAKE_REPOSITORY.identity.origin,
+            "revisionId": FAKE_REPOSITORY.commit_sha,
+            "branch": FAKE_REPOSITORY.branch,
+        }
+    ]
+    repository = run["properties"]["reposcan:repository"]
+    assert repository["name"] == FAKE_REPOSITORY.identity.name
+    assert repository["rootCommit"] == FAKE_REPOSITORY.identity.root_commit
+    assert repository["dirty"] is False
 
 
 def test_scan_names_splits_dedups_strips_and_rejects() -> None:

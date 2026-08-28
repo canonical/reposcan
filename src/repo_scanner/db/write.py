@@ -69,7 +69,9 @@ def resolve_project(session: Session, identity: ProjectIdentity) -> int:
     both sides carry. A new project is ordinary rather than an error: a database may
     hold several repositories.
     """
-    for row in session.query(schema.SELECT_PROJECTS):
+    statement = schema.PROJECT.select
+    assert statement is not None
+    for row in session.query(statement):
         project_id, name, root_commit, origin, label = row
         candidate = ProjectIdentity(
             str(name), str(root_commit), str(origin), str(label)

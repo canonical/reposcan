@@ -36,14 +36,12 @@ _PARENT = TableSchema(
     columns=("id",),
     create="CREATE TABLE parent (id INTEGER PRIMARY KEY)",
     insert="INSERT INTO parent VALUES (?)",
-    select="SELECT * FROM parent ORDER BY rowid",
 )
 _CHILD = TableSchema(
     name="child",
     columns=("parent_id",),
     create="CREATE TABLE child (parent_id INTEGER REFERENCES parent(id))",
     insert="INSERT INTO child VALUES (?)",
-    select="SELECT * FROM child ORDER BY rowid",
 )
 
 
@@ -66,7 +64,7 @@ def test_a_session_commits_on_a_clean_exit_and_rolls_back_on_an_error() -> None:
         session, _ = connect(path)
         assert session is not None
         with session:
-            assert session.query(_ITEMS.select) == [("1", "kept")]
+            assert session.query(_ITEMS.select or "") == [("1", "kept")]
 
 
 def test_a_session_binds_parameters_and_reports_the_inserted_row_id() -> None:

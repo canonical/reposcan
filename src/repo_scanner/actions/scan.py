@@ -222,16 +222,25 @@ class ScanCommand(Action):
             removed = ignore.apply(runs, ignore_rules, path)
             if removed:
                 logger.info("ignored %d finding(s) via %s", removed, ignore_path)
+
+            analysis = AnalysisRecord(
+                uuid=str(uuid.uuid4()),
+                started_at=started_at,
+                finished_at=utc_now(),
+                reposcan_version=reposcan_version(),
+                repository=read_repository_state(session.context, session.target),
+            )
+            for run in runs:
+                run.record_provenance(
+                    analysis.repository,
+                    analysis_uuid=analysis.uuid,
+                    started_at=analysis.started_at,
+                    finished_at=analysis.finished_at,
+                    reposcan_version=analysis.reposcan_version,
+                )
             report = sarif.SarifDocument.from_runs(runs)
 
             if self.db is not None:
-                analysis = AnalysisRecord(
-                    uuid=str(uuid.uuid4()),
-                    started_at=started_at,
-                    finished_at=utc_now(),
-                    reposcan_version=reposcan_version(),
-                    repository=read_repository_state(session.context, session.target),
-                )
                 failed = db_write.analysis(self.db, analysis, recorded)
                 if failed is not None:
                     logger.error(failed.reason)

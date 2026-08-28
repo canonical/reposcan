@@ -67,6 +67,8 @@ def projects(path: str) -> list[ProjectSummary]:
     session = _session(path)
     if session is None:
         return []
+    statement = schema.PROJECT.select
+    assert statement is not None
     with session:
         return [
             ProjectSummary(
@@ -76,9 +78,7 @@ def projects(path: str) -> list[ProjectSummary]:
                 str(origin),
                 str(label),
             )
-            for project_id, name, root_commit, origin, label in session.query(
-                schema.SELECT_PROJECTS
-            )
+            for project_id, name, root_commit, origin, label in session.query(statement)
         ]
 
 
@@ -211,7 +211,9 @@ def _rebuild_run(
     constructing a run over it reads them back into records. The invocation table is a
     projection of those for querying.
     """
-    for (result_json,) in session.query(schema.ISSUE_REPORT.select, (scan_id,)):
+    statement = schema.ISSUE_REPORT.select
+    assert statement is not None
+    for (result_json,) in session.query(statement, (scan_id,)):
         shell["results"].append(json.loads(str(result_json)))
     return sarif.SarifRun(shell)
 
@@ -220,10 +222,10 @@ def _rebuild_cyclonedx(
     session: sqlite.Session, scan_id: int, shell: dict[str, Any]
 ) -> cyclonedx.CycloneDxDocument:
     """Splice a scan's components back into its emptied document."""
+    statement = schema.COMPONENT_REPORT.select
+    assert statement is not None
     shell["components"] = [
         json.loads(str(component_json))
-        for (component_json,) in session.query(
-            schema.COMPONENT_REPORT.select, (scan_id,)
-        )
+        for (component_json,) in session.query(statement, (scan_id,))
     ]
     return cyclonedx.CycloneDxDocument(shell)
