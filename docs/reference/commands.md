@@ -85,6 +85,8 @@ Common options:
   `.reposcan-ignore`). See
   [ignore false positives](../how-to/ignore-findings.md).
 - `--no-ignore-file`: do not read any reposcan ignorefile.
+- `--fail-on <error|warning|note|none>`: exit non-zero only for a finding at or
+  above this level (default `note`, so any finding fails); `none` never fails.
 - `--include-dev-dependencies`: for `sca` only, resolve development
   dependencies.
 - `--allow-code-execution`: for `sca` only, let dependency resolution build
@@ -96,8 +98,8 @@ A scan-specific option applies only when its scan is among the requested types;
 passing one otherwise (for example `--depth` without `secrets`) is a usage
 error.
 
-Exit codes: `0` ran with no findings, `3` findings, `1` scan or tool error, `2`
-usage error.
+Exit codes: `0` nothing at or above `--fail-on`, `3` a finding at or above
+`--fail-on`, `1` scan or tool error, `2` usage error.
 
 ## sbom
 

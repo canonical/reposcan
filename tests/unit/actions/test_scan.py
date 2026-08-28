@@ -56,6 +56,29 @@ def test_exit_zero_when_no_findings_and_three_when_findings() -> None:
     assert code == 3  # findings
 
 
+def test_fail_on_exits_only_for_findings_at_or_above_the_level() -> None:
+    for fail_on, lvls_found, exit_code in (
+        ("note", ("warning",), 3),
+        ("error", ("warning", "note"), 0),
+        ("error", ("warning", "error"), 3),
+        ("none", ("error",), 0),
+    ):
+        results = [
+            sarif.SarifResult.build(
+                "R", "m", "f.py", 1, "trufflehog", "/scan/x", level=lvl
+            )
+            for lvl in lvls_found
+        ]
+        run = sarif.SarifRun.from_results("trufflehog", "1.0", results)
+        exit_code = -1
+        with tempfile.TemporaryDirectory() as repo:
+            action = scan_cmd.ScanCommand(scans=["secrets"], path=repo, fail_on=fail_on)
+            out = io.StringIO()
+            with patch_run_scan(scan_cmd, run), redirect_stdout(out):
+                exit_code = action.run()
+        assert exit_code == exit_code
+
+
 def test_format_json_overrides_the_stdout_table_default() -> None:
     code, out = _run(sarif_run(1), fmt=Format.JSON)
     assert code == 3

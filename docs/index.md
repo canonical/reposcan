@@ -24,6 +24,7 @@ Task-oriented recipes for a specific goal.
 - [Select a backend](how-to/select-a-backend.md)
 - [Use a published image](how-to/use-a-published-image.md)
 - [Scan with GitHub Actions](how-to/scan-with-github-actions.md)
+- [Scan with Launchpad CI](how-to/scan-with-launchpad-ci.md)
 - [Ignore false positives](how-to/ignore-findings.md)
 
 ## Reference

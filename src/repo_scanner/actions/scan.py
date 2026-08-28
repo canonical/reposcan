@@ -38,8 +38,12 @@ logger = logging.getLogger(__name__)
 
 FORMATS = tuple(f.value for f in Format)
 
-# Exit code when a scan completes and reports one or more findings.
+# Exit code when a scan reports a finding at or above the --fail-on level.
 FINDINGS_EXIT_CODE = 3
+
+# SARIF levels ranked for --fail-on's "at or above" threshold; a finding with no level
+# counts as warning, per SARIF. 'none' is absent (rank 0), so it never fails.
+_FAIL_RANK = {"note": 1, "warning": 2, "error": 3}
 
 
 def _scan_names(raw: str) -> list[str]:
@@ -127,6 +131,12 @@ class ScanCommand(Action):
         help=f"reposcan ignorefile (default: {ignore.DEFAULT_IGNORE_FILE}).",
     )
     no_ignore_file: bool = flag(help="Do not read any reposcan ignorefile.")
+    fail_on: str = option(
+        choices=("error", "warning", "note", "none"),
+        default="note",
+        help="Exit non-zero only for a finding at or above this level; 'none' "
+        "never fails.",
+    )
 
     extra_options = _aggregate_scan_options(SCANS)
 
@@ -134,8 +144,8 @@ class ScanCommand(Action):
         """Run the requested scans and return an exit code.
 
         Exit codes:
-            0 when no scan reported anything
-            3 when any scan reported something
+            0 when nothing at or above --fail-on was reported
+            3 when a finding at or above --fail-on was reported
             2 for a usage error
             1 on a scan/tool error or a write failure
         """
@@ -230,6 +240,10 @@ class ScanCommand(Action):
             if isinstance(failure, Failure):
                 logger.error(failure.reason)
                 return 1
-            count = report.count()
+            threshold = _FAIL_RANK.get(self.fail_on, 0)  # 'none' -> 0, never fails
+            fails = bool(threshold) and any(
+                _FAIL_RANK.get(finding.level, 2) >= threshold
+                for finding in report.results()
+            )
             logger.info("scan complete: %d finding(s)", report.count())
-            return FINDINGS_EXIT_CODE if count else 0
+            return FINDINGS_EXIT_CODE if fails else 0

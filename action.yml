@@ -73,9 +73,6 @@ outputs:
   findings-total:
     description: Total findings across all findings scans.
     value: ${{ steps.scan.outputs.findings-total }}
-  findings-over-threshold:
-    description: Findings at or above the fail-on level.
-    value: ${{ steps.scan.outputs.findings-over-threshold }}
 
 runs:
   using: composite
@@ -105,7 +102,8 @@ runs:
 
         case "${INPUT_FAIL_ON}" in
           error | warning | note | none) ;;
-          *) echo "::warning::unknown fail-on '${INPUT_FAIL_ON}', treating it as 'none'" ;;
+          *) echo "::warning::unknown fail-on '${INPUT_FAIL_ON}', treating it as 'none'"
+             INPUT_FAIL_ON=none ;;
         esac
 
         scan_path="$(realpath "${INPUT_PATH}")"
@@ -127,11 +125,6 @@ runs:
           [secrets]="${INPUT_SECRETS}" [sast]="${INPUT_SAST}" [iac]="${INPUT_IAC}"
           [workflow]="${INPUT_WORKFLOW}" [sca]="${INPUT_SCA}" [sbom]="${INPUT_SBOM}"
         )
-        # SARIF levels ranked so a threshold can select "at or above": a finding with
-        # no level defaults to warning, per SARIF. 'none'/unknown fail-on -> 0, never fails.
-        declare -A rank=([note]=1 [warning]=2 [error]=3)
-        threshold="${rank[${INPUT_FAIL_ON}]:-0}"
-
         summary="${results}/summary.md"
         {
           echo "## reposcan results"
@@ -140,9 +133,9 @@ runs:
           echo "| --- | --- | --- |"
         } > "${summary}"
 
-        error=0   # a real tool/setup failure, as opposed to findings
+        error=0        # a tool or setup failure
+        issue_found=0  # a scan reported a finding at or above the fail-on level
         total=0
-        over=0
 
         for scan in "${order[@]}"; do
           if [ "${enabled[${scan}]}" != "true" ]; then
@@ -154,7 +147,7 @@ runs:
             args=(sbom "${scan_path}" -o "${out}")
           else
             out="${sarif_dir}/${scan}.sarif"
-            args=(scan "${scan}" "${scan_path}" -o "${out}")
+            args=(scan "${scan}" "${scan_path}" --fail-on "${INPUT_FAIL_ON}" -o "${out}")
           fi
 
           echo "::group::reposcan ${scan}"
@@ -164,7 +157,8 @@ runs:
           rc=${PIPESTATUS[0]}
           echo "::endgroup::"
 
-          # reposcan exits 0 (clean), 3 (findings), 1 (tool error), or 2 (usage).
+          # reposcan exits 0 (nothing at or above --fail-on), 3 (a finding at or above
+          # fail-on), 1 (internal error), or 2 (usage error).
           if [ "${rc}" != "0" ] && [ "${rc}" != "3" ]; then
             echo "::error::${scan} scan failed (exit ${rc})"
             echo "| ${scan} | failed (exit ${rc}) | - |" >> "${summary}"
@@ -180,14 +174,12 @@ runs:
 
           n=$(jq '[.runs[]?.results[]?] | length' "${out}")
           total=$((total + n))
-          if [ "${threshold}" -gt 0 ]; then
-            o=$(jq --argjson t "${threshold}" '
-              [ .runs[]?.results[]?
-                | ((.level // "warning") as $l | {note: 1, warning: 2, error: 3}[$l] // 2)
-                | select(. >= $t) ] | length' "${out}")
-            over=$((over + o))
+          if [ "${rc}" = "3" ]; then
+            issue_found=1
+            echo "| ${scan} | findings | ${n} |" >> "${summary}"
+          else
+            echo "| ${scan} | ok | ${n} |" >> "${summary}"
           fi
-          echo "| ${scan} | ok | ${n} |" >> "${summary}"
         done
 
         {
@@ -199,7 +191,7 @@ runs:
 
         should_fail=false
         if [ "${error}" -ne 0 ]; then should_fail=true; fi
-        if [ "${threshold}" -gt 0 ] && [ "${over}" -gt 0 ]; then should_fail=true; fi
+        if [ "${issue_found}" -ne 0 ]; then should_fail=true; fi
 
         sarif_present=false
         if compgen -G "${sarif_dir}/*.sarif" > /dev/null; then sarif_present=true; fi
@@ -209,7 +201,6 @@ runs:
           echo "sarif-dir=${sarif_dir}"
           echo "summary-file=${summary}"
           echo "findings-total=${total}"
-          echo "findings-over-threshold=${over}"
           echo "sarif-present=${sarif_present}"
           echo "should-fail=${should_fail}"
         } >> "${GITHUB_OUTPUT}"
@@ -255,12 +246,11 @@ runs:
       shell: bash
       env:
         SHOULD_FAIL: ${{ steps.scan.outputs.should-fail }}
-        OVER: ${{ steps.scan.outputs.findings-over-threshold }}
         FAIL_ON: ${{ inputs.fail-on }}
       run: |
         set -uo pipefail
         if [ "${SHOULD_FAIL:-false}" = "true" ]; then
-          echo "::error::reposcan failed the job (findings at or above" \
-            "'${FAIL_ON}': ${OVER:-0}, or a scan error)"
+          echo "::error::reposcan failed the job (a finding at or above" \
+            "'${FAIL_ON}', or a scan error)"
           exit 1
         fi

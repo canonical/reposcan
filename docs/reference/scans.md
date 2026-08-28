@@ -1,13 +1,14 @@
 # Scans
 
 Each scan runs one or more tools against a repository and consolidates their
-output into a single SARIF report. Where several tools contribute, their findings
-are merged and de-duplicated, and each finding is annotated with the tools that
-reported it.
+output into a single SARIF report. Where several tools contribute, their
+findings are merged and de-duplicated, and each finding is annotated with the
+tools that reported it.
 
-Scans run via `reposcan scan` and exit `0` (no findings), `3` (findings), `1`
-(error), or `2` (usage). All accept the shared output options (`-o`,
-`--db`, `-f/--format`, `-n/--limit`, `--wrap`); see [commands](commands.md).
+Scans run via `reposcan scan` and exit `0` (nothing at or above `--fail-on`),
+`3` (a finding at or above `--fail-on`), `1` (internal error), or `2` (usage
+error). All accept the shared output options (`-o`, `--db`, `-f/--format`,
+`-n/--limit`, `--wrap`); see [commands](commands.md).
 
 ## secrets
 
@@ -34,6 +35,6 @@ CI/CD workflow auditing, via zizmor and poutine. Emits SARIF.
 ## sca
 
 Dependency vulnerabilities, via trivy, grype, and govulncheck. Emits SARIF.
-govulncheck applies only to Go modules and is skipped on other repositories. This
-scan resolves dependencies first and accepts `--allow-code-execution` and
+govulncheck applies only to Go modules and is skipped on other repositories.
+This scan resolves dependencies first and accepts `--allow-code-execution` and
 `--include-dev-dependencies`.

@@ -11,7 +11,7 @@ by default.)
 ## Basic usage
 
 You can create your own workflow, or copy the one in this repository
-(`.github/workflows/repo-scan.yml`).
+(`.github/workflows/repo-scanner.yml`).
 
 Example workflow:
 
