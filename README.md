@@ -4,8 +4,16 @@
 repository.
 
 By default, it executes all scans in ephemeral containers. It defaults to Docker
-and falls back to LXD based on availability. It supports running scans
-directly on the local host, though this is discouraged.
+and falls back to LXD based on availability. It supports running scans directly
+on the local host, though this is discouraged.
+
+## Get started
+
+- [Run your first scan](docs/tutorials/first-scan.md).
+- [Scan with GitHub Actions](docs/how-to/scan-with-github-actions.md).
+- [Scan with Launchpad CI](docs/how-to/scan-with-launchpad-ci.md).
+
+The rest of the documentation is in [`docs/`](docs/index.md).
 
 ## Scans
 
@@ -21,12 +29,37 @@ directly on the local host, though this is discouraged.
 See the [scans reference](docs/reference/scans.md) for each scan's options and
 output.
 
-## Documentation
+## Features
 
-Full documentation lives in [`docs/`](docs/index.md): tutorials, how-to guides,
-a command and configuration reference, and design explanation. Start with
-[your first scan](docs/tutorials/first-scan.md) or the
-[architecture](docs/explanation/architecture.md).
+- **One interface over many tools**: reposcan aggregates many scanners behind a
+  unified interface. Scanners are run in an ephemeral container to keep the host
+  system clean.
+- **Dependencies are resolved before they are inventoried:** SBOM tools are
+  generally ineffective without a lockfile, so reposcan generates a lockfile if
+  one does not already exist. (That means sbom results are somewhat speculative;
+  running it on the same repo at two different points in time may resolve
+  un-locked deps differently.)
+- **Results normalization:** Findings from every tool are merged and
+  deduplicated into a single SARIF/CycloneDX document, with a consistent format
+  and metadata.
+- **Findings tracked over time and across repositories:** `--db` records each
+  analysis in a database that follows issues across point-in-time scans.
+- **False positives suppressed in one place:** The reposcan-ignore file unifies
+  false positive suppression across all tools drive by reposcan.
+
+## Roadmap
+
+Our planned work includes:
+
+- **Automatic findings management:** Detect when an issue is fixed based on scan
+  results. Support recording triage status and justification.
+- **Commands for reading and writing the database:** To read the database, you
+  must currently use a `sqlite` client; reposcan will add its own user-friendly
+  commands.
+- **Distribution methods:** A snap, and a plugin for `lpci`.
+- **Wider coverage:** More SAST scanners behind the same interface.
+- **Service mode:** Discover and scan the repositories of a GitHub organization
+  on a schedule + a charmed distribution.
 
 ## Bundled tools and their licenses
 

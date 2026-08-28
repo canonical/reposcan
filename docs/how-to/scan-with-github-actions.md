@@ -25,18 +25,17 @@ on:
 permissions:
   contents: read
   security-events: write   # upload SARIF to the code-scanning pane
-  pull-requests: write     # comment on the PR when the upload is unavailable
+  pull-requests: write     # comment on the PR
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: canonical/reposcan@v1
+      - uses: canonical/reposcan@main
 ```
 
-The runner needs Docker (included in the `ubuntu-latest` image); reposcan runs
-pinned tools inside a container image.
+The runner needs Docker (included in the `ubuntu-latest` image).
 
 ## Choosing scans
 
@@ -44,14 +43,14 @@ Every scan is a boolean input. All scans are on by default, with the exception
 of `sbom`, which produces a dependency inventory, not security findings.
 
 ```yaml
-      - uses: canonical/reposcan@v1
-        with:
-          secrets: true
-          sast: true
-          iac: false
-          workflow: false
-          sca: true
-          sbom: true
+- uses: canonical/reposcan@main
+  with:
+    secrets: true
+    sast: true
+    iac: false
+    workflow: false
+    sca: true
+    sbom: true
 ```
 
 ## Findings threshold
@@ -61,7 +60,7 @@ reported. Set `fail-on` to `warning`, `note`, or `none` (report but never fail)
 to change the threshold. A tool or setup error always fails the job.
 
 ```yaml
-      - uses: canonical/reposcan@v1
+      - uses: canonical/reposcan@main
         with:
           fail-on: none   # report-only: never fail on findings
 ```
