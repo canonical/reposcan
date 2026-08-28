@@ -14,7 +14,7 @@ from repo_scanner.execution.process import Failure
 from repo_scanner.scans.sbom import SbomScan
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
-    patch_generate_sbom,
+    patch_run_sbom_scan,
     sbom_artifact,
 )
 
@@ -23,7 +23,7 @@ def test_sbom_exits_zero_and_prints_a_component_table() -> None:
     out = io.StringIO()
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo)
-        with patch_generate_sbom(sbom_cmd, sbom_artifact(3)), redirect_stdout(out):
+        with patch_run_sbom_scan(sbom_cmd, sbom_artifact(3)), redirect_stdout(out):
             code = action.run()
     assert code == 0  # an SBOM is an inventory, never pass/fail
     assert "COMPONENT" in out.getvalue() and "c0" in out.getvalue()
@@ -36,7 +36,7 @@ def test_sbom_forwards_dependency_options_to_the_scan() -> None:
             path=repo, include_dev_dependencies=True, allow_code_execution=True
         )
         with (
-            patch_generate_sbom(sbom_cmd, sbom_artifact(0), captured=captured),
+            patch_run_sbom_scan(sbom_cmd, sbom_artifact(0), captured=captured),
             redirect_stdout(io.StringIO()),
         ):
             action.run()
@@ -47,7 +47,7 @@ def test_sbom_forwards_dependency_options_to_the_scan() -> None:
 def test_sbom_reports_a_scan_failure_as_one() -> None:
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo)
-        with patch_generate_sbom(sbom_cmd, Failure(reason="cdxgen crashed")):
+        with patch_run_sbom_scan(sbom_cmd, Failure(reason="cdxgen crashed")):
             code = action.run()
     assert code == 1
 
@@ -56,7 +56,7 @@ def test_the_sbom_carries_analysis_metadata() -> None:
     out = io.StringIO()
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo, format="json")
-        with patch_generate_sbom(sbom_cmd, sbom_artifact(2)), redirect_stdout(out):
+        with patch_run_sbom_scan(sbom_cmd, sbom_artifact(2)), redirect_stdout(out):
             action.run()
     metadata = json.loads(out.getvalue())["metadata"]
     assert metadata["tools"] == [{"name": "reposcan", "version": reposcan_version()}]

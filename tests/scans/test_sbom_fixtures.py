@@ -17,7 +17,7 @@ from typing import Protocol, cast
 
 from repo_scanner.execution.process import Failure
 from repo_scanner.scans import cyclonedx
-from repo_scanner.scans.run import generate_sbom
+from repo_scanner.scans.run import run_sbom_scan
 from repo_scanner.scans.sbom import SbomScan
 from tests.scans.shared import load_fixture, planted_session, require_docker
 
@@ -36,7 +36,7 @@ def _run() -> None:
     fixture = cast(SbomFixture, load_fixture(SbomScan.name))
     with planted_session(SbomScan.name, fixture.plant) as session:
         assert session.target is not None
-        sbom = generate_sbom(
+        sbom = run_sbom_scan(
             fixture.SCAN,
             session.context,
             session.target,

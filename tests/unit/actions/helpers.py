@@ -90,12 +90,12 @@ def patch_run_scan(
 
 
 @contextmanager
-def patch_generate_sbom(
+def patch_run_sbom_scan(
     module: Any,
     *outcomes: cyclonedx.CycloneDxDocument | Failure,
     captured: list[SbomScan] | None = None,
 ) -> Iterator[None]:
-    """Patch the sbom command `module`'s `generate_sbom` to return `outcomes` in turn.
+    """Patch the sbom command `module`'s `run_sbom_scan` to return `outcomes` in turn.
 
     Also patches `start_session` to a fake session and `read_repository_state` to
     `FAKE_REPOSITORY`; each call's scan is recorded into `captured` when given.
@@ -109,15 +109,15 @@ def patch_generate_sbom(
             captured.append(scan)
         return remaining.pop(0)
 
-    saved_gen = module.generate_sbom
+    saved_gen = module.run_sbom_scan
     saved_session = module.start_session
     saved_repository = module.read_repository_state
-    module.generate_sbom = fake
+    module.run_sbom_scan = fake
     module.start_session = lambda *a, **k: FakeSession()
     module.read_repository_state = lambda *a, **k: FAKE_REPOSITORY
     try:
         yield
     finally:
-        module.generate_sbom = saved_gen
+        module.run_sbom_scan = saved_gen
         module.start_session = saved_session
         module.read_repository_state = saved_repository
