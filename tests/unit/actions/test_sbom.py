@@ -8,10 +8,10 @@ import json
 import tempfile
 from contextlib import redirect_stdout
 
-import repo_scanner.actions.sbom as sbom_cmd
-from repo_scanner import reposcan_version
-from repo_scanner.execution.process import Failure
-from repo_scanner.scans.sbom import SbomScan
+import reposcan.actions.sbom as sbom_cmd
+from reposcan import reposcan_version
+from reposcan.execution.process import Failure
+from reposcan.scans.sbom import SbomScan
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
     patch_run_sbom_scan,

@@ -8,8 +8,8 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from repo_scanner.execution.process import Failure
-from repo_scanner.image.remote import ensure_pulled
+from reposcan.execution.process import Failure
+from reposcan.image.remote import ensure_pulled
 
 
 @contextmanager

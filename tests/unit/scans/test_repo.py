@@ -5,9 +5,9 @@
 
 from collections.abc import Mapping, Sequence
 
-from repo_scanner.execution.context import RunUser
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.repo import (
+from reposcan.execution.context import RunUser
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans.repo import (
     ProjectIdentity,
     normalize_origin,
     read_repository_state,
@@ -43,26 +43,22 @@ def _context(replies: dict[str, str]) -> object:
 
 
 def test_normalize_origin_agrees_across_url_forms() -> None:
-    expected = "github.com/canonical/repo-scanner"
-    assert normalize_origin("git@github.com:canonical/repo-scanner.git") == expected
-    assert normalize_origin("https://github.com/canonical/repo-scanner") == expected
-    assert normalize_origin("https://user:token@GitHub.com/canonical/repo-scanner/")
-    assert (
-        normalize_origin("ssh://git@github.com:22/canonical/repo-scanner") == expected
-    )
+    expected = "github.com/canonical/reposcan"
+    assert normalize_origin("git@github.com:canonical/reposcan.git") == expected
+    assert normalize_origin("https://github.com/canonical/reposcan") == expected
+    assert normalize_origin("https://user:token@GitHub.com/canonical/reposcan/")
+    assert normalize_origin("ssh://git@github.com:22/canonical/reposcan") == expected
     assert normalize_origin("") == ""
 
 
 def test_identity_prefers_the_strongest_signal_both_sides_carry() -> None:
-    fork = ProjectIdentity("repo-scanner", root_commit="abc", origin="github.com/a/x")
-    upstream = ProjectIdentity(
-        "repo-scanner", root_commit="abc", origin="github.com/b/x"
-    )
+    fork = ProjectIdentity("reposcan", root_commit="abc", origin="github.com/a/x")
+    upstream = ProjectIdentity("reposcan", root_commit="abc", origin="github.com/b/x")
     # Both carry a root commit, so the differing origin is never consulted.
     assert fork.matches(upstream) == (True, "root_commit")
 
-    labelled = ProjectIdentity("repo-scanner", root_commit="abc", label="mine")
-    other = ProjectIdentity("repo-scanner", root_commit="abc", label="theirs")
+    labelled = ProjectIdentity("reposcan", root_commit="abc", label="mine")
+    other = ProjectIdentity("reposcan", root_commit="abc", label="theirs")
     assert labelled.matches(other) == (False, "label")
 
 
@@ -83,18 +79,18 @@ def test_repository_state_reads_the_commit_branch_and_cleanliness() -> None:
             "rev-parse HEAD": "c0ffee\n",
             "rev-parse --abbrev-ref": "main\n",
             "rev-list --max-parents=0": "zzz\naaa\n",
-            "remote get-url": "git@github.com:canonical/repo-scanner.git\n",
+            "remote get-url": "git@github.com:canonical/reposcan.git\n",
             "status --porcelain": " M src/x.py\n",
         }
     )
-    state = read_repository_state(ctx, "/scan/repo-scanner")  # type: ignore[arg-type]
+    state = read_repository_state(ctx, "/scan/reposcan")  # type: ignore[arg-type]
     assert state.commit_sha == "c0ffee"
     assert state.branch == "main"
     assert state.dirty is True
     assert state.shallow is False  # the pragma reply is absent, so not shallow
-    assert state.identity.name == "repo-scanner"
+    assert state.identity.name == "reposcan"
     assert state.identity.root_commit == "aaa,zzz"  # sorted, so order cannot vary
-    assert state.identity.origin == "github.com/canonical/repo-scanner"
+    assert state.identity.origin == "github.com/canonical/reposcan"
 
 
 def test_a_target_that_is_not_a_repository_yields_only_its_directory_name() -> None:

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the shared image ensure step (repo_scanner.image.builder).
+"""Tests for the shared image ensure step (reposcan.image.builder).
 
 ensure_image is the trust boundary: it rebuilds unless the present image's hash
 matches the identity recorded at its last build. A fake builder scripts the present
@@ -13,8 +13,8 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from repo_scanner.image.build_spec import BuildSpec
-from repo_scanner.image.builder import ensure_image
+from reposcan.image.build_spec import BuildSpec
+from reposcan.image.builder import ensure_image
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 

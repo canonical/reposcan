@@ -27,8 +27,8 @@ The LXD backend always builds locally.
 reposcan can run from any remote OCI image with the `image` config key:
 
 ```
-reposcan config set image ghcr.io/canonical/repo-scanner:latest
-reposcan config set image ghcr.io/canonical/repo-scanner@sha256:...
+reposcan config set image ghcr.io/canonical/reposcan:latest
+reposcan config set image ghcr.io/canonical/reposcan@sha256:...
 ```
 
 reposcan verifies a pulled image before running it: a digest-pinned reference is

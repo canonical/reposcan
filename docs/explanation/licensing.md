@@ -1,7 +1,7 @@
 # License compliance
 
 reposcan drives a fixed set of third-party tools, each pinned by hash in
-`src/repo_scanner/tools/registry.py` and listed with its license in the
+`src/reposcan/tools/registry.py` and listed with its license in the
 [README](../../README.md#bundled-tools-and-their-licenses). Every tool remains
 under its own upstream license. This page explains how reposcan's use of them
 stays within those licenses.

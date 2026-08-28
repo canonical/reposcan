@@ -15,10 +15,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from repo_scanner.execution.process import Failure
-from repo_scanner.scans import cyclonedx
-from repo_scanner.scans.run import run_sbom_scan
-from repo_scanner.scans.sbom import SbomScan
+from reposcan.execution.process import Failure
+from reposcan.scans import cyclonedx
+from reposcan.scans.run import run_sbom_scan
+from reposcan.scans.sbom import SbomScan
 from tests.scans.shared import load_fixture, planted_session, require_docker
 
 logger = logging.getLogger(__name__)

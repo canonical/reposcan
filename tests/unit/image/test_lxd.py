@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the LXD image builder (repo_scanner.image.lxd).
+"""Tests for the LXD image builder (reposcan.image.lxd).
 
 lxc is not invoked: run_process is patched with a fake that records the argv; its
 response is a callable so a specific step can be made to fail.
@@ -11,9 +11,9 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 
-import repo_scanner.image.lxd as lxd
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.image.build_spec import BuildSpec
+import reposcan.image.lxd as lxd
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.build_spec import BuildSpec
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = lxd.LxdImageBuilder()
@@ -105,7 +105,7 @@ def test_build_aborts_early_and_warns_when_the_container_has_no_network() -> Non
         return _OK
 
     handler = _RecordingHandler()
-    logger = logging.getLogger("repo_scanner.image.lxd")
+    logger = logging.getLogger("reposcan.image.lxd")
     logger.addHandler(handler)
     try:
         with _patched(respond) as calls:

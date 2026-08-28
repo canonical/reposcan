@@ -6,8 +6,8 @@
 import subprocess
 from pathlib import Path
 
-from repo_scanner.scans import sarif
-from repo_scanner.scans.secrets import SecretsScan
+from reposcan.scans import sarif
+from reposcan.scans.secrets import SecretsScan
 
 SCAN = SecretsScan()
 

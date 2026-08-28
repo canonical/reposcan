@@ -1,15 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan tools` action (repo_scanner.actions.tools)."""
+"""Tests for the `reposcan tools` action (reposcan.actions.tools)."""
 
 import io
 import os
 import tempfile
 from contextlib import redirect_stdout
 
-from repo_scanner.actions.tools import list_tools
-from repo_scanner.tools.registry import TOOLS, TRUFFLEHOG
+from reposcan.actions.tools import list_tools
+from reposcan.tools.registry import TOOLS, TRUFFLEHOG
 
 
 def test_lists_every_scanning_tool_with_its_install_status() -> None:

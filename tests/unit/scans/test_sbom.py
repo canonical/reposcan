@@ -1,17 +1,17 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the SBOM scan (repo_scanner.scans.sbom) and CycloneDX merge."""
+"""Tests for the SBOM scan (reposcan.scans.sbom) and CycloneDX merge."""
 
 import json
 from dataclasses import asdict
 from typing import cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.scans import cyclonedx
-from repo_scanner.scans.cyclonedx import CycloneDxDocument
-from repo_scanner.scans.model import ToolInvocationRecord
-from repo_scanner.scans.sbom import SbomScan
+from reposcan.execution.context import ExecutionContext
+from reposcan.scans import cyclonedx
+from reposcan.scans.cyclonedx import CycloneDxDocument
+from reposcan.scans.model import ToolInvocationRecord
+from reposcan.scans.sbom import SbomScan
 
 # The SBOM scan ignores the context when building its invocations.
 _NO_CTX = cast(ExecutionContext, None)

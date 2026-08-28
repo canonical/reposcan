@@ -5,8 +5,8 @@
 
 from pathlib import Path
 
-from repo_scanner.scans import sarif
-from repo_scanner.scans.iac import IacScan
+from reposcan.scans import sarif
+from reposcan.scans.iac import IacScan
 
 SCAN = IacScan()
 

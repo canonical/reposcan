@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for backend selection (repo_scanner.backends).
+"""Tests for backend selection (reposcan.backends).
 
 Availability is controlled by patching backends.run_process (the liveness probe);
 local is always available. `select_backend` takes an already-resolved backend name
@@ -12,8 +12,8 @@ import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
-import repo_scanner.backends as backends
-from repo_scanner.backends import (
+import reposcan.backends as backends
+from reposcan.backends import (
     Backend,
     DockerBackend,
     LocalBackend,
@@ -22,12 +22,12 @@ from repo_scanner.backends import (
     select_backend,
     start_session,
 )
-from repo_scanner.execution.docker import DockerContext
-from repo_scanner.execution.local import LocalContext
-from repo_scanner.execution.lxd import LxdContext
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.image.remote import CANONICAL_REF
-from repo_scanner.paths import tools_root
+from reposcan.execution.docker import DockerContext
+from reposcan.execution.local import LocalContext
+from reposcan.execution.lxd import LxdContext
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.remote import CANONICAL_REF
+from reposcan.paths import tools_root
 
 
 @contextmanager

@@ -1,9 +1,9 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the in-container identity helpers (repo_scanner.execution.context)."""
+"""Tests for the in-container identity helpers (reposcan.execution.context)."""
 
-from repo_scanner.execution.context import RunUser, as_user
+from reposcan.execution.context import RunUser, as_user
 
 
 def test_as_user_with_groups_sets_them_and_drops_init_groups() -> None:

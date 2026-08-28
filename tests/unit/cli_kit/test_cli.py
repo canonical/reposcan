@@ -10,7 +10,7 @@ is an application's concern, tested with reposcan's resolver (tests/unit/test_ap
 
 from typing import Any
 
-from repo_scanner.cli_kit import Action, Cli, Group, flag, option
+from reposcan.cli_kit import Action, Cli, Group, flag, option
 
 
 class _Base(Action):

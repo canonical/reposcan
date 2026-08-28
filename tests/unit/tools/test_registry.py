@@ -1,16 +1,16 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the real tool registry (repo_scanner.tools.registry).
+"""Tests for the real tool registry (reposcan.tools.registry).
 
 The registry is data, so the high-signal checks are that the user-facing set is right
 and that every tool -- including the prerequisites pulled in behind it -- carries real
 supply-chain pins and is wired to the right dependency.
 """
 
-from repo_scanner.tools.install import install_plan
-from repo_scanner.tools.model import GoTool, NativeBinary, Platform, PypiTool
-from repo_scanner.tools.registry import GO_SDK, RESOLVER_TOOLS, TOOLS, UV
+from reposcan.tools.install import install_plan
+from reposcan.tools.model import GoTool, NativeBinary, Platform, PypiTool
+from reposcan.tools.registry import GO_SDK, RESOLVER_TOOLS, TOOLS, UV
 
 
 def test_every_tool_is_fully_pinned_and_wired_to_its_prerequisite() -> None:

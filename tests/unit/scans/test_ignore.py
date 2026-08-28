@@ -1,12 +1,12 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the reposcan ignorefile (repo_scanner.scans.ignore)."""
+"""Tests for the reposcan ignorefile (reposcan.scans.ignore)."""
 
 import tempfile
 from pathlib import Path
 
-from repo_scanner.scans import ignore, sarif
+from reposcan.scans import ignore, sarif
 
 
 def _loc(uri: str, line: int = 0) -> dict:

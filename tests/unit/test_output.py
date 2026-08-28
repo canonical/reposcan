@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for scan-result output rendering (repo_scanner.output)."""
+"""Tests for scan-result output rendering (reposcan.output)."""
 
 import io
 import json
@@ -10,13 +10,13 @@ import shutil
 import tempfile
 from contextlib import redirect_stdout
 
-from repo_scanner import table
-from repo_scanner.execution.process import Failure
-from repo_scanner.output import (
+from reposcan import table
+from reposcan.execution.process import Failure
+from reposcan.output import (
     Format,
     emit,
 )
-from repo_scanner.scans import cyclonedx, sarif
+from reposcan.scans import cyclonedx, sarif
 
 
 def _sarif(*levels: str) -> sarif.SarifDocument:

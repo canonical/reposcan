@@ -7,12 +7,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import Failure
-from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.base import SecurityScan
-from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
-from repo_scanner.scans.sbom import SbomScan
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import Failure
+from reposcan.scans import cyclonedx, sarif
+from reposcan.scans.base import SecurityScan
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.scans.sbom import SbomScan
 
 FAKE_REPOSITORY = RepositoryState(
     identity=ProjectIdentity(

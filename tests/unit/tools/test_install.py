@@ -1,15 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the tool install model (repo_scanner.tools).
+"""Tests for the tool install model (reposcan.tools).
 
 The value here is the install-command generation for each install shape and the
 dependency-ordered install plan; the plain data on the dataclasses (kind, requires)
 is exercised through the registry and the plan, not asserted field-by-field.
 """
 
-from repo_scanner.tools.install import install_plan
-from repo_scanner.tools.model import (
+from reposcan.tools.install import install_plan
+from reposcan.tools.model import (
     Download,
     GoTool,
     NativeBinary,

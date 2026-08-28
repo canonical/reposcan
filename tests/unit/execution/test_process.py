@@ -1,13 +1,13 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the subprocess runner (repo_scanner.execution.process)."""
+"""Tests for the subprocess runner (reposcan.execution.process)."""
 
 import io
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 
-from repo_scanner.execution.process import ExecResult, Failure, run_process
+from reposcan.execution.process import ExecResult, Failure, run_process
 
 
 def test_captures_output_exit_code_and_check() -> None:

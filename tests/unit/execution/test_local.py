@@ -1,15 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the local execution context (repo_scanner.execution.local)."""
+"""Tests for the local execution context (reposcan.execution.local)."""
 
 import os
 import sys
 import tempfile
 
-from repo_scanner.execution.context import read_file, write_file
-from repo_scanner.execution.local import LocalContext
-from repo_scanner.execution.process import ExecResult
+from reposcan.execution.context import read_file, write_file
+from reposcan.execution.local import LocalContext
+from reposcan.execution.process import ExecResult
 
 
 def test_run_executes_on_the_host_with_env_overlaid() -> None:

@@ -3,7 +3,7 @@
 
 """Tests for component identity and issue equivalence."""
 
-from repo_scanner.db.identity import (
+from reposcan.db.identity import (
     IssueAttributes,
     derive_component_key,
     normalize_purl,

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the scan command (repo_scanner.actions.scan.ScanCommand).
+"""Tests for the scan command (reposcan.actions.scan.ScanCommand).
 
 `run_scan` and `start_session` are patched; these tests cover only the command itself:
 selecting scans, consolidating artifacts, writing reports, and choosing the exit code.
@@ -16,15 +16,15 @@ from contextlib import redirect_stdout
 
 import pytest
 
-import repo_scanner.actions.scan as scan_cmd
-from repo_scanner import reposcan_version
-from repo_scanner.cli_kit import params_of
-from repo_scanner.db import read as db_read
-from repo_scanner.execution.process import Failure
-from repo_scanner.output import Format
-from repo_scanner.scans import sarif
-from repo_scanner.scans.registry import SCANS
-from repo_scanner.scans.repo import PROPERTY_SCHEMA
+import reposcan.actions.scan as scan_cmd
+from reposcan import reposcan_version
+from reposcan.cli_kit import params_of
+from reposcan.db import read as db_read
+from reposcan.execution.process import Failure
+from reposcan.output import Format
+from reposcan.scans import sarif
+from reposcan.scans.registry import SCANS
+from reposcan.scans.repo import PROPERTY_SCHEMA
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
     patch_run_scan,

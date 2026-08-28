@@ -1,18 +1,18 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the scan driver (repo_scanner.scans.run.run_scan)."""
+"""Tests for the scan driver (reposcan.scans.run.run_scan)."""
 
 import hashlib
 from collections.abc import Mapping, Sequence
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans import sarif
-from repo_scanner.scans.analysis import ScanStatus, scan_status
-from repo_scanner.scans.base import SecurityScan
-from repo_scanner.scans.model import ToolInvocation
-from repo_scanner.scans.run import run_scan
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans import sarif
+from reposcan.scans.analysis import ScanStatus, scan_status
+from reposcan.scans.base import SecurityScan
+from reposcan.scans.model import ToolInvocation
+from reposcan.scans.run import run_scan
 
 
 class _FakeContext:

@@ -11,7 +11,7 @@ by default.)
 ## Basic usage
 
 You can create your own workflow, or copy the one in this repository
-(`.github/workflows/repo-scanner.yml`).
+(`.github/workflows/reposcan.yml`).
 
 Example workflow:
 
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: canonical/repo-scanner@v1
+      - uses: canonical/reposcan@v1
 ```
 
 The runner needs Docker (included in the `ubuntu-latest` image); reposcan runs
@@ -44,7 +44,7 @@ Every scan is a boolean input. All scans are on by default, with the exception
 of `sbom`, which produces a dependency inventory, not security findings.
 
 ```yaml
-      - uses: canonical/repo-scanner@v1
+      - uses: canonical/reposcan@v1
         with:
           secrets: true
           sast: true
@@ -61,7 +61,7 @@ reported. Set `fail-on` to `warning`, `note`, or `none` (report but never fail)
 to change the threshold. A tool or setup error always fails the job.
 
 ```yaml
-      - uses: canonical/repo-scanner@v1
+      - uses: canonical/reposcan@v1
         with:
           fail-on: none   # report-only: never fail on findings
 ```

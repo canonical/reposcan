@@ -41,14 +41,14 @@ from contextlib import (
 
 import pytest
 
-from repo_scanner.actions.exec import execute
-from repo_scanner.backends import ContainerBackend, DockerBackend, LxdBackend
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import Failure
-from repo_scanner.image.build_spec import build_spec
-from repo_scanner.image.builder import ensure_image
-from repo_scanner.tools.install import current_platform
-from repo_scanner.tools.registry import TOOLS
+from reposcan.actions.exec import execute
+from reposcan.backends import ContainerBackend, DockerBackend, LxdBackend
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import Failure
+from reposcan.image.build_spec import build_spec
+from reposcan.image.builder import ensure_image
+from reposcan.tools.install import current_platform
+from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
 

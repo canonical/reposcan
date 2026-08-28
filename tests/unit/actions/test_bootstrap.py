@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan bootstrap` action (repo_scanner.actions.bootstrap).
+"""Tests for the `reposcan bootstrap` action (reposcan.actions.bootstrap).
 
 A fake execution context records the shell commands it is handed and can be told to
 fail those matching a substring, so the action's resolution, ordering, and
@@ -11,9 +11,9 @@ failure-domain behavior can be checked without installing anything.
 import logging
 from collections.abc import Mapping, Sequence
 
-from repo_scanner.actions.bootstrap import bootstrap
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.tools.model import Platform
+from reposcan.actions.bootstrap import bootstrap
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.tools.model import Platform
 
 _LINUX = Platform("linux", "amd64")
 _ROOT = "/opt/tools"
@@ -69,7 +69,7 @@ def _capture_logs():  # returns (handler, remover)
     # The action logs progress at INFO; lower the package logger to INFO for the
     # duration so those records reach our handler, then restore it.
     handler = _ListHandler()
-    logger = logging.getLogger("repo_scanner")
+    logger = logging.getLogger("reposcan")
     previous_level = logger.level
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)

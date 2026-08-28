@@ -12,11 +12,11 @@ document it was given.
 import os
 import tempfile
 
-from repo_scanner.db import read, write
-from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.analysis import Analysis, ScanRecord, ScanStatus
-from repo_scanner.scans.model import Artifact, ArtifactKind
-from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.db import read, write
+from reposcan.scans import cyclonedx, sarif
+from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
+from reposcan.scans.model import Artifact, ArtifactKind
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 _FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 

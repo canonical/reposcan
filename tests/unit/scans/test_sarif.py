@@ -8,11 +8,11 @@ import json
 from dataclasses import asdict
 from typing import cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult
-from repo_scanner.scans import sarif
-from repo_scanner.scans.model import ToolInvocationRecord
-from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import ExecResult
+from reposcan.scans import sarif
+from reposcan.scans.model import ToolInvocationRecord
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 
 def test_build_creates_a_finding_normalized_at_construction() -> None:

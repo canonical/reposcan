@@ -1,0 +1,30 @@
+name: reposcan
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF to the code-scanning pane
+  pull-requests: write # post the results summary as a PR comment
+
+concurrency:
+  group: reposcan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0 # full history so the secrets scan (history mode) has commits
+          persist-credentials: false
+
+      - uses: canonical/reposcan@main
+        with:
+          fail-on: warning
+          pr-comment: true

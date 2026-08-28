@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the LXD execution context and project (repo_scanner.execution.lxd).
+"""Tests for the LXD execution context and project (reposcan.execution.lxd).
 
 lxc is not invoked: run_process is patched with a fake that records the argv.
 """
@@ -9,10 +9,10 @@ lxc is not invoked: run_process is patched with a fake that records the argv.
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 
-import repo_scanner.execution.lxd as lxd
-from repo_scanner.execution.context import RunUser
-from repo_scanner.execution.lxd import LxdContext, ensure_project
-from repo_scanner.execution.process import ExecResult, Failure
+import reposcan.execution.lxd as lxd
+from reposcan.execution.context import RunUser
+from reposcan.execution.lxd import LxdContext, ensure_project
+from reposcan.execution.process import ExecResult, Failure
 
 
 @contextmanager

@@ -13,10 +13,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 
-import repo_scanner.scans as scans_pkg
-from repo_scanner.backends import DockerBackend, Session, start_session
-from repo_scanner.execution.context import host_user
-from repo_scanner.scans.base import Scan
+import reposcan.scans as scans_pkg
+from reposcan.backends import DockerBackend, Session, start_session
+from reposcan.execution.context import host_user
+from reposcan.scans.base import Scan
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def fixture_names() -> set[str]:
 
 
 def discover_scans() -> dict[str, type[Scan]]:
-    """Every concrete Scan defined under src/repo_scanner/scans, keyed by name."""
+    """Every concrete Scan defined under src/reposcan/scans, keyed by name."""
     scans: dict[str, type[Scan]] = {}
     for info in pkgutil.iter_modules(scans_pkg.__path__):
         module = importlib.import_module(f"{scans_pkg.__name__}.{info.name}")

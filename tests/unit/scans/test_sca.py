@@ -1,15 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the SCA scan (repo_scanner.scans.sca), including govulncheck parsing."""
+"""Tests for the SCA scan (reposcan.scans.sca), including govulncheck parsing."""
 
 import json
 from typing import cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans import sarif
-from repo_scanner.scans.sca import ScaScan
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans import sarif
+from reposcan.scans.sca import ScaScan
 
 # The SCA scan ignores the context when building its invocations.
 _NO_CTX = cast(ExecutionContext, None)

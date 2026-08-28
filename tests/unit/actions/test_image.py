@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan image build` action (repo_scanner.actions.image).
+"""Tests for the `reposcan image build` action (reposcan.actions.image).
 
 The builder is chosen by the action and passed in, so this covers only
 build/print/force and the failure exit code. `ensure_image` is patched so no daemon
@@ -12,10 +12,10 @@ import io
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 
-import repo_scanner.actions.image as image_cmd
-from repo_scanner.execution.process import Failure
-from repo_scanner.image.build_spec import BuildSpec
-from repo_scanner.image.docker import DockerImageBuilder
+import reposcan.actions.image as image_cmd
+from reposcan.execution.process import Failure
+from reposcan.image.build_spec import BuildSpec
+from reposcan.image.docker import DockerImageBuilder
 
 
 @contextmanager

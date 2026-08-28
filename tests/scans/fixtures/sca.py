@@ -5,8 +5,8 @@
 
 from pathlib import Path
 
-from repo_scanner.scans import sarif
-from repo_scanner.scans.sca import ScaScan
+from reposcan.scans import sarif
+from reposcan.scans.sca import ScaScan
 
 SCAN = ScaScan()
 

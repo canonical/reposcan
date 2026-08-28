@@ -7,12 +7,12 @@ import os
 import sqlite3
 import tempfile
 
-from repo_scanner.db import read, write
-from repo_scanner.execution.process import Failure
-from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.analysis import Analysis, ScanRecord, ScanStatus
-from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
-from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.db import read, write
+from reposcan.execution.process import Failure
+from reposcan.scans import cyclonedx, sarif
+from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
+from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 
 def _with(analysis: Analysis, *scans: ScanRecord) -> Analysis:
@@ -21,7 +21,7 @@ def _with(analysis: Analysis, *scans: ScanRecord) -> Analysis:
     return analysis
 
 
-def _state(name: str = "repo-scanner", root: str = "abc") -> RepositoryState:
+def _state(name: str = "reposcan", root: str = "abc") -> RepositoryState:
     return RepositoryState(
         identity=ProjectIdentity(name, root_commit=root),
         commit_sha="c0ffee",
@@ -184,7 +184,7 @@ def test_the_analysis_records_the_repository_it_covered() -> None:
         )
         (project,) = _query(path, "SELECT name, root_commit FROM project")
     assert scan_row == ("c0ffee", "main", 0, 0)
-    assert project == ("repo-scanner", "abc")
+    assert project == ("reposcan", "abc")
 
 
 def test_a_second_analysis_appends_and_the_same_one_twice_does_not() -> None:
@@ -208,7 +208,7 @@ def test_a_different_repository_becomes_a_second_project() -> None:
         write.analysis(path, _with(_analysis("u1"), _findings_scan()))
         other = _analysis("u2", _state(name="other", root="zzz"))
         write.analysis(path, _with(other, _findings_scan()))
-        assert [p.name for p in read.projects(path)] == ["repo-scanner", "other"]
+        assert [p.name for p in read.projects(path)] == ["reposcan", "other"]
 
 
 def test_a_database_of_another_schema_version_is_refused_not_misread() -> None:

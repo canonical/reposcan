@@ -5,8 +5,8 @@
 
 from pathlib import Path
 
-from repo_scanner.scans import sarif
-from repo_scanner.scans.sast import SastScan
+from reposcan.scans import sarif
+from reposcan.scans.sast import SastScan
 
 SCAN = SastScan()
 

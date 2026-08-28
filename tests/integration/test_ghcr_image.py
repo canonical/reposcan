@@ -10,10 +10,10 @@ import logging
 
 import pytest
 
-from repo_scanner.backends import DockerBackend
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.image.remote import CANONICAL_REF, ensure_pulled
-from repo_scanner.tools.registry import TOOLS
+from reposcan.backends import DockerBackend
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.remote import CANONICAL_REF, ensure_pulled
+from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
 

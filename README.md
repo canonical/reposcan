@@ -1,7 +1,7 @@
-# repo-scanner
+# reposcan
 
-`repo-scanner` (package name) or `reposcan` (CLI name) is a tool for running
-security scans against a locally-cloned repository.
+`reposcan` is a tool for running security scans against a locally-cloned
+repository.
 
 By default, it executes all scans in ephemeral containers. It defaults to Docker
 and falls back to LXD based on availability. It supports running scans
@@ -31,7 +31,7 @@ a command and configuration reference, and design explanation. Start with
 ## Bundled tools and their licenses
 
 `reposcan` drives a fixed set of third-party tools, each pinned by hash in
-`src/repo_scanner/tools/registry.py`. Every tool remains under its own upstream
+`src/reposcan/tools/registry.py`. Every tool remains under its own upstream
 license, linked below:
 
 | Tool                                                        | Purpose                                  | License                                                                       |

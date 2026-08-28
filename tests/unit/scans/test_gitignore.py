@@ -1,13 +1,13 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for git-ignore handling (repo_scanner.scans.gitignore)."""
+"""Tests for git-ignore handling (reposcan.scans.gitignore)."""
 
 from collections.abc import Mapping, Sequence
 
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans import sarif
-from repo_scanner.scans.gitignore import GitIgnore
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans import sarif
+from reposcan.scans.gitignore import GitIgnore
 
 
 class _FakeContext:

@@ -1,16 +1,16 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the secrets scan (repo_scanner.scans.secrets)."""
+"""Tests for the secrets scan (reposcan.scans.secrets)."""
 
 import hashlib
 import json
 from typing import cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult
-from repo_scanner.scans import sarif
-from repo_scanner.scans.secrets import SecretsScan
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import ExecResult
+from reposcan.scans import sarif
+from reposcan.scans.secrets import SecretsScan
 
 
 class _FakeContext:

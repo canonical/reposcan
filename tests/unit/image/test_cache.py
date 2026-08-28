@@ -1,15 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the image identity cache (repo_scanner.image.cache)."""
+"""Tests for the image identity cache (reposcan.image.cache)."""
 
 import os
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from repo_scanner.image import cache
-from repo_scanner.paths import image_cache
+from reposcan.image import cache
+from reposcan.paths import image_cache
 
 
 @contextmanager

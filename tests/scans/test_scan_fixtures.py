@@ -16,12 +16,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from repo_scanner.execution.process import Failure
-from repo_scanner.scans import sarif
-from repo_scanner.scans.base import SecurityScan
-from repo_scanner.scans.registry import SCANS
-from repo_scanner.scans.run import run_scan
-from repo_scanner.scans.sbom import SbomScan
+from reposcan.execution.process import Failure
+from reposcan.scans import sarif
+from reposcan.scans.base import SecurityScan
+from reposcan.scans.registry import SCANS
+from reposcan.scans.run import run_scan
+from reposcan.scans.sbom import SbomScan
 from tests.scans.shared import (
     discover_scans,
     fixture_names,
@@ -43,7 +43,7 @@ class SecurityFixture(Protocol):
 
 def test_every_scan_has_a_fixture_and_is_wired_to_a_command() -> None:
     discovered = discover_scans()
-    assert discovered, "no scans discovered under src/repo_scanner/scans"
+    assert discovered, "no scans discovered under src/reposcan/scans"
     assert fixture_names() == set(discovered), "fixtures and scans are not one-to-one"
     security = {n for n, c in discovered.items() if issubclass(c, SecurityScan)}
     assert security == set(SCANS)  # the SARIF scans are exactly the SCANS registry

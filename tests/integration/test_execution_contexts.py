@@ -26,9 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from repo_scanner.backends import DockerBackend, LxdBackend
-from repo_scanner.execution.context import ExecutionContext, mounted_target
-from repo_scanner.execution.process import ExecResult, Failure
+from reposcan.backends import DockerBackend, LxdBackend
+from reposcan.execution.context import ExecutionContext, mounted_target
+from reposcan.execution.process import ExecResult, Failure
 
 logger = logging.getLogger(__name__)
 

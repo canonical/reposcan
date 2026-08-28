@@ -27,7 +27,7 @@ jobs:
         classic: true
     environment:
       # Pin @main to a tag or commit for reproducible builds.
-      REPOSCAN: uvx --from git+https://github.com/canonical/repo-scanner@main reposcan
+      REPOSCAN: uvx --from git+https://github.com/canonical/reposcan@main reposcan
       # Fail the build on a finding at or above this level: error, warning, note,
       # or none (report only, never fail).
       FAIL_ON: error

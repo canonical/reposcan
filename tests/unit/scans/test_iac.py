@@ -1,12 +1,12 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the IaC scan (repo_scanner.scans.iac)."""
+"""Tests for the IaC scan (reposcan.scans.iac)."""
 
 import json
 
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.iac import IacScan
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans.iac import IacScan
 
 
 def test_create_run_converts_checkov_failed_checks_to_sarif() -> None:

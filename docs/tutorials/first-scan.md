@@ -16,8 +16,8 @@ host, but that is discouraged and not used here. Installing the CLI needs Python
 Install `reposcan` directly from the repository with pipx or uv. It has no
 runtime Python dependencies.
 
-    pipx install git+https://github.com/canonical/repo-scanner
-    # or: uv tool install git+https://github.com/canonical/repo-scanner
+    pipx install git+https://github.com/canonical/reposcan
+    # or: uv tool install git+https://github.com/canonical/reposcan
 
 Confirm it is on your path:
 

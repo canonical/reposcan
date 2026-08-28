@@ -72,5 +72,5 @@ jobs:
             echo "Pull (digest-pinned): \`${pinned}\`"
             echo
             echo "To make this the default image reposcan pulls, set \`CANONICAL_REF\`"
-            echo "in \`src/repo_scanner/image/remote.py\` to the pinned ref above."
+            echo "in \`src/reposcan/image/remote.py\` to the pinned ref above."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -5,8 +5,8 @@
 
 from pathlib import Path
 
-from repo_scanner.scans import cyclonedx
-from repo_scanner.scans.sbom import SbomScan
+from reposcan.scans import cyclonedx
+from reposcan.scans.sbom import SbomScan
 
 SCAN = SbomScan()
 

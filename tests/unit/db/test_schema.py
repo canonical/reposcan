@@ -5,7 +5,7 @@
 
 import hashlib
 
-from repo_scanner.db import schema
+from reposcan.db import schema
 
 SCHEMA_VERSIONS = {
     1: "d6405205bac473bf1ec53cfad16b3abcf98c257491d9342e256cf984c6641bf0"

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan render` action (repo_scanner.actions.render)."""
+"""Tests for the `reposcan render` action (reposcan.actions.render)."""
 
 import io
 import json
@@ -9,8 +9,8 @@ import os
 import tempfile
 from contextlib import redirect_stdout
 
-from repo_scanner.actions.render import render
-from repo_scanner.scans import sarif
+from reposcan.actions.render import render
+from reposcan.scans import sarif
 
 
 def _write(directory: str, name: str, content: str) -> str:

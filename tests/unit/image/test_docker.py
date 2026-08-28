@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the Docker image builder (repo_scanner.image.docker).
+"""Tests for the Docker image builder (reposcan.image.docker).
 
 docker is not invoked: run_process is patched with a fake that records the argv.
 """
@@ -9,9 +9,9 @@ docker is not invoked: run_process is patched with a fake that records the argv.
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 
-import repo_scanner.image.docker as docker
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.image.build_spec import BuildSpec
+import reposcan.image.docker as docker
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.build_spec import BuildSpec
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = docker.DockerImageBuilder()

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the firewall check (repo_scanner.execution.firewall).
+"""Tests for the firewall check (reposcan.execution.firewall).
 
 The analyzers are fed nft JSON / iptables -S text directly; lxd_bridge_hint is driven
 through a patched run_process. Neither nft nor iptables is ever invoked.
@@ -10,13 +10,13 @@ through a patched run_process. Neither nft nor iptables is ever invoked.
 import json
 from collections.abc import Callable
 
-import repo_scanner.execution.firewall as firewall
-from repo_scanner.execution.firewall import (
+import reposcan.execution.firewall as firewall
+from reposcan.execution.firewall import (
     _analyze_iptables,
     _analyze_nft,
     lxd_bridge_hint,
 )
-from repo_scanner.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult, Failure
 
 _FORWARD_DROP = {"chain": {"name": "FORWARD", "policy": "drop"}}
 

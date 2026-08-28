@@ -7,7 +7,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "repo-scanner"
+name = "reposcan"
 version = "0.1.0"
 description = """
 Orchestrates security scanners (secrets, SBOM, SCA, SAST, IaC, workflow)
@@ -19,10 +19,10 @@ license = "GPL-3.0-or-later"
 dependencies = []
 
 [project.scripts]
-reposcan = "repo_scanner.app:main"
+reposcan = "reposcan.app:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/repo_scanner"]
+packages = ["src/reposcan"]
 
 #######################################
 # TOX/TEST CONFIG                     #

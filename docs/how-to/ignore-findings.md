@@ -22,13 +22,13 @@ rules:
   unpinned-uses:
     config:
       policies:
-        canonical/repo-scanner: ref-pin # allow a tag/branch, not only a hash
+        canonical/reposcan: ref-pin # allow a tag/branch, not only a hash
 ```
 
 or annotate the line:
 
 ```yaml
-      - uses: canonical/repo-scanner@main # zizmor: ignore[unpinned-uses]
+      - uses: canonical/reposcan@main # zizmor: ignore[unpinned-uses]
 ```
 
 Other tools have their own conventions: semgrep honours `# nosemgrep`, checkov
@@ -47,7 +47,7 @@ File format:
 #   <tool>  <ruleId>  <path-glob>  [content-regex]
 
 # sha256 hashes in hash-pinned requirements trip trufflehog's SentryToken detector
-trufflehog  SentryToken  src/repo_scanner/tools/locks/*.txt
+trufflehog  SentryToken  src/reposcan/tools/locks/*.txt
 
 # a checkov rule accepted everywhere, whichever tool reported it
 *  CKV_AWS_18  **/*.tf

@@ -1,14 +1,14 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan exec` action (repo_scanner.actions.exec)."""
+"""Tests for the `reposcan exec` action (reposcan.actions.exec)."""
 
 import io
 import sys
 from contextlib import redirect_stdout
 
-from repo_scanner.actions.exec import TIMEOUT_EXIT_CODE, execute
-from repo_scanner.execution.local import LocalContext
+from reposcan.actions.exec import TIMEOUT_EXIT_CODE, execute
+from reposcan.execution.local import LocalContext
 
 
 def test_forwards_output_and_the_commands_own_exit_code() -> None:

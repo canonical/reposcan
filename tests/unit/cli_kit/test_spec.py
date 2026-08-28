@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the parameter spec, in particular flag inference (repo_scanner.cli_kit).
+"""Tests for the parameter spec, in particular flag inference (reposcan.cli_kit).
 
 An option/flag's long spelling `--<name>` is inferred from its attribute name; the
 flags passed to the constructor are only extra spellings. Positionals and remainders
@@ -10,8 +10,8 @@ get no flags.
 
 import pytest
 
-from repo_scanner.actions.base import Action as Globals
-from repo_scanner.cli_kit import (
+from reposcan.actions.base import Action as Globals
+from reposcan.cli_kit import (
     Action,
     check_requires,
     flag,

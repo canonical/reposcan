@@ -1,14 +1,14 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the SAST scan (repo_scanner.scans.sast)."""
+"""Tests for the SAST scan (reposcan.scans.sast)."""
 
 import json
 from typing import cast
 
-from repo_scanner.execution.context import ExecutionContext
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.sast import SastScan
+from reposcan.execution.context import ExecutionContext
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans.sast import SastScan
 
 
 def test_invocations_run_semgrep_producing_sarif() -> None:

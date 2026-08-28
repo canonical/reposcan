@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-name: repo-scanner
+name: reposcan
 description: >-
   Run security scans against a checked-out repository and present findings in
   the code-scanning pane, a pull-request comment, or the job log.

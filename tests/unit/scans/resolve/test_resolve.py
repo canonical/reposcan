@@ -1,12 +1,12 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Test the dependency-resolution pre-step (repo_scanner.scans.resolve)."""
+"""Test the dependency-resolution pre-step (reposcan.scans.resolve)."""
 
 from collections.abc import Mapping, Sequence
 
-from repo_scanner.execution.process import ExecResult, Failure
-from repo_scanner.scans.resolve import resolve_dependencies
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.scans.resolve import resolve_dependencies
 
 TARGET = "/scan/acme"
 RESOLVED_PARENT = "/resolved-deps"
