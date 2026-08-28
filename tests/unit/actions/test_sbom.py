@@ -9,7 +9,7 @@ import tempfile
 from contextlib import redirect_stdout
 
 import repo_scanner.actions.sbom as sbom_cmd
-from repo_scanner.db.model import reposcan_version
+from repo_scanner import reposcan_version
 from repo_scanner.execution.process import Failure
 from repo_scanner.scans.sbom import SbomScan
 from tests.unit.actions.helpers import (

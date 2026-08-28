@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult, Failure
 from repo_scanner.scans import sarif
+from repo_scanner.scans.analysis import ScanStatus, scan_status
 from repo_scanner.scans.base import SecurityScan
 from repo_scanner.scans.model import ToolInvocation
 from repo_scanner.scans.run import run_scan
@@ -168,3 +169,26 @@ def test_run_scan_reads_output_file_and_passes_env() -> None:
     run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
     assert scan.seen[0].stdout == "FILE-BOM"
     assert {"K": "V"} in ctx.envs and ["cat", "/out.json"] in ctx.commands
+
+
+def test_an_optional_tool_that_never_ran_is_still_recorded() -> None:
+    # A tool whose process never starts produces no output, so its invocation is the
+    # only trace it was meant to run at all. Without one, a scan that skipped a tool
+    # looks exactly like one where the tool ran and found nothing -- which a reader
+    # would take as "nothing is wrong" rather than "nothing looked".
+    ctx = _FakeContext(Failure(reason="exec failed"))
+    scan = _Scan([ToolInvocation("trufflehog", ["--version"], optional=True)])
+    run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
+    assert not isinstance(run, Failure)  # optional, so the scan itself survives
+    (recorded,) = run.tool_invocations
+    assert recorded.tool == "trufflehog"
+    assert recorded.successful is False
+    assert scan_status(run) is ScanStatus.PARTIAL
+
+
+def test_a_scan_whose_tools_all_succeeded_is_complete() -> None:
+    ctx = _FakeContext(ExecResult(0, "", ""))
+    scan = _Scan([ToolInvocation("trufflehog", ["--version"])])
+    run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
+    assert not isinstance(run, Failure)
+    assert scan_status(run) is ScanStatus.COMPLETE

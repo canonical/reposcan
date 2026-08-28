@@ -14,11 +14,12 @@ from typing import Any, ClassVar
 
 from repo_scanner.execution.context import ExecutionContext, read_file
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
-from repo_scanner.scans.repo import RepositoryState
+from repo_scanner.scans.repo import PROPERTY_SCHEMA, RepositoryState
 
 logger = logging.getLogger(__name__)
 
 # Namespaced so reposcan's own invocations can be told from another producer's.
+_SCHEMA_PROPERTY = "reposcan:schema"
 _REPOSITORY_PROPERTY = "reposcan:repository"
 _ANALYSIS_PROPERTY = "reposcan:analysis"
 _TOOL_PROPERTY = "reposcan:tool"
@@ -154,6 +155,7 @@ class SarifRun:
     parsed behaves exactly like one that was just produced.
     """
 
+    kind: ClassVar[ArtifactKind] = ArtifactKind.SARIF
     run: dict[str, Any]
     tool_invocations: list[ToolInvocationRecord] = field(default_factory=list)
 
@@ -239,7 +241,8 @@ class SarifRun:
                 details["branch"] = repository.branch
             self.run["versionControlProvenance"] = [details]
         properties = self.run.setdefault("properties", {})
-        properties[_REPOSITORY_PROPERTY] = _repository_properties(repository)
+        properties[_SCHEMA_PROPERTY] = PROPERTY_SCHEMA
+        properties[_REPOSITORY_PROPERTY] = repository.to_properties()
         properties[_ANALYSIS_PROPERTY] = {
             "startedAt": started_at,
             "finishedAt": finished_at,
@@ -498,20 +501,6 @@ def _relative_uri(uri: str, target: str) -> str:
 
 
 # --- rendering ---
-
-
-def _repository_properties(repository: RepositoryState) -> dict[str, Any]:
-    """Serialize repository properties."""
-    return {
-        "name": repository.identity.name,
-        "rootCommit": repository.identity.root_commit,
-        "origin": repository.identity.origin,
-        "label": repository.identity.label,
-        "commitSha": repository.commit_sha,
-        "branch": repository.branch,
-        "dirty": repository.dirty,
-        "shallow": repository.shallow,
-    }
 
 
 def _serialize_invocation(inv: ToolInvocationRecord) -> dict[str, Any]:

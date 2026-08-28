@@ -13,8 +13,8 @@ import os
 import tempfile
 
 from repo_scanner.db import read, write
-from repo_scanner.db.model import AnalysisRecord, ScanRecord, ScanStatus
 from repo_scanner.scans import cyclonedx, sarif
+from repo_scanner.scans.analysis import Analysis, ScanRecord, ScanStatus
 from repo_scanner.scans.model import Artifact, ArtifactKind
 from repo_scanner.scans.repo import ProjectIdentity, RepositoryState
 
@@ -28,7 +28,7 @@ def _read_fixture(name: str) -> str:
 
 def _round_trip(scan: ScanRecord) -> list[Artifact]:
     """Record `scan` into a fresh database and read its artifacts back."""
-    analysis = AnalysisRecord(
+    analysis = Analysis(
         uuid="fixture-analysis",
         started_at="2026-08-24T10:00:00Z",
         finished_at="2026-08-24T10:05:00Z",
@@ -37,7 +37,8 @@ def _round_trip(scan: ScanRecord) -> list[Artifact]:
     )
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
-        assert write.analysis(path, analysis, [scan]) is None
+        analysis.scans.extend([scan])
+        assert write.analysis(path, analysis) is None
         return read.artifacts(path)
 
 

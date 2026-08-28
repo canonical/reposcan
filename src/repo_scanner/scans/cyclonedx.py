@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from repo_scanner.scans.model import ArtifactKind, ToolInvocationRecord
-from repo_scanner.scans.repo import RepositoryState
+from repo_scanner.scans.repo import PROPERTY_SCHEMA, RepositoryState
 
 # The property name carrying each contributing scanner on a merged component.
 SCANNER_PROPERTY = "reposcan:scanner"
@@ -24,6 +24,7 @@ SCANNER_PROPERTY = "reposcan:scanner"
 # The formulation entry reposcan writes, and the properties that make each workflow
 # in it readable back as a record rather than parsed out of its display strings.
 _FORMULATION_REF = "reposcan-scan"
+_SCHEMA_PROPERTY = "reposcan:schema"
 _REPOSITORY_PROPERTY = "reposcan:repository"
 _ANALYSIS_PROPERTY = "reposcan:analysis"
 _TOOL_PROPERTY = "reposcan:tool"
@@ -129,10 +130,11 @@ class CycloneDxDocument:
             for property in metadata.get("properties", [])
             if not str(property.get("name", "")).startswith("reposcan:")
         ]
+        properties.append({"name": _SCHEMA_PROPERTY, "value": str(PROPERTY_SCHEMA)})
         properties.append(
             {
                 "name": _REPOSITORY_PROPERTY,
-                "value": json.dumps(_repository_properties(repository)),
+                "value": json.dumps(repository.to_properties()),
             }
         )
         properties.append(
@@ -211,20 +213,6 @@ def _record_scanner(component: dict[str, Any], scanner: str) -> None:
         ):
             return
     properties.append({"name": SCANNER_PROPERTY, "value": scanner})
-
-
-def _repository_properties(repository: RepositoryState) -> dict[str, Any]:
-    """Serialize repository properties."""
-    return {
-        "name": repository.identity.name,
-        "rootCommit": repository.identity.root_commit,
-        "origin": repository.identity.origin,
-        "label": repository.identity.label,
-        "commitSha": repository.commit_sha,
-        "branch": repository.branch,
-        "dirty": repository.dirty,
-        "shallow": repository.shallow,
-    }
 
 
 def _serialize_invocation(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:

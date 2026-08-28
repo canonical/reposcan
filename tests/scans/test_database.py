@@ -25,9 +25,9 @@ import tempfile
 from pathlib import Path
 
 import repo_scanner.actions.scan as scan_cmd
+from repo_scanner import reposcan_version
 from repo_scanner.actions.scan import FINDINGS_EXIT_CODE
 from repo_scanner.db import read
-from repo_scanner.db.model import reposcan_version
 from tests.scans.shared import load_fixture, require_docker
 
 logger = logging.getLogger(__name__)

@@ -15,19 +15,17 @@ from repo_scanner.db.identity import (
     derive_component_key,
     same_issue,
 )
-from repo_scanner.db.model import AnalysisRecord, ScanRecord
 from repo_scanner.db.sqlite import Session, Table
 from repo_scanner.execution.process import Failure
 from repo_scanner.scans import cyclonedx, sarif
+from repo_scanner.scans.analysis import Analysis, ScanRecord
 from repo_scanner.scans.model import ToolInvocationRecord
 from repo_scanner.scans.repo import ProjectIdentity
 
 logger = logging.getLogger(__name__)
 
 
-def analysis(
-    path: str, record: AnalysisRecord, scans: Sequence[ScanRecord]
-) -> Failure | None:
+def analysis(path: str, record: Analysis) -> Failure | None:
     """Ingest one analysis into the database at `path`, creating it when absent.
 
     Resolves the analysis's repository to a project, creating one when nothing
@@ -37,8 +35,7 @@ def analysis(
 
     Args:
         path: The database file.
-        record: The invocation being recorded.
-        scans: What each scan type produced, in the order they ran.
+        record: The analysis to record.
 
     Returns:
         None on success, or a Failure when `path` is not a reposcan database of this
@@ -57,7 +54,7 @@ def analysis(
             return None
         project_id = resolve_project(session, record.repository.identity)
         analysis_id = insert_analysis(session, record, project_id)
-        for scan in scans:
+        for scan in record.scans:
             insert_scan(session, analysis_id, project_id, scan)
     return None
 
@@ -92,7 +89,7 @@ def resolve_project(session: Session, identity: ProjectIdentity) -> int:
     )
 
 
-def insert_analysis(session: Session, record: AnalysisRecord, project_id: int) -> int:
+def insert_analysis(session: Session, record: Analysis, project_id: int) -> int:
     """Insert the analysis row and return its id."""
     state = record.repository
     return session.insert_row(

@@ -14,9 +14,9 @@ from repo_scanner.db.model import (
     ComponentVersion,
     Issue,
     ProjectSummary,
-    ScanStatus,
 )
 from repo_scanner.scans import cyclonedx, sarif
+from repo_scanner.scans.analysis import ScanStatus
 from repo_scanner.scans.model import Artifact, ArtifactKind
 
 logger = logging.getLogger(__name__)

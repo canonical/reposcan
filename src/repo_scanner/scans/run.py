@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from functools import partial
 from typing import TYPE_CHECKING
 
 from repo_scanner.execution.context import ExecutionContext, read_file
@@ -73,18 +74,22 @@ def _run_tools(
             stream_stdout=False,
             stream_stderr=stream,
         )
+        recorded = partial(
+            ToolInvocationRecord,
+            **asdict(invocation),
+            version=tool.version,
+            command=tuple(cmd),
+            working_directory=invocation.cwd or target,
+            environment=dict(invocation.env or {}),
+        )
         if isinstance(result, Failure):
             if invocation.optional:
                 logger.warning("%s did not run: %s", invocation.tool, result.reason)
+                provenance.append(recorded(exit_code=-1, successful=False))
                 continue
             return result
         provenance.append(
-            ToolInvocationRecord(
-                **asdict(invocation),
-                version=tool.version,
-                command=tuple(cmd),
-                working_directory=invocation.cwd or target,
-                environment=dict(invocation.env or {}),
+            recorded(
                 exit_code=result.exit_code,
                 successful=result.exit_code in invocation.ok_codes,
             )
@@ -157,7 +162,7 @@ def run_scan(
     return run
 
 
-def generate_sbom(
+def run_sbom_scan(
     sbom: SbomScan,
     ctx: ExecutionContext,
     target: str,

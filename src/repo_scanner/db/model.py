@@ -1,65 +1,11 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Intermediate Python objects for working with the databasel."""
+"""Intermediate Python objects for working with the database."""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from importlib.metadata import PackageNotFoundError, version
 
-from repo_scanner.scans import cyclonedx, sarif
-from repo_scanner.scans.model import ArtifactKind
-from repo_scanner.scans.repo import RepositoryState
-
-
-def utc_now() -> str:
-    """The current time, in the ISO-8601 UTC form the records carry."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def reposcan_version() -> str:
-    """The running reposcan's version, or "unknown" if its metadata is unavailable."""
-    try:
-        return version("repo-scanner")
-    except PackageNotFoundError:
-        return "unknown"
-
-
-class ScanStatus(str, Enum):
-    """Status of a completed, partially-complete, or failed scan."""
-
-    COMPLETE = "complete"
-    PARTIAL = "partial"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class AnalysisRecord:
-    """The record of one `reposcan scan` or `reposcan sbom` invocation."""
-
-    uuid: str
-    started_at: str
-    finished_at: str
-    reposcan_version: str
-    repository: RepositoryState
-    produced_by: str = ""
-    status: ScanStatus = ScanStatus.COMPLETE
-
-
-@dataclass(frozen=True)
-class ScanRecord:
-    """Record of one scan type's execution.
-
-    `produced` is a single SARIF run, or the whole CycloneDX document for an SBOM.
-    """
-
-    category: str
-    kind: ArtifactKind
-    started_at: str
-    finished_at: str
-    status: ScanStatus
-    produced: sarif.SarifRun | cyclonedx.CycloneDxDocument
+from repo_scanner.scans.analysis import ScanStatus
 
 
 @dataclass(frozen=True)

@@ -13,11 +13,15 @@ that is not a git working tree yields an identity carrying only its directory na
 import logging
 import posixpath
 from dataclasses import dataclass
+from typing import Any
 
 from repo_scanner.execution.context import ExecutionContext
 from repo_scanner.execution.process import ExecResult
 
 logger = logging.getLogger(__name__)
+
+# The version of reposcan's cyclonedx/sarif-encoded properties.
+PROPERTY_SCHEMA = 1
 
 _SCHEMES = ("https://", "http://", "ssh://", "git://", "ftp://", "ftps://", "file://")
 
@@ -80,6 +84,19 @@ class RepositoryState:
     branch: str = ""
     dirty: bool = False
     shallow: bool = False
+
+    def to_properties(self) -> dict[str, Any]:
+        """Serialize repository metadata for inclusion in an artifact."""
+        return {
+            "name": self.identity.name,
+            "rootCommit": self.identity.root_commit,
+            "origin": self.identity.origin,
+            "label": self.identity.label,
+            "commitSha": self.commit_sha,
+            "branch": self.branch,
+            "dirty": self.dirty,
+            "shallow": self.shallow,
+        }
 
 
 def read_repository_state(

@@ -17,13 +17,14 @@ from contextlib import redirect_stdout
 import pytest
 
 import repo_scanner.actions.scan as scan_cmd
+from repo_scanner import reposcan_version
 from repo_scanner.cli_kit import params_of
 from repo_scanner.db import read as db_read
-from repo_scanner.db.model import reposcan_version
 from repo_scanner.execution.process import Failure
 from repo_scanner.output import Format
 from repo_scanner.scans import sarif
 from repo_scanner.scans.registry import SCANS
+from repo_scanner.scans.repo import PROPERTY_SCHEMA
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
     patch_run_scan,
@@ -142,6 +143,7 @@ def test_the_report_includes_analysis_metadata() -> None:
         }
     ]
     repository = run["properties"]["reposcan:repository"]
+    assert run["properties"]["reposcan:schema"] == PROPERTY_SCHEMA
     assert repository["name"] == FAKE_REPOSITORY.identity.name
     assert repository["rootCommit"] == FAKE_REPOSITORY.identity.root_commit
     assert repository["dirty"] is False
