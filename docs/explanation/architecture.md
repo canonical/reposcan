@@ -67,8 +67,8 @@ rather than passing a tool's code through.
 
 The driver also handles two cross-cutting concerns for every scan so the scan
 modules stay simple: it excludes git-ignored paths from filesystem-walking tools
-(see [path exclusion](path-exclusion.md)), and it records each executed command
-as provenance in the report.
+(see [path exclusion](path-exclusion.md)), and it records provenance in the
+report -- each executed command, and the analysis it belonged to.
 
 ## Dependency resolution
 
@@ -92,3 +92,11 @@ Recording is separate from emitting. `--db FILE` appends the analysis to a
 database, which is an accumulating history of a repository rather than a report:
 it tracks the issues and components a scan reported, which analysis first and
 last saw each of them, and every version a dependency has been pinned at.
+
+Every report carries metadata about the analysis that produced it: which
+repository, commit, and branch were scanned, and the associated reposcan
+version. Each format's own fields are used when available -- SARIF's
+`automationDetails.correlationGuid` and `versionControlProvenance`, CycloneDX's
+`metadata` -- so reports are readable by other tools. Other properties go in
+`reposcan:` properties. A report can be de-serialized, stored in the `reposcan`
+database, then re-serialized to its exact original form.

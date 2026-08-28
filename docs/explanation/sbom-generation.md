@@ -371,4 +371,4 @@ For a hard guarantee against executing untrusted repository tooling, layer
 `CDXGEN_ALLOWED_COMMANDS` (an allowlist) or `--dry-run`, or strip `go`,
 `pipenv`, and `rush` from PATH in the scan environment. reposcan already runs
 scans as an unprivileged user, which limits the blast radius but does not stop
-these invocations. This is tracked as an open follow-up in PLAN.md.
+these invocations.
