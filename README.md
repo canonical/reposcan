@@ -24,7 +24,9 @@ The rest of the documentation is in [`docs/`](docs/index.md).
 - `iac`: misconfigurations in infrastructure-as-code.
 - `workflow`: risks in CI/CD workflow definitions.
 - `sca`: known vulnerabilities in dependencies.
-- `sbom`: a CycloneDX software bill of materials.
+
+Separately, `reposcan sbom` generates a software bill of materials for a
+repository.
 
 See the [scans reference](docs/reference/scans.md) for each scan's options and
 output.

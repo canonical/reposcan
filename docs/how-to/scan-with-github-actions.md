@@ -4,9 +4,15 @@ The repository ships a composite Action to run reposcan against a checked-out
 repository. It runs most scans by default (secrets, sast, iac, workflow, and
 sca), and uploads the scanning results. If the workflow is configured to do so
 -- and given a token with the necessary privileges -- it will also write results
-to the code-scanning pane and/or to a pull-request comment. (The code-scanning
+to the code-scanning pane and/or to a pull-request comment. The code-scanning
 pane results are enabled by default, while the pull-request comment is disabled
-by default.)
+by default.
+
+For public repositories, GitHub's Code Scanning pane is free, so it is
+recommended to keep reposcan's defaults. For internal and private repositories,
+Code Scanning is a paid feature, so it is recommended to set
+`code-scanning: false` and `pr-comment: true` (along with the corresponding
+updates to workflow or job permissions).
 
 ## Basic usage
 
