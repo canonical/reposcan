@@ -12,12 +12,16 @@ from reposcan.scans import ignore, sarif
 
 
 class _FileContext:
-    """A context serving a fixed set of files to `cat`."""
+    """A context serving files to `cat` / `git show`."""
 
     name = "fake"
 
-    def __init__(self, files: dict[str, str]) -> None:
+    def __init__(
+        self, files: dict[str, str], committed: dict[str, str] | None = None
+    ) -> None:
         self._files = files
+        self._committed = committed or {}
+        self.cwd: str | None = None
 
     def start(self) -> Failure | None:
         return None
@@ -33,17 +37,23 @@ class _FileContext:
         stream_stdout: bool = False,
         stream_stderr: bool = False,
     ) -> ExecResult | Failure:
-        path = command[1]
-        if path not in self._files:
-            return ExecResult(1, "", f"cat: {path}: No such file or directory")
-        return ExecResult(0, self._files[path], "")
+        self.cwd = cwd
+        if list(command[:2]) == ["git", "show"]:
+            key, source = command[2], self._committed
+        else:
+            key, source = command[1], self._files
+        if key not in source:
+            return ExecResult(1, "", f"no such path: {key}")
+        return ExecResult(0, source[key], "")
 
     def stop(self) -> None:
         return None
 
 
-def _ctx(files: dict[str, str]) -> ExecutionContext:
-    return cast(ExecutionContext, _FileContext(files))
+def _ctx(
+    files: dict[str, str], committed: dict[str, str] | None = None
+) -> ExecutionContext:
+    return cast(ExecutionContext, _FileContext(files, committed))
 
 
 def _loc(uri: str, line: int = 0) -> dict:
@@ -170,7 +180,7 @@ def test_apply_drops_only_the_matching_findings() -> None:
 def test_content_pattern_drops_a_finding_only_when_the_offending_line_matches() -> None:
     ctx = _ctx(
         {
-            "/scan/acme/.github/workflows/ci.yml": (
+            ".github/workflows/ci.yml": (
                 "steps:\n"
                 "  - uses: sketchy/action@v1\n"  # line 2
                 "  - uses: actions/checkout@v4\n"  # line 3
@@ -207,3 +217,27 @@ def test_content_pattern_keeps_the_finding_when_there_is_no_context() -> None:
     assert errors == []
     runs = _runs(_result("R", "ci.yml", ["x"], 1))
     assert ignore.apply(runs, rules) == 0
+
+
+def test_a_content_rule_reads_a_finding_from_its_commit() -> None:
+    fake = _FileContext(
+        {"ci.yml": "clean now\n"},
+        committed={"commithash:ci.yml": "AKIAIOSFODNN7EXAMPLE\n"},
+    )
+    rules, errors = ignore.parse('trufflehog AWS ci.yml "AKIA"\n')
+    assert errors == []
+    result = _result("AWS", "ci.yml", ["trufflehog"], 1)
+    sarif.SarifResult(result).set_commit("commithash")
+    ctx = cast(ExecutionContext, fake)
+    assert ignore.apply(_runs(result), rules, ctx, "/scan/acme") == 1
+    # git show resolves its path from the repository root, so it has to run there
+    assert fake.cwd == "/scan/acme"
+
+
+def test_a_history_finding_does_not_fall_back_to_the_working_tree() -> None:
+    ctx = _ctx({"ci.yml": "AKIAIOSFODNN7EXAMPLE\n"})
+    rules, errors = ignore.parse('trufflehog AWS ci.yml "AKIA"\n')
+    assert errors == []
+    result = _result("AWS", "ci.yml", ["trufflehog"], 1)
+    sarif.SarifResult(result).set_commit("commithash")
+    assert ignore.apply(_runs(result), rules, ctx, "/scan/acme") == 0
