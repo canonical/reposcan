@@ -38,7 +38,7 @@ class Parsed:
     error: str | None = None
 
 
-def parse(
+def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
     root: type[Group], base: type[Action], argv: list[str], prog_name: str
 ) -> Parsed:
     """Scan `argv` against the tree; `base`'s parameters are the flow-down globals."""

@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 def config_path() -> Path:
-    """The config file location ($XDG_CONFIG_HOME/reposcan/config.json)."""
+    """Locate reposcan's config file ($XDG_CONFIG_HOME/reposcan/config.json)."""
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return Path(base) / "reposcan" / "config.json"
 
 
 def load() -> dict[str, Any]:
-    """The saved config, or {} when there is none or it is unreadable/malformed."""
+    """Load reposcan's saved config or return a null one {}."""
     path = config_path()
     try:
         text = path.read_text()

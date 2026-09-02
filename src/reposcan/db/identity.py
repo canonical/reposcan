@@ -144,7 +144,7 @@ def _compare_fingerprints(
 
 
 def derive_component_key(component: Mapping[str, Any]) -> str:
-    """A component's identity, derived from its package url if it has one.
+    """Derive a component's identity from its package url.
 
     Component version is never included. A dependency that moves from 2.14.1 to 2.17.1
     is the same dependency (the new version sighting is still recorded).
@@ -161,7 +161,7 @@ def derive_component_key(component: Mapping[str, Any]) -> str:
 
 
 def normalize_purl(purl: str) -> str:
-    """A package url reduced to a comparable, versionless form.
+    """Reduce a package url to a comparable, versionless form.
 
     Two tools naming one package should produce one key, regardless of formatting of
     qualifiers such as `?type=jar` or `?arch=amd64`.
@@ -196,7 +196,7 @@ def normalize_purl(purl: str) -> str:
 
 
 def _digest(scheme: str, *parts: str) -> str:
-    """A digest over `parts`, tagged with its scheme and the derivation version.
+    """Create a digest from `parts`.
 
     The parts are delimited, so no rearrangement of one field's content can imitate
     another's.

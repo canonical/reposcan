@@ -61,7 +61,7 @@ def lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
 
 
 def firewall_warning(bridge: str) -> str | None:
-    """A warning with a proposed fix if the FORWARD policy drops `bridge`, else None.
+    """Return warning text if the FORWARD policy drops `bridge`, else None.
 
     Uses nftables when present, else iptables-legacy; None when neither reports a
     filter FORWARD chain.
@@ -119,7 +119,7 @@ def _analyze_iptables(rules: str, bridge: str) -> str | None:
 
 
 def _nft_forward_is_drop(ruleset: list[Any]) -> bool:
-    """True if the nft FORWARD chain has a drop policy."""
+    """Check whether the nft FORWARD chain has a drop policy."""
     for obj in ruleset:
         chain = obj.get("chain") if isinstance(obj, dict) else None
         if chain and chain.get("name") == "FORWARD":
@@ -128,7 +128,7 @@ def _nft_forward_is_drop(ruleset: list[Any]) -> bool:
 
 
 def _nft_bridge_accepts(ruleset: list[Any], bridge: str) -> bool:
-    """True if an nft rule accepts traffic for the bridge interface."""
+    """Check whether an nft rule accepts traffic for the bridge interface."""
     for obj in ruleset:
         rule = obj.get("rule") if isinstance(obj, dict) else None
         if rule is None:

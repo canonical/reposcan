@@ -64,9 +64,9 @@ def is_sqlite(data: bytes) -> bool:
 
 
 def connect(path: str) -> tuple["Session | None", str | None]:
-    """A session on the database at `path`, or None and an error message.
+    """Open a session on the database at `path`.
 
-    Creates the file when it is absent. Returns errors rather than raising.
+    Creates the file when it is absent. Returns an error msg rather than raising.
 
     sqlite serializes writers. Write-ahead logging lets readers work while a write is in
     flight, and the busy timeout makes a second writer wait rather than fail.
@@ -88,7 +88,7 @@ def connect(path: str) -> tuple["Session | None", str | None]:
 
 
 def read_version(path: str) -> int | None:
-    """The database's `PRAGMA user_version`, or None if `path` is not a database."""
+    """Read the database's `PRAGMA user_version`, or None if `path` is not one."""
     if not Path(path).is_file():
         return None
     connection = sqlite3.connect(path)
@@ -160,7 +160,7 @@ class Session:
         return self._connection.execute(statement, tuple(params)).fetchall()
 
     def version(self) -> int:
-        """The database's `PRAGMA user_version`, which is 0 on a new database."""
+        """Read the database's `PRAGMA user_version` (0 on a new database)."""
         (version,) = self._connection.execute("PRAGMA user_version").fetchone()
         return int(version)
 

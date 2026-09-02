@@ -87,7 +87,7 @@ class Tool(Protocol):
         ...
 
     def installed_path(self, install_root: str) -> str:
-        """The installed executable's path under `install_root`.
+        """Locate the installed executable under `install_root`.
 
         It exists only once the tool is installed, so it doubles as an install marker.
         """

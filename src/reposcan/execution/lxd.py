@@ -164,7 +164,7 @@ class LxdContext:
 
 
 def _raw_idmap(user: RunUser | None) -> str | None:
-    """A LXD raw.idmap mapping `user` to identity, or None when no mapping is needed.
+    """Build an LXD raw.idmap for `user`.
 
     `both <uid> <uid>` maps both the uid and the primary gid to identity; each
     supplementary gid gets a `gid <gid> <gid>` line. Root (uid 0) is already in the

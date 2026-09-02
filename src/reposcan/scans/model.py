@@ -63,13 +63,13 @@ class Artifact(Protocol):
     kind: ClassVar[ArtifactKind]
 
     def to_dict(self) -> dict[str, Any]:
-        """The artifact rendered as a dictionary for JSON serialization."""
+        """Render the artifact as a dictionary for JSON serialization."""
         ...
 
     def count(self) -> int:
-        """The number of entries the artifact holds (findings, or components)."""
+        """Count the artifact entries (findings or components)."""
         ...
 
     def rows(self) -> tuple[list[str], list[list[str]]]:
-        """A table view of the artifact: column headers and one row per entry."""
+        """Serialize the artifact for rendering table output."""
         ...

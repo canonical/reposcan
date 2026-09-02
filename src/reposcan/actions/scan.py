@@ -47,7 +47,7 @@ _FAIL_RANK = {"note": 1, "warning": 2, "error": 3}
 
 
 def _scan_names(raw: str) -> list[str]:
-    """The scan-type names in comma-separated `raw`, validated and deduped in order.
+    """Split comma-separated `raw` into scan-type names, validated and deduped in order.
 
     Used as the `scans` positional's converter, so an empty or unknown type is a usage
     error before anything runs. The meta-name `all` expands to every scan type.
@@ -73,7 +73,7 @@ def _scan_names(raw: str) -> list[str]:
 
 
 def _aggregate_scan_options(scans: dict[str, type[SecurityScan]]) -> tuple[Param, ...]:
-    """The union of each scan's options, each requiring its scan(s) to be selected.
+    """Gather every scan's options, each requiring its scan(s) to be selected.
 
     A scan-specific option is only meaningful when a scan that declares it is selected,
     so each aggregated option gains a `requires` that the `scans` list contain one of
@@ -140,7 +140,7 @@ class ScanCommand(Action):
 
     extra_options = _aggregate_scan_options(SCANS)
 
-    def run(self) -> int:
+    def run(self) -> int:  # noqa: PLR0912 (too many branches, 14 > 12)
         """Run the requested scans and return an exit code.
 
         Exit codes:

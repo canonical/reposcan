@@ -21,7 +21,7 @@ class SastScan(SecurityScan):
     help = "Static analysis of source with semgrep."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The single semgrep invocation for `target`.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context (unused).

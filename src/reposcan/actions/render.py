@@ -56,7 +56,7 @@ def render(
 
 
 def _load(input_path: str) -> Artifact | None:
-    """The artifact at `input_path`, or None on error (logging why)."""
+    """Load the artifact at `input_path`, or None on error (logging why)."""
     try:
         with open(input_path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()

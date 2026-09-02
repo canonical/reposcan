@@ -71,7 +71,7 @@ class CycloneDxDocument:
             self.content["formulation"] = kept
 
     def to_dict(self) -> dict[str, Any]:
-        """The SBOM as a CycloneDX document, with its invocations rendered in."""
+        """Render the SBOM as a CycloneDX document."""
         if not self.tool_invocations:
             return self.content
         workflows = [
@@ -91,11 +91,11 @@ class CycloneDxDocument:
         return self.content.get("components", [])
 
     def count(self) -> int:
-        """The number of components the SBOM lists."""
+        """Count the components in the SBOM."""
         return len(self.components())
 
     def rows(self) -> tuple[list[str], list[list[str]]]:
-        """A table of components: name, version, and type."""
+        """Tabulate the SBOM components: name, version, and type."""
         headers = ["COMPONENT", "VERSION", "TYPE"]
         rows = [
             [
@@ -158,7 +158,7 @@ class CycloneDxDocument:
 
 
 def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
-    """The CycloneDX document in `text`, or None if `text` is not CycloneDX.
+    """Parse the CycloneDX document in `text`.
 
     Pass `scanner` to annotate every component with the reposcan:scanner property.
 
@@ -193,7 +193,7 @@ def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
 
 
 def _component_key(component: dict[str, Any]) -> str:
-    """A dedup key for a component: its package URL, else type/name/version."""
+    """Derive a dedup key for a component: its package URL, else type/name/version."""
     purl = component.get("purl")
     if purl:
         return f"purl:{purl}"
@@ -261,7 +261,7 @@ def _serialize_invocation(index: int, inv: ToolInvocationRecord) -> dict[str, An
 
 
 def _deserialize_invocation(workflow: dict[str, Any]) -> ToolInvocationRecord:
-    """The record `_serialize_invocation` wrote.
+    """Deserialize a ToolInvocationRecord from a dict.
 
     Only called for workflows under reposcan's own formulation entry, so every
     property it reads is one reposcan wrote. Every field of the record is written and

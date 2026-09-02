@@ -23,7 +23,7 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _parse_uid(value: str) -> int:
-    """The non-negative integer uid `value` denotes, or raise ValueError."""
+    """Parse `value` as a non-negative integer uid, or raise ValueError."""
     try:
         uid = int(value)
     except ValueError:

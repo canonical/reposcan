@@ -180,7 +180,10 @@ def analyses(path: str) -> list[AnalysisSummary]:
 
 
 def _session(path: str) -> sqlite.Session | None:
-    """A session on `path`, or None when it is not a database we can read."""
+    """Open a session on `path`.
+
+    Returns None the database cannot be read.
+    """
     version = sqlite.read_version(path)
     if version is None:
         logger.warning("%s is not a reposcan database", path)
@@ -202,7 +205,7 @@ def _session(path: str) -> sqlite.Session | None:
 def _choose_analysis(
     session: sqlite.Session, analysis_id: int | None, project_id: int | None
 ) -> int | None:
-    """The analysis to read: the one asked for, else the most recent available."""
+    """Select an analysis to read."""
     if analysis_id is not None:
         return analysis_id
     if project_id is not None:

@@ -83,7 +83,7 @@ class Backend(Protocol):
         ...
 
     def get_resolved_parent(self) -> str:
-        """The directory dependency resolution copies a repo under for this backend.
+        """Locate the directory reposcan uses for dependency resolution copies.
 
         A user-writable cache dir for local, the in-image RESOLVED_PARENT for a
         container. Parallels `tool_root`: a host path locally, an image path in a
@@ -110,7 +110,7 @@ class ContainerBackend(Backend, Protocol):
         user: RunUser | None = None,
         env: Mapping[str, str] | None = None,
     ) -> ExecutionContext:
-        """A context to run in, optionally from `image`, with `mount_source` mounted.
+        """Build an ExecutionContext.
 
         Args:
             image: The image to run, or None for the backend's default base.
@@ -125,11 +125,11 @@ class ContainerBackend(Backend, Protocol):
         ...
 
     def image_builder(self) -> ImageBuilder:
-        """The builder that produces this backend's tool image."""
+        """Return an ImageBuilder for this backend."""
         ...
 
     def image_puller(self) -> ImagePuller | None:
-        """The puller to retrieve a remote image on this backend, or None.
+        """Return an ImagePuller for this backend.
 
         None for a backend that cannot pull (LXD for now), which then builds locally.
         """
@@ -251,7 +251,7 @@ def select_backend(requested: str | None) -> Backend | Failure:
         return Failure(reason=f"unknown backend {backend}")
 
     for candidate in _BACKENDS:
-        if not (backend == candidate.name or backend == "auto"):
+        if backend not in (candidate.name, "auto"):
             continue
         availability = candidate.availability()
         if availability.ok:
@@ -273,7 +273,7 @@ def context_for(
     user: RunUser | None = None,
     env: Mapping[str, str] | None = None,
 ) -> ExecutionContext | Failure:
-    """The container execution context to run in.
+    """Build an ExecutionContext for the requested ContainerBackend.
 
     The image comes from `image`, resolved in this order:
 

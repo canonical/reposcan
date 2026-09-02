@@ -47,7 +47,7 @@ class Uv:
     def _inputs(
         self, ctx: ExecutionContext, workdir: str, names: set[str]
     ) -> list[str]:
-        """The manifest files in `workdir` uv should compile, in a stable order."""
+        """Find uv-resolvable manifest files in `workdir`."""
         inputs: list[str] = []
         pep621 = False
         if "pyproject.toml" in names:

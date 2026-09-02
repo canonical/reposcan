@@ -37,5 +37,5 @@ APP = Cli(name="reposcan", root=Reposcan, base=Action, resolve=resolve)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """The `reposcan` entry point."""
+    """Run the `reposcan` command line."""
     return APP.run(argv)

@@ -102,7 +102,7 @@ class LxdImageBuilder:
 
 
 def _offline_reason(handle: str) -> Failure | None:
-    """A Failure if the build container cannot reach the internet, else None.
+    """Verify the build container can reach the internet, else return a Failure.
 
     Probes by opening a TCP connection to github.com:443 from inside the container via
     bash's /dev/tcp (bash is always present in the base image, unlike curl or wget);

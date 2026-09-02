@@ -30,11 +30,11 @@ class ImageBuilder(Protocol):
     name: str
 
     def reference(self, spec: BuildSpec) -> str:
-        """The content-addressed image reference (tag or alias) `spec` builds to."""
+        """Deterministically generate a tag or alias for the `spec`-based image."""
         ...
 
     def identity(self, reference: str) -> str | None:
-        """The real content hash of the image `reference`, or None if absent.
+        """Read the content hash of the image `reference`.
 
         The hash is the Docker image ID or LXD fingerprint; None means no such image
         is currently present.
@@ -49,7 +49,7 @@ class ImageBuilder(Protocol):
 def ensure_image(
     builder: ImageBuilder, spec: BuildSpec, *, force: bool = False
 ) -> str | Failure:
-    """Returns the reference of a verified image built from `spec`.
+    """Build a verified image from `spec` and return its reference.
 
     Reuses the present image only when its hash matches the identity recorded at its
     last build; otherwise (missing, mismatched, or `force`) it is rebuilt and its

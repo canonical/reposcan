@@ -129,18 +129,33 @@ target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "D"]
-# Enforce google-style formatting on the docstrings we write, but do not require a
-# docstring on every public symbol (D100-D107): small, self-evident methods and
-# Protocol stubs stay undocumented rather than carrying filler.
-ignore = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
+select = [
+  "E", # https://docs.astral.sh/ruff/rules/#pycodestyle-e-w
+  "F", # https://docs.astral.sh/ruff/rules/#pyflakes-f
+  "I", # https://docs.astral.sh/ruff/rules/#isort-i
+  "UP", # https://docs.astral.sh/ruff/rules/#pyupgrade-up
+  "B", # https://docs.astral.sh/ruff/rules/#flake8-bugbear-b
+  "SIM", # https://docs.astral.sh/ruff/rules/#flake8-simplify-sim
+  "D", # https://docs.astral.sh/ruff/rules/#pydocstyle-d
+  "D401",  # https://docs.astral.sh/ruff/rules/non-imperative-mood/
+  "PLE", # pylint - https://docs.astral.sh/ruff/rules/#error-ple
+  "PLR", # pylint - https://docs.astral.sh/ruff/rules/#refactor-plr
+  "PLW", # pylint - https://docs.astral.sh/ruff/rules/#warning-plw
+]
+ignore = [
+  # Enforce google-style docstring formatting, but do not require one on every
+  # public symbol (D100-D107)
+  "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+  "PLR0911", # too many return statements
+  "PLR0913", # too many args in function definition
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests document themselves through descriptive names, not docstrings.
-"tests/**" = ["D"]
+"tests/**" = ["D", "PLR", "PLW"]
 
 [tool.basedpyright]
 include = ["src", "tests"]

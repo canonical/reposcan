@@ -26,7 +26,7 @@ class WorkflowScan(SecurityScan):
     help = "Audit CI/CD workflows with zizmor and poutine."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The zizmor and poutine invocations for `target`.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context (unused).

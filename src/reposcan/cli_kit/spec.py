@@ -138,7 +138,7 @@ def option(
     requires: dict[str, str | tuple[str, ...]] | None = None,
     env_var: str = "",
 ) -> Any:
-    """A value option that consumes a following argument (`--backend docker`).
+    """Declare a value option that consumes a following argument (`--backend docker`).
 
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
@@ -169,7 +169,7 @@ def flag(
     help: str = "",
     requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
-    """A boolean switch that takes no value, defaulting False.
+    """Declare a boolean switch that takes no value, defaulting False.
 
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
@@ -196,7 +196,7 @@ def positional(
     required: bool = True,
     requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
-    """A positional argument (command-line only).
+    """Declare a positional argument (command-line only).
 
     `many=True` collects zero or more values into a list; `required=False` makes a
     single positional optional (falling back to `default`). Pass `name` to declare it
@@ -224,7 +224,7 @@ def remainder(help: str = "") -> Any:
 
 
 def params_of(cls: type) -> list[Param]:
-    """The parameters declared on `cls` and its bases, in declaration order.
+    """Collect the parameters declared on `cls` and its bases, in declaration order.
 
     Base classes come first (so the flow-down globals lead), then the class's own
     parameters; a name declared again in a subclass overrides the inherited one.
@@ -241,7 +241,7 @@ def params_of(cls: type) -> list[Param]:
 
 
 def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | None:
-    """The first unmet cross-parameter requirement in `params`, or None.
+    """Find the first unmet cross-parameter requirement in `params`, or None.
 
     A parameter's `requires` maps another parameter to the value(s) it must have. It is
     enforced only when the parameter is actually set (its resolved value differs from
@@ -277,7 +277,7 @@ def _requirement_error(
     required: str | tuple[str, ...],
     target: Any,
 ) -> str:
-    """A message for an unmet requirement of `param` on `required_param`."""
+    """Describe an unmet requirement of `param` on `required_param`."""
     this = param.flags[-1] if param.flags else param.name
     allowed = required if isinstance(required, tuple) else (required,)
     wanted = " or ".join(str(value) for value in allowed)

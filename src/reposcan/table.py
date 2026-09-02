@@ -13,6 +13,8 @@ import textwrap
 # The default number of lines a long cell may wrap across.
 DEFAULT_WRAP_LINES = 4
 
+_ELLIPSIS = "..."
+
 # Cap on a single table cell's width; longer text is wrapped or clipped.
 _MAX_CELL_WIDTH = 60
 
@@ -20,7 +22,7 @@ _MAX_CELL_WIDTH = 60
 def render_table(
     headers: list[str], rows: list[list[str]], *, wrap: int = DEFAULT_WRAP_LINES
 ) -> str:
-    """A concise text table: aligned columns under a dashed header, fit to the terminal.
+    """Render a concise text table, fit to the terminal.
 
     `wrap` is the most lines a long cell may span; text beyond that is clipped with an
     ellipsis on the last line. `wrap=1` keeps every cell to a single clipped line.
@@ -53,7 +55,7 @@ def _fit_to_terminal(widths: list[int]) -> None:
 
 
 def _render_row(cells: list[str], widths: list[int], wrap: int) -> list[str]:
-    """The physical lines for one row: one line, or several when a cell wraps."""
+    """Lay out one row: a single line, or several when a cell wraps."""
     columns = [
         _cell_lines(cell, widths[index], wrap) for index, cell in enumerate(cells)
     ]
@@ -69,7 +71,7 @@ def _render_row(cells: list[str], widths: list[int], wrap: int) -> list[str]:
 
 
 def _cell_lines(cell: str, width: int, wrap: int) -> list[str]:
-    """A cell as up to `wrap` wrapped lines, or one clipped line when `wrap` <= 1."""
+    """Wrap a cell to at most `wrap` lines, or clip it to one when `wrap` <= 1."""
     if wrap <= 1:
         return [_clip(cell, width)]
     wrapped = textwrap.wrap(cell, width) or [""]
@@ -83,6 +85,6 @@ def _clip(text: str, width: int) -> str:
     """`text` truncated to `width`, with an ellipsis if it was too long."""
     if len(text) <= width:
         return text
-    if width <= 3:
+    if width <= len(_ELLIPSIS):
         return text[:width]
-    return text[: width - 3] + "..."
+    return text[: width - len(_ELLIPSIS)] + _ELLIPSIS

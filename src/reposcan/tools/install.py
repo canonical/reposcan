@@ -27,7 +27,7 @@ _ARCHES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "ar
 
 
 def current_platform() -> Platform:
-    """The host OS/arch, named as the registry's Download entries are.
+    """Detect the host OS/arch.
 
     An unknown machine is passed through unchanged, so no matching Download is found
     and the install fails loudly rather than picking the wrong artifact.

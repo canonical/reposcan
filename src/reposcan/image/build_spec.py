@@ -41,10 +41,9 @@ _BASE_PACKAGES = (
 
 
 def build_script(platform: Platform, install_root: str = INSTALL_ROOT) -> str:
-    """The shell script that installs every tool into `install_root`, for `platform`.
+    """Generate a shell script to install all reposcan tools into `install_root`.
 
-    It runs under `set -eu`, so any failure aborts the build: a half-built image is
-    worse than none. Each tool's own install commands are reused verbatim.
+    Runs under `set -eu`, so any failure aborts the build.
 
     Args:
         platform: The OS/arch the install commands target.
@@ -124,7 +123,7 @@ def build_spec(
     base_image: str = BASE_IMAGE,
     install_root: str = INSTALL_ROOT,
 ) -> BuildSpec:
-    """The build spec for an image containing every tool, built for `platform`.
+    """Build the spec for an image containing every tool.
 
     Args:
         platform: The OS/arch the image is built for.

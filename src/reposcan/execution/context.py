@@ -63,7 +63,7 @@ class RunUser:
 
 
 def host_user() -> RunUser:
-    """The invoking host user, as a RunUser.
+    """Return the invoking host user as a RunUser.
 
     Uses the real uid/gid and supplementary groups (capped at _MAX_GROUPS, with a
     warning and truncation when the host user is in more). Root gets no supplementary
@@ -104,7 +104,7 @@ def as_user(command: Sequence[str], user: RunUser) -> list[str]:
 
 
 def home_for(uid: int) -> str:
-    """The HOME to give a command running as `uid` (for tool caches).
+    """Select the HOME env var for a command running as `uid`.
 
     The built-in scan user has a real home; any other uid gets `/tmp`, which is
     world-writable so tools can still write their caches.
@@ -183,7 +183,7 @@ def read_file(
     *,
     cwd: str | None = None,
 ) -> str | None:
-    """The text content of `path` read through `ctx` (via `cat`), or None on failure."""
+    """Read the text of `path` through `ctx` (via `cat`), or None on failure."""
     result = ctx.run(["cat", path], cwd=cwd)
     return result.stdout if succeeded(result) else None
 

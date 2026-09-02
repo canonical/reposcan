@@ -19,7 +19,7 @@ class GitIgnore:
 
     @classmethod
     def from_context(cls, ctx: ExecutionContext, target: str) -> "GitIgnore":
-        """The paths git ignores under `target`, found by running git in `ctx`.
+        """Build a GitIgnore config via ``git`` command.
 
         Runs `git ls-files` (read-only) with `target` as the working directory, so
         git resolves its own ignore rules (.gitignore, .git/info/exclude, the global

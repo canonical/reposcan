@@ -68,7 +68,7 @@ class Resolver(ABC):
     _managers: ClassVar[tuple[PackageManager, ...]]
 
     def find_roots(self, tracked: Mapping[str, set[str]]) -> list[str]:
-        """The directories at least one of the ecosystem's package managers resolves.
+        """Find directories that can be resolved by one of the ecosystem's managers.
 
         Args:
             tracked: Each tracked directory mapped to the set of file basenames in it.

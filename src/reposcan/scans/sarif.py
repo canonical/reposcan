@@ -150,7 +150,7 @@ class SarifResult:
         self.result.setdefault("fingerprints", {})[name] = value
 
     def _physical_location(self) -> dict[str, Any]:
-        """The primary location's physicalLocation dict, or an empty one."""
+        """Get the primary location's physicalLocation dict."""
         locations = self.result.get("locations") or []
         return locations[0].get("physicalLocation", {}) if locations else {}
 
@@ -204,7 +204,7 @@ class SarifRun:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """The run as a SARIF run object, with its recorded invocations rendered in."""
+        """Render the run as a SARIF run object."""
         rendered = [_serialize_invocation(inv) for inv in self.tool_invocations]
         invocations = [*self.run.get("invocations", []), *rendered]
         if not invocations:
@@ -212,7 +212,7 @@ class SarifRun:
         return {**self.run, "invocations": invocations}
 
     def results(self) -> list[SarifResult]:
-        """The run's findings, each as a SarifResult."""
+        """Read the run's findings."""
         return [SarifResult(result) for result in self.run.get("results", [])]
 
     @property
@@ -293,11 +293,11 @@ class SarifDocument:
         return cls(content)
 
     def to_dict(self) -> dict[str, Any]:
-        """The artifact as a SARIF 2.1.0 document object."""
+        """Render the artifact as a SARIF 2.1.0 document object."""
         return self.content
 
     def runs(self) -> list[SarifRun]:
-        """The document's runs, each as a SarifRun."""
+        """Read the document's runs, each as a SarifRun."""
         return [SarifRun(run) for run in self.content.get("runs", [])]
 
     def results(self) -> list[SarifResult]:
@@ -305,11 +305,11 @@ class SarifDocument:
         return [result for run in self.runs() for result in run.results()]
 
     def count(self) -> int:
-        """The number of findings across every run."""
+        """Count the findings across every run."""
         return len(self.results())
 
     def rows(self) -> tuple[list[str], list[list[str]]]:
-        """A table of findings for presentation, most severe first."""
+        """Tabulate the findings for presentation, most severe first."""
         headers = ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
         rows = [
             [
@@ -328,7 +328,7 @@ class SarifDocument:
 def parse(
     text: str, scanner: str | None = None, target: str = ""
 ) -> SarifDocument | None:
-    """The SARIF document in `text`, or None if `text` is not SARIF.
+    """Parse the SARIF document in `text`.
 
     Pass `scanner` (and `target`) to normalize a tool's raw output at ingestion; omit
     `scanner` to read an already-normalized report back unchanged.
@@ -439,7 +439,7 @@ def _normalize_result(
 
 
 def read_source(ctx: ExecutionContext, target: str, finding: SarifResult) -> str | None:
-    """The content of a finding's source file, or None if it cannot be read.
+    """Read a finding's source file.
 
     Read from the commit the finding names, if it names one.
     """

@@ -31,7 +31,7 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
     help = "Dependency vulnerabilities (trivy, grype, govulncheck)."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The trivy, grype, and govulncheck invocations for `target`.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context (unused).
@@ -90,7 +90,7 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
 
 
 def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
-    """The first source position in a govulncheck finding's trace, or None."""
+    """Find the first source position in a govulncheck finding's trace, or None."""
     for frame in finding.get("trace") or []:
         position = frame.get("position")
         if isinstance(position, dict) and position.get("filename"):

@@ -27,7 +27,7 @@ class SbomScan(DependencyResolvingScan):
     help = "Software bill of materials."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The trivy, syft, and cdxgen invocations for `target`.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context (unused).

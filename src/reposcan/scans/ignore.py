@@ -67,7 +67,7 @@ class IgnoreRule:
 
 
 def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
-    """The rules parsed from ignorefile `text`, plus a message per malformed line."""
+    """Parse ignorefile `text` into rules."""
     rules: list[IgnoreRule] = []
     errors: list[str] = []
     for number, raw in enumerate(text.splitlines(), start=1):
@@ -91,7 +91,7 @@ def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
 
 
 def _split_fields(line: str) -> list[str]:
-    """The whitespace-separated fields of `line`, honouring quotes and comments.
+    """Split `line` into whitespace-separated fields, honouring quotes and comments.
 
     A single- or double-quoted span keeps its whitespace and `#` and drops the quotes;
     an unquoted `#` starts a comment. Backslashes are literal (regexes keep them).
@@ -128,7 +128,7 @@ def _split_fields(line: str) -> list[str]:
 
 
 def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
-    """The rules in the ignorefile at `path`, plus any read or parse error messages."""
+    """Load the rules in the ignorefile at `path`, plus any error messages."""
     try:
         text = Path(path).read_text()
     except OSError as exc:
@@ -188,7 +188,7 @@ def apply(
 def _offending_line(
     ctx: ExecutionContext | None, target: str, finding: sarif.SarifResult
 ) -> str | None:
-    """The finding's offending content, or None when it cannot be read.
+    """Read the finding's offending content.
 
     The line the finding points to, or the whole file when it has no line.
     """
@@ -206,7 +206,7 @@ def _offending_line(
 
 
 def _field_to_regex(field: str) -> re.Pattern[str]:
-    """A tool/ruleId glob (with `|` alternation) compiled to an anchored regex.
+    """Compile a tool/ruleId glob (with `|` alternation) to an anchored regex.
 
     `*` matches any run of characters, `?` matches one, and `|` separates alternatives;
     every other character is matched literally (so a dotted semgrep rule id matches as
@@ -227,7 +227,7 @@ def _field_to_regex(field: str) -> re.Pattern[str]:
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:
-    """A gitignore-ish path glob compiled to an anchored regex.
+    """Compile a gitignore-ish path glob to an anchored regex.
 
     `**/` matches zero or more leading directories, `**` matches across directory
     separators, `*` matches within one path segment, and `?` matches one character.

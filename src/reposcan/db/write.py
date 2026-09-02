@@ -60,7 +60,7 @@ def analysis(path: str, record: Analysis) -> Failure | None:
 
 
 def resolve_project(session: Session, identity: ProjectIdentity) -> int:
-    """The project `identity` names, created when nothing in the database matches.
+    """Resolve `identity` to a project, creating one when nothing matches.
 
     Matching follows `ProjectIdentity.matches`, which prefers the strongest signal
     both sides carry. A new project is ordinary rather than an error: a database may
@@ -176,7 +176,7 @@ class _Tracker:
         self.category = category
 
     def resolve_component(self, component: Mapping[str, Any]) -> int:
-        """The id of the component this reports, created if it is new.
+        """Resolve the component to an id, creating it if new.
 
         Keyed on the normalized package url, which identifies a package outright, so
         there is nothing for candidate matching to add.
@@ -192,7 +192,7 @@ class _Tracker:
         )
 
     def resolve_issue(self, finding: sarif.SarifResult) -> int:
-        """The id of the issue this report is about, created if it is new."""
+        """Resolve the finding to an issue id, creating it if new."""
         incoming = IssueAttributes.from_result(finding)
         for issue_id, known in self._candidates(incoming.rule):
             if same_issue(known, incoming, self.category):

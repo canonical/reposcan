@@ -57,7 +57,7 @@ def _save(data: dict[str, str]) -> Failure | None:
 
 
 def recorded(reference: str) -> str | None:
-    """The identity recorded when `reference` was last built, or None if never."""
+    """Identify the recorded identity of the `reference` image."""
     return entries().get(reference)
 
 

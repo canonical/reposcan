@@ -32,7 +32,7 @@ class Scan:
             setattr(self, param.name, values.get(param.name, param.default))
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The tool invocations to run against `target`, in run order.
+        """Build the tool invocations to run against `target`, in run order.
 
         `ctx` is the started execution context, so a scan whose commands depend on the
         target's state can check it.

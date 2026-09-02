@@ -24,7 +24,7 @@ LOCAL_BUILD_SHORTHAND = "build"
 
 
 def resolve_remote_ref(value: str) -> str:
-    """The image reference for a configured `image` value.
+    """Resolve a configured `image` value to an image reference.
 
     Returns:
         The canonical published image for the `canonical` shorthand, otherwise the value
@@ -35,7 +35,7 @@ def resolve_remote_ref(value: str) -> str:
 
 
 def is_digest_pinned(ref: str) -> bool:
-    """True if `ref` pins a specific image content by digest (name@sha256:...).
+    """Report whether `ref` pins image content by digest (name@sha256:...).
 
     Returns:
         The docker client verifies such a ref on pull, so it needs no trust-on-first-use
@@ -54,7 +54,7 @@ class ImagePuller(Protocol):
         ...
 
     def identity(self, ref: str) -> str | None:
-        """The content id of the pulled image `ref`, or None if it is not present."""
+        """Get the content id of the `ref` image."""
         ...
 
 

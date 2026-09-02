@@ -52,7 +52,7 @@ def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]
 def _verbosity(
     scope: list[Param], cli_values: Mapping[str, Any], config: Mapping[str, Any]
 ) -> str:
-    """The resolved verbosity level, falling back to its default when unset."""
+    """Identify the selected (or default) logging verbosity level."""
     param = next((p for p in scope if p.name == "verbosity"), None)
     if param is None:
         return "info"
@@ -66,7 +66,7 @@ def _resolve_one(
     env: Mapping[str, str],
     config: Mapping[str, Any],
 ) -> Any:
-    """The value resolved for `param`, or `_UNSET` if no source sets it.
+    """Resolve `param` from its sources, or `_UNSET` if none sets it.
 
     Precedence is the command line, then a REPOSCAN_* env var, then the saved config.
     """
@@ -96,5 +96,5 @@ def _resolve_one(
 
 
 def _env_var(name: str) -> str:
-    """The environment variable that sets the parameter named `name`."""
+    """Convert a parameter name to its corresponding environment name."""
     return ENV_PREFIX + name.upper().replace("-", "_").replace(" ", "_")

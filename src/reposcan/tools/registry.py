@@ -32,12 +32,12 @@ _LOCKS = Path(__file__).parent / "locks"
 
 
 def _lock(name: str) -> str:
-    """The contents of a generated PyPI hash-lock, shipped beside this module."""
+    """Read one of this package's PyPI hash-lock files."""
     return (_LOCKS / f"{name}.txt").read_text()
 
 
 def _gh(repo: str, tag: str, asset: str) -> str:
-    """A GitHub release download URL.
+    """Build a GitHub release download URL.
 
     Spelled from its parts because the full URLs run past the line limit and
     repo/tag/asset are the parts that actually vary.

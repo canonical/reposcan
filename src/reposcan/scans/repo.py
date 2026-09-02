@@ -102,7 +102,7 @@ class RepositoryState:
 def read_repository_state(
     ctx: ExecutionContext, target: str, label: str = ""
 ) -> RepositoryState:
-    """The identity and git state of `target`, as seen from `ctx`.
+    """Read the identity and git state of `target`, as seen from `ctx`.
 
     Args:
         ctx: The started context to run git in.
@@ -137,7 +137,7 @@ def read_repository_state(
 
 
 def normalize_origin(url: str) -> str:
-    """A remote url reduced to a comparable form.
+    """Reduce a remote url to a comparable form.
 
     Drops the scheme, any credentials or ssh user, a port, and a trailing `.git`, and
     lowercases the host, so the ssh and https urls for one repository compare equal.
@@ -168,7 +168,7 @@ def normalize_origin(url: str) -> str:
 
 
 def _git(ctx: ExecutionContext, target: str, *args: str) -> str | None:
-    """The stripped stdout of a git command run in `target`, or None if it failed."""
+    """Run a git command in `target` and return its stripped stdout, or None."""
     result = ctx.run(["git", *args], cwd=target)
     if not (isinstance(result, ExecResult) and result.exit_code == 0):
         return None

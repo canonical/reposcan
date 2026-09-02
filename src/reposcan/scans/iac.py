@@ -26,7 +26,7 @@ class IacScan(SecurityScan):
     help = "Infrastructure-as-code checks with checkov."
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The single checkov invocation for `target`.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context (unused).

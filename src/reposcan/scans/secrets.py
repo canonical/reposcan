@@ -52,7 +52,7 @@ class SecretsScan(SecurityScan):
     )
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
-        """The single trufflehog invocation for `target` in the resolved mode.
+        """Build command invocations for `target`.
 
         Args:
             ctx: The started context, used to detect a git repository.
@@ -96,7 +96,7 @@ class SecretsScan(SecurityScan):
 
 
 def _parse_findings(stdout: str) -> list[dict[str, Any]]:
-    """The finding objects in trufflehog's JSONL `stdout`, skipping other lines."""
+    """Parse trufflehog findings."""
     findings = []
     for line in stdout.splitlines():
         stripped = line.strip()
@@ -133,7 +133,7 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
 
 
 def _finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
-    """The (file, line, commit) of a finding.
+    """Read the (file, line, commit) of a finding.
 
     'commit' is only produced by truffelhog's history mode. trufflehog dedups its
     findings, so the reported commit is just *a* commit the secret was in, not

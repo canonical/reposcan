@@ -21,7 +21,7 @@ ScanOutput = sarif.SarifRun | cyclonedx.CycloneDxDocument
 
 
 def utc_now() -> str:
-    """The current time in the ISO-8601 UTC format."""
+    """Report the current time in the ISO-8601 UTC format."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
