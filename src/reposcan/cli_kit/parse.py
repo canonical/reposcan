@@ -75,14 +75,17 @@ def parse(
                     raw[remainder.name] = argv[i:]  # an unknown option starts remainder
                     break
                 return result(command=command, error=f"unknown option: {key}")
+            name = param.name
+            # A repeatable option accumulates; any other keeps its last value.
             if not param.takes_cli_value:
-                raw[param.name] = True
+                raw[name] = True
                 i += 1
             elif "=" in tok:
-                raw[param.name] = inline
+                raw[name] = [*raw.get(name, []), inline] if param.many else inline
                 i += 1
             elif i + 1 < n:
-                raw[param.name] = argv[i + 1]
+                nxt = argv[i + 1]
+                raw[name] = [*raw.get(name, []), nxt] if param.many else nxt
                 i += 2
             else:
                 return result(command=command, error=f"option {key} requires a value")
@@ -170,23 +173,8 @@ def _coerce_all(
     """
     values: dict[str, Any] = {}
     for name, value in raw.items():
-        coerced, error = _coerce_value(scope[name], value)
+        coerced, error = coerce(scope[name], value)
         if error is not None:
             return {}, error
         values[name] = coerced
     return values, None
-
-
-def _coerce_value(param: Param, raw: Any) -> tuple[Any, str | None]:
-    """Coerce one value: a remainder verbatim, a `many` per item, else a scalar."""
-    if param.remainder:
-        return list(raw), None
-    if param.many:
-        out = []
-        for item in raw:
-            value, error = coerce(param, item)
-            if error is not None:
-                return None, error
-            out.append(value)
-        return out, None
-    return coerce(param, raw)

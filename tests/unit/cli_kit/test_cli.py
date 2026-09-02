@@ -111,3 +111,33 @@ def test_with_no_resolver_values_come_from_the_command_line_and_defaults() -> No
 
     _cli(_Cmd).run(["cmd", "--mode", "rich"])
     assert captured == {"mode": "rich", "verbose": False}  # cli value plus defaults
+
+
+def test_a_repeatable_option_collects_every_occurrence() -> None:
+    seen: list[list[str]] = []
+
+    class _Tag(_Base):
+        name = "tag"
+        tags: list[str] = option(many=True, default=())
+
+        def run(self) -> int:
+            seen.append(list(self.tags))
+            return 0
+
+    assert _cli(_Tag).run(["tag", "--tags", "a", "--tags=b"]) == 0
+    assert seen == [["a", "b"]]
+
+
+def test_a_repeatable_option_left_out_falls_back_to_its_default() -> None:
+    seen: list[list[str]] = []
+
+    class _Tag(_Base):
+        name = "tag"
+        tags: list[str] = option(many=True, default=())
+
+        def run(self) -> int:
+            seen.append(list(self.tags))
+            return 0
+
+    assert _cli(_Tag).run(["tag"]) == 0
+    assert seen == [[]]

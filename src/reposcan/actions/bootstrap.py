@@ -14,7 +14,7 @@ import sys
 from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import flag, positional
-from reposcan.execution.context import ExecutionContext
+from reposcan.execution.context import ExecutionContext, resolved_env
 from reposcan.execution.process import Failure
 from reposcan.tools.install import current_platform, install_plan
 from reposcan.tools.model import Platform, Tool
@@ -35,7 +35,12 @@ class BootstrapAction(Action):
 
     def run(self) -> int:
         backend = self.backend if self.backend != "auto" else "local"
-        with start_session(backend, tool_image=False, image=self.image) as session:
+        with start_session(
+            backend,
+            tool_image=False,
+            image=self.image,
+            env=resolved_env(self.env),
+        ) as session:
             if not session.ok:
                 return session.exit_code
             if (

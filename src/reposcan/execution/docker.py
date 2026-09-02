@@ -22,11 +22,16 @@ class DockerContext:
     name = "docker"
 
     def __init__(
-        self, image: str, mount_source: str | None = None, user: RunUser | None = None
+        self,
+        image: str,
+        mount_source: str | None = None,
+        user: RunUser | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         self._image = image
         self._mount_source = mount_source
         self._user = user  # the default identity for every run (None = root)
+        self._env = dict(env or {})
         self._instance_name: str | None = None
 
     def start(self) -> Failure | None:
@@ -62,7 +67,7 @@ class DockerContext:
             argv.append("-i")  # keep stdin open so the command can read it
         if cwd is not None:
             argv += ["-w", cwd]
-        run_env = dict(env or {})
+        run_env = {**self._env, **(env or {})}
         command = list(command)
         effective = self._user if user is None else user
         if effective is not None:

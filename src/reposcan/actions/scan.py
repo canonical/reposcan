@@ -23,7 +23,7 @@ from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import Param, flag, option, params_of, positional
 from reposcan.db import write as db_write
-from reposcan.execution.context import RunUser, host_user
+from reposcan.execution.context import RunUser, host_user, resolved_env
 from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.scans import ignore, sarif
@@ -189,6 +189,7 @@ class ScanCommand(Action):
             mount_source=path,
             image=self.image,
             user=user,
+            env=resolved_env(self.env),
         ) as session:
             if not session.ok:
                 return session.exit_code

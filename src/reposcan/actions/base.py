@@ -10,10 +10,16 @@ via env (REPOSCAN_<NAME>), or in the config file. Each parameter's long flag is
 inferred from its name, so only the short `-v` is spelled out here.
 """
 
+import re
+from collections.abc import Sequence
+
 from reposcan.backends import BACKEND_NAMES
 from reposcan.cli_kit import Action as _Action
 from reposcan.cli_kit import option
 from reposcan.logging import LOG_LEVELS
+
+# A portable environment variable name, so a malformed --env is a usage error
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _parse_uid(value: str) -> int:
@@ -25,6 +31,14 @@ def _parse_uid(value: str) -> int:
     if uid < 0:
         raise ValueError(f"expected a non-negative integer, got {uid}")
     return uid
+
+
+def _parse_env(value: str) -> str:
+    """`value` if it is a usable NAME or NAME=VALUE spec, or raise ValueError."""
+    name = value.partition("=")[0]
+    if _ENV_NAME.fullmatch(name) is None:
+        raise ValueError(f"expected NAME or NAME=VALUE, got {value!r}")
+    return value
 
 
 def _parse_image(value: str) -> str:
@@ -54,4 +68,11 @@ class Action(_Action):
         convert=_parse_image,
         help="The container image to use: 'canonical' (the official "
         "image), 'build', or an OCI reference.",
+    )
+    env: Sequence[str] = option(
+        default=(),
+        many=True,
+        convert=_parse_env,
+        help="Pass NAME from this environment (or NAME=VALUE) to subprocess calls. "
+        "Repeatable.",
     )

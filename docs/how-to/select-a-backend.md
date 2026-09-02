@@ -25,9 +25,8 @@ disagree, reposcan logs which one won.
 
 ## Use the local backend
 
-The local backend runs the tools on the host with no container isolation, so it
-requires the tools to be installed there first and it is discouraged for
-untrusted repositories. Install the tools onto the host with
+The local backend runs tools on the host with no container isolation, which
+means all tools must be installed locally. This can be achieved with
 [`bootstrap`](../reference/commands.md#bootstrap):
 
 ```
@@ -35,8 +34,11 @@ reposcan bootstrap
 reposcan --backend local scan sast ./repo
 ```
 
-The container backends need no bootstrap: they build or pull the tool image on
-demand (see [use a published image](use-a-published-image.md)).
+Note: environment variables are stripped for processes executed via the local
+backend: only `HOME`, `PATH`, the locale, the cache and temp directories, and
+the proxy and CA settings are passed through. Anything else in your environment
+is dropped. This also applies to [`exec`](../reference/commands.md#exec).
+Additional environment variables can be explicitly passed through with `--env`.
 
 ## Set the in-container user
 

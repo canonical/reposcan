@@ -12,19 +12,47 @@ from reposcan.execution.process import ExecResult, Failure, run_process
 
 logger = logging.getLogger(__name__)
 
+# Host environment variables to pass through by default.
+_ALLOWED_ENV_VARS = (
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "PATH",
+    # temporary and cache dirs
+    "TMPDIR",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    # network connectivity
+    "CURL_CA_BUNDLE",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NODE_EXTRA_CA_CERTS",
+    "NO_PROXY",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    # curl reads the lowercase spellings and ignores the uppercase ones.
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
+
 
 class LocalContext:
     """Runs commands on the host.
 
-    Nothing to start or stop. Per-command `env` is overlaid on the inherited host
-    environment. The local backend always runs as the invoking user. Always prepends
-    `tool_root` to PATH for command execution.
+    Nothing to start or stop. Runs as the invoking user. Always prepends `tool_root`
+    to PATH. Host env vars are masked by reposcan's allow-list.
     """
 
     name = "local"
 
-    def __init__(self, tool_root: str | None = None) -> None:
+    def __init__(
+        self, tool_root: str | None = None, env: Mapping[str, str] | None = None
+    ) -> None:
         self._tool_root = tool_root
+        self._env = dict(env or {})
 
     def start(self) -> Failure | None:
         return None
@@ -48,17 +76,21 @@ class LocalContext:
                 os.getuid(),
                 user.uid,
             )
-        run_env = {**os.environ, **env} if env is not None else None
+        environment = {
+            name: os.environ[name] for name in _ALLOWED_ENV_VARS if name in os.environ
+        }
+        environment.update(self._env)
+        environment.update(env or {})
         if self._tool_root is not None:
-            path = f"{self._tool_root}{os.pathsep}{os.environ.get('PATH', '')}"
-            if run_env is None:
-                run_env = {**os.environ, "PATH": path}
-            else:
-                run_env["PATH"] = path
+            # An empty trailing element would put the scanned repository on PATH
+            rest = environment.get("PATH", "")
+            environment["PATH"] = (
+                f"{self._tool_root}{os.pathsep}{rest}" if rest else self._tool_root
+            )
         return run_process(
             command,
             cwd=cwd,
-            env=run_env,
+            env=environment,
             timeout=timeout,
             stream_stdout=stream_stdout,
             stream_stderr=stream_stderr,

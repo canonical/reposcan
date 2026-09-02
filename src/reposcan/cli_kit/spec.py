@@ -130,6 +130,7 @@ def option(
     default: T | None = None,
     choices: tuple[T, ...] | None = None,
     convert: Callable[[str], T] | None = None,
+    many: bool = False,
     help: str = "",
     requires: dict[str, str | tuple[str, ...]] | None = None,
 ) -> Any:
@@ -138,9 +139,10 @@ def option(
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
     iterable: `verbosity: str = option("-v", ...)` accepts both `-v` and
-    `--verbosity`. Pass `name` to declare the option as data rather than as a class
-    attribute. `requires` maps another parameter to the value(s) it must have for
-    this option to be valid.
+    `--verbosity`. `many=True` makes the option repeatable, collecting each
+    occurrence into a list. Pass `name` to declare the option as data rather than as
+    a class attribute. `requires` maps another parameter to the value(s) it must have
+    for this option to be valid.
     """
     return Param(
         name=name,
@@ -148,6 +150,7 @@ def option(
         default=default,
         choices=choices,
         convert=convert,
+        many=many,
         help=help,
         requires=requires,
     )

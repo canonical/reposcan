@@ -62,6 +62,19 @@ The image to run scans in. Not supported for backend=local. See
 | Config key     | `image`                                                                        |
 | Default value  | `canonical` -- pull the digest-pinned published image from GHCR.               |
 
+### `--env <NAME[=VALUE]>`
+
+Pass an environment variable to all subprocess commands. `NAME` forwards the
+host environment's value if set; `NAME=VALUE` sets it to `VALUE`. Repeat the
+option for several variables.
+
+| Property       | Description                                                    |
+| -------------- | -------------------------------------------------------------- |
+| Allowed values | `NAME`, or `NAME=VALUE`.                                       |
+| Env var to set | `REPOSCAN_ENV` (one variable).                                 |
+| Config key     | `env` (one variable via `config set`)                          |
+| Default value  | none -- see [select a backend](../how-to/select-a-backend.md). |
+
 ## scan
 
 `reposcan scan <types> <path>` runs one or more scans against a repository
@@ -138,6 +151,9 @@ reposcan exec -- semgrep -h
 
 The scanning tools are symlinked onto `/usr/local/bin` in the tool image, so
 they are on `PATH` and can be run by name. Use `reposcan tools` to list them.
+
+By default, most host system environment variables are _not_ passed through. See
+`--env`.
 
 ## tools
 

@@ -3,7 +3,9 @@
 
 """Tests for the in-container identity helpers (reposcan.execution.context)."""
 
-from reposcan.execution.context import RunUser, as_user
+import os
+
+from reposcan.execution.context import RunUser, as_user, resolved_env
 
 
 def test_as_user_with_groups_sets_them_and_drops_init_groups() -> None:
@@ -24,3 +26,20 @@ def test_as_user_without_groups_clears_them() -> None:
     assert "--clear-groups" in argv
     assert "--groups" not in "".join(argv)
     assert argv[-2:] == ["--", "ls"]
+
+
+def test_resolved_env_takes_a_value_inline_or_from_the_host() -> None:
+    os.environ["REPOSCAN_TEST_FORWARDED"] = "from-host"
+    try:
+        resolved = resolved_env(
+            ["NAME=inline", "REPOSCAN_TEST_FORWARDED", "REPOSCAN_TEST_MISSING"]
+        )
+    finally:
+        del os.environ["REPOSCAN_TEST_FORWARDED"]
+    # A name the host does not set is dropped rather than passed as empty, so a tool
+    # cannot tell it apart from one deliberately set to "".
+    assert resolved == {"NAME": "inline", "REPOSCAN_TEST_FORWARDED": "from-host"}
+
+
+def test_resolved_env_keeps_a_value_containing_an_equals_sign() -> None:
+    assert resolved_env(["URL=https://h/?a=1"]) == {"URL": "https://h/?a=1"}

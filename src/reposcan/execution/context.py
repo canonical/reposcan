@@ -113,6 +113,20 @@ def home_for(uid: int) -> str:
     return homes.get(uid) or "/tmp"
 
 
+def resolved_env(specs: Sequence[str]) -> dict[str, str]:
+    """Resolve `NAME[=VALUE]` specs to variables."""
+    resolved: dict[str, str] = {}
+    for spec in specs:
+        name, sep, value = spec.partition("=")
+        if sep:
+            resolved[name] = value
+        elif name in os.environ:
+            resolved[name] = os.environ[name]
+        else:
+            logger.warning("--env %s: not set in the environment, skipping", name)
+    return resolved
+
+
 def mounted_target(mount_source: str) -> str:
     """Where a mounted source directory appears inside a container.
 

@@ -29,6 +29,9 @@ _UNSET: Any = object()
 # parameters persisted in config
 _CONFIG_KEYS = frozenset(p.name for p in params_of(Action))
 
+# Parameters that cannot be set by an environment variable.
+_NO_ENV_KEYS = frozenset({"env"})
+
 
 def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]:
     """Resolve reposcan's parameters: CLI > REPOSCAN_* env > config > default.
@@ -71,7 +74,7 @@ def _resolve_one(
     if param.name in cli_values:
         present.append(("cli", cli_values[param.name]))
     ambient: list[tuple[str, Any]] = []
-    if not (param.positional or param.remainder):
+    if not (param.positional or param.remainder or param.name in _NO_ENV_KEYS):
         ambient.append(("env", env.get(_env_var(param.name))))
     if param.name in _CONFIG_KEYS:
         ambient.append(("config", config.get(param.name)))

@@ -9,7 +9,7 @@ import sys
 from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import option, remainder
-from reposcan.execution.context import ExecutionContext
+from reposcan.execution.context import ExecutionContext, resolved_env
 from reposcan.execution.process import Failure
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,12 @@ class ExecAction(Action):
     )
 
     def run(self) -> int:
-        with start_session(self.backend, tool_image=True, image=self.image) as session:
+        with start_session(
+            self.backend,
+            tool_image=True,
+            image=self.image,
+            env=resolved_env(self.env),
+        ) as session:
             if not session.ok:
                 return session.exit_code
             return execute(session.context, self.argv, timeout=self.timeout)
