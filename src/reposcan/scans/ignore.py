@@ -26,10 +26,13 @@ the finding has no line); if it cannot be read, the finding is kept. Quote the r
 """
 
 import logging
+import posixpath
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from reposcan.execution.context import ExecutionContext, read_file
 from reposcan.scans import sarif
 
 logger = logging.getLogger(__name__)
@@ -38,38 +41,29 @@ logger = logging.getLogger(__name__)
 DEFAULT_IGNORE_FILE = ".reposcan-ignore"
 
 
+@dataclass
 class IgnoreRule:
     """One ignorefile entry: a tool, rule id, path glob, and optional content regex."""
 
-    def __init__(
-        self, tool: str, rule_id: str, path_glob: str, content_pattern: str = ""
-    ) -> None:
-        self.tool = tool
-        self.rule_id = rule_id
-        self.path_glob = path_glob
-        self.content_pattern = content_pattern
-        self._tool = _field_to_regex(tool)
-        self._rule = _field_to_regex(rule_id)
-        self._pattern = _glob_to_regex(path_glob)
-        self._content = re.compile(content_pattern) if content_pattern else None
+    tool: str
+    rule_id: str
+    path_glob: str
+    content_pattern: str = ""
 
-    def matches(self, finding: sarif.SarifResult, root: str = "") -> bool:
-        """Whether this rule ignores `finding`.
+    tool_regex: re.Pattern[str] = field(init=False, repr=False)
+    rule_regex: re.Pattern[str] = field(init=False, repr=False)
+    path_regex: re.Pattern[str] = field(init=False, repr=False)
+    # None for the three-field form, which ignores a finding outright.
+    content_regex: re.Pattern[str] | None = field(init=False, repr=False)
 
-        Checks the rule id, tool, and path; then, if the rule carries a content
-        pattern, that it matches the finding's offending content (read from `root`).
-        Content that cannot be read fails the match, so the finding is kept.
-        """
-        if self._rule.match(finding.rule_id) is None:
-            return False
-        if not any(self._tool.match(scanner) for scanner in finding.scanners):
-            return False
-        if self._pattern.match(finding.uri) is None:
-            return False
-        if self._content is None:
-            return True
-        content = _offending_content(root, finding)
-        return content is not None and self._content.search(content) is not None
+    def __post_init__(self) -> None:
+        """Compile the entry's patterns, raising re.error on a malformed one."""
+        self.tool_regex = _field_to_regex(self.tool)
+        self.rule_regex = _field_to_regex(self.rule_id)
+        self.path_regex = _glob_to_regex(self.path_glob)
+        self.content_regex = (
+            re.compile(self.content_pattern) if self.content_pattern else None
+        )
 
 
 def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
@@ -143,37 +137,65 @@ def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
 
 
 def apply(
-    runs: Sequence[sarif.SarifRun], rules: list[IgnoreRule], root: str = ""
+    runs: Sequence[sarif.SarifRun],
+    rules: list[IgnoreRule],
+    ctx: ExecutionContext | None = None,
+    target: str = "",
 ) -> int:
     """Drop ignored findings from each run in place; return the number removed.
 
-    `root` is the repository root, used to read the offending content for rules that
-    carry a content pattern (see the module docstring).
+    A rule ignores a finding when its tool, rule id, and path all match. A rule
+    carrying a content regex additionally requires the offending line to match it;
+    that line is read from `target` through `ctx`. Content that cannot be read fails
+    the match, so the finding is kept.
     """
     if not rules:
         return 0
     removed = 0
     for run in runs:
-        kept = []
+        kept: list[sarif.SarifResult] = []
         for finding in run.results():
-            if any(rule.matches(finding, root) for rule in rules):
-                removed += 1
-            else:
+            candidates = [
+                rule
+                for rule in rules
+                if rule.rule_regex.match(finding.rule_id) is not None
+                and any(rule.tool_regex.match(name) for name in finding.scanners)
+                and rule.path_regex.match(finding.uri) is not None
+            ]
+            if not candidates:
                 kept.append(finding)
+                continue
+            conditional = [
+                rule for rule in candidates if rule.content_regex is not None
+            ]
+            if len(conditional) < len(candidates):
+                removed += 1  # at least one rule ignores it outright
+                continue
+            # Every candidate tests the offending line, so read it once for all of
+            # them rather than once per rule.
+            line = _offending_line(ctx, target, finding)
+            if line is not None and any(
+                rule.content_regex is not None and rule.content_regex.search(line)
+                for rule in conditional
+            ):
+                removed += 1
+                continue
+            kept.append(finding)
         run.set_results(kept)
     return removed
 
 
-def _offending_content(root: str, finding: sarif.SarifResult) -> str | None:
+def _offending_line(
+    ctx: ExecutionContext | None, target: str, finding: sarif.SarifResult
+) -> str | None:
     """The finding's offending content, or None when it cannot be read.
 
     The line the finding points to, or the whole file when it has no line.
     """
-    if not finding.uri:
+    if not finding.uri or ctx is None:
         return None
-    try:
-        text = (Path(root) / finding.uri).read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    text = read_file(ctx, posixpath.join(target, finding.uri))
+    if text is None:
         return None
     if finding.line <= 0:
         return text
