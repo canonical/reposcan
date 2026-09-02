@@ -174,6 +174,15 @@ class ScanCommand(Action):
                 logger.warning("%s", msg)
 
         user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
+        scans = [
+            SCANS[name](
+                **{
+                    param.name: getattr(self, param.name)
+                    for param in params_of(SCANS[name])
+                }
+            )
+            for name in names
+        ]
         with start_session(
             self.backend,
             tool_image=True,
@@ -185,44 +194,32 @@ class ScanCommand(Action):
                 return session.exit_code
             assert session.target is not None  # a source was given, so target is set
 
-            analysis = Analysis.begin(
-                read_repository_state(session.context, session.target)
-            )
-
-            runs: list[sarif.SarifRun] = []
-            for name in names:
-                scan_cls = SCANS[name]
-                scan = scan_cls(
-                    **{
-                        param.name: getattr(self, param.name)
-                        for param in params_of(scan_cls)
-                    }
-                )
-                scan_started = utc_now()
-                run = run_scan(
-                    scan,
+            state = read_repository_state(session.context, session.target)
+            with Analysis.begin(state) as analysis:
+                for scan in scans:
+                    started_at = utc_now()
+                    run = run_scan(
+                        scan,
+                        session.context,
+                        session.target,
+                        session.tool_root,
+                        resolved_parent=session.resolved_parent,
+                        stream=True,
+                    )
+                    if isinstance(run, Failure):
+                        logger.error("%s scan failed: %s", scan.name, run.reason)
+                        return 1
+                    analysis.add(scan.name, run, started_at=started_at)
+                removed = ignore.apply(
+                    analysis.sarif_runs,
+                    ignore_rules,
                     session.context,
                     session.target,
-                    session.tool_root,
-                    resolved_parent=session.resolved_parent,
-                    stream=True,
                 )
-                if isinstance(run, Failure):
-                    logger.error("%s scan failed: %s", name, run.reason)
-                    return 1
+                if removed:
+                    logger.info("ignored %d finding(s) via %s", removed, ignore_path)
 
-                runs.append(run)
-                analysis.add(name, run, started_at=scan_started)
-
-            # Filter the runs before anything is built from them, so a suppressed
-            # finding reaches neither the report nor the database.
-            removed = ignore.apply(runs, ignore_rules, path)
-            if removed:
-                logger.info("ignored %d finding(s) via %s", removed, ignore_path)
-
-            analysis.close()
-
-            report = sarif.SarifDocument.from_runs(runs)
+            report = sarif.SarifDocument.from_runs(analysis.sarif_runs)
 
             if self.db is not None:
                 failed = db_write.analysis(self.db, analysis)

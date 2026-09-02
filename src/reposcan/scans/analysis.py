@@ -72,6 +72,8 @@ class Analysis:
     `begin` sets the start timestamp and reads the repository metadata; `add` records
     the product of each new scan; `close` sets the end timestamp and writes the
     analysis metadata into each associated artifact.
+
+    Use it as a context manager so `close` cannot be forgotten.
     """
 
     uuid: str
@@ -93,6 +95,13 @@ class Analysis:
             repository=repository,
         )
 
+    def __enter__(self) -> "Analysis":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Close the analysis on every exit, including an error path."""
+        self.close()
+
     def add(self, category: str, produced: ScanOutput, *, started_at: str) -> None:
         """Add the record of a finalized scan to the analysis."""
         self.scans.append(
@@ -100,6 +109,18 @@ class Analysis:
                 category, produced, started_at=started_at, finished_at=utc_now()
             )
         )
+
+    @property
+    def sarif_runs(self) -> list[sarif.SarifRun]:
+        """Every SARIF run recorded here, in scan order.
+
+        An analysis may hold CycloneDX output too, so products are filtered for SARIF.
+        """
+        return [
+            record.produced
+            for record in self.scans
+            if isinstance(record.produced, sarif.SarifRun)
+        ]
 
     def close(self) -> None:
         """Finalize the analysis."""
