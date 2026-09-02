@@ -92,6 +92,15 @@ def test_a_repeatable_global_collects_from_the_command_line() -> None:
     assert from_cli["env"] == ["A=1", "B"]
 
 
+def test_an_explicit_env_var_name_overrides_the_one_derived_from_the_attribute() -> (
+    None
+):
+    # Attribute names are unqualified inside a command group; the environment is not.
+    resolved = _resolved(["gh", "list-repos"], {"REPOSCAN_GH_ORG": "acme"})
+    assert resolved["org"] == "acme"
+    assert _resolved(["gh", "list-repos"], {"REPOSCAN_ORG": "acme"})["org"] is None
+
+
 # --- scan options resolve like any other --------------------------------------
 
 

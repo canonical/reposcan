@@ -75,7 +75,6 @@ class SbomCommand(Action):
                 "output file already exists, refusing to overwrite: %s", self.output
             )
             return 2
-        fmt = Format(self.format) if self.format else None
 
         user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
         with start_session(
@@ -118,15 +117,12 @@ class SbomCommand(Action):
                     return 1
                 logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
 
-            failure = output.emit(
-                artifact,
-                output=self.output,
-                fmt=fmt,
-                limit=self.limit,
-                wrap=self.wrap,
-            )
-            if isinstance(failure, Failure):
-                logger.error(failure.reason)
-                return 1
+            if self.output is not None or self.format == Format.JSON:
+                failure = output.write_json(artifact.to_dict(), self.output)
+                if isinstance(failure, Failure):
+                    logger.error(failure.reason)
+                    return 1
+            else:
+                output.write_table(*artifact.rows(), limit=self.limit, wrap=self.wrap)
             logger.info("sbom complete: %d component(s)", artifact.count())
             return 0

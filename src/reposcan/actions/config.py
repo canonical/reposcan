@@ -82,7 +82,7 @@ class ConfigUnset(Action):
 
 
 class ConfigKeys(Action):
-    name = "keys"
+    name = "list-keys"
     help = "List all supported config keys."
 
     def run(self) -> int:
@@ -92,7 +92,7 @@ class ConfigKeys(Action):
 
 
 class ConfigOptions(Action):
-    name = "options"
+    name = "list-options"
     help = "List the supported values for a config key."
 
     key: str = positional(help="The config key to describe.")

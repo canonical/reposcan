@@ -68,6 +68,7 @@ class Param(Generic[T]):
         required: bool = True,
         is_flag: bool = False,
         requires: dict[str, str | tuple[str, ...]] | None = None,
+        env_var: str = "",
     ) -> None:
         self.name = name  # else set by __set_name__ from the class-attribute name
         self.flags = flags
@@ -80,6 +81,8 @@ class Param(Generic[T]):
         self.many = many
         self.required = required
         self.is_flag = is_flag
+        # NOT processed by cli_kit, but may be used by the optional resolver
+        self.env_var = env_var
         # A cross-parameter dependency: another parameter -> the value(s) it must have
         # (or, for a list-valued parameter, contain) for this one to be valid; a tuple
         # means any-of. Enforced by `check_requires` only when this parameter is set.
@@ -133,6 +136,7 @@ def option(
     many: bool = False,
     help: str = "",
     requires: dict[str, str | tuple[str, ...]] | None = None,
+    env_var: str = "",
 ) -> Any:
     """A value option that consumes a following argument (`--backend docker`).
 
@@ -140,7 +144,8 @@ def option(
     additional spellings (a short form, or aliases), given as a single flag or an
     iterable: `verbosity: str = option("-v", ...)` accepts both `-v` and
     `--verbosity`. `many=True` makes the option repeatable, collecting each
-    occurrence into a list. Pass `name` to declare the option as data rather than as
+    occurrence into a list. `env_var` is not used by cli_kit, but may be used by
+    the optional resolver. Pass `name` to declare the option as data rather than as
     a class attribute. `requires` maps another parameter to the value(s) it must have
     for this option to be valid.
     """
@@ -153,6 +158,7 @@ def option(
         many=many,
         help=help,
         requires=requires,
+        env_var=env_var,
     )
 
 

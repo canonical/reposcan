@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan tools` action: list tools and their install status."""
+"""The `reposcan list-tools` action: list tools and their install status."""
 
 import os
 import sys
@@ -13,7 +13,7 @@ from reposcan.tools.registry import TOOLS
 
 
 class ToolsAction(Action):
-    name = "tools"
+    name = "list-tools"
     help = "List the scanning tools and whether each is installed."
 
     def run(self) -> int:

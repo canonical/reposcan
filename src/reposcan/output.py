@@ -1,20 +1,15 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Render and emit a scan's consolidated artifact.
-
-Every scan result reposcan prints goes through here. On stdout the default is a
-concise, human-readable table, and `--format json` gives the native JSON instead; a
-file always receives the native JSON. `--limit` caps how many rows a table shows.
-"""
+"""Output rendering utilities."""
 
 import json
 import logging
 import sys
 from enum import Enum
+from typing import Any
 
 from reposcan.execution.process import Failure
-from reposcan.scans.model import Artifact
 from reposcan.table import DEFAULT_WRAP_LINES, render_table
 
 logger = logging.getLogger(__name__)
@@ -30,35 +25,14 @@ class Format(str, Enum):
     JSON = "json"
 
 
-def emit(
-    artifact: Artifact,
-    *,
-    output: str | None = None,
-    fmt: Format | None = None,
-    limit: int = DEFAULT_ROW_LIMIT,
-    wrap: int = DEFAULT_WRAP_LINES,
-) -> Failure | None:
-    """Render `artifact` and write it to `output` (a file) or stdout.
-
-    The format defaults to a table on stdout and the native JSON document in a
-    file; `fmt` overrides that. `limit` caps the table's rows (ignored for JSON).
-
-    Args:
-        artifact: The consolidated scan result to render.
-        output: A file to write to, or None for stdout.
-        fmt: The chosen format, or None to use the destination's default.
-        limit: The maximum number of rows to show in a table.
-        wrap: The most lines a long table cell may wrap across.
+def write_json(document: Any, output: str | None = None) -> Failure | None:
+    """Write `document` as JSON to the file at `output`, or to stdout when None.
 
     Returns:
         None on success, or a Failure if the output file already exists (it is not
         overwritten) or could not be written.
     """
-    chosen = fmt or (Format.JSON if output is not None else Format.TABLE)
-    if chosen is Format.JSON:
-        text = json.dumps(artifact.to_dict(), indent=2) + "\n"
-    else:
-        text = _table(artifact, limit, wrap)
+    text = json.dumps(document, indent=2) + "\n"
     if output is None:
         sys.stdout.write(text)
         return None
@@ -76,9 +50,21 @@ def emit(
     return None
 
 
-def _table(artifact: Artifact, limit: int, wrap: int) -> str:
-    """A concise text table of the artifact's entries, capped at `limit` rows."""
-    headers, rows = artifact.rows()
+def write_table(
+    headers: list[str],
+    rows: list[list[str]],
+    *,
+    limit: int = DEFAULT_ROW_LIMIT,
+    wrap: int = DEFAULT_WRAP_LINES,
+) -> None:
+    """Print a table of `entries` to stdout, capped at `limit` rows.
+
+    Args:
+        headers: The column headers.
+        rows: One row per entry.
+        limit: The maximum number of rows to show; negative shows every row.
+        wrap: The most lines a long cell may wrap across.
+    """
     shown = rows[:limit] if limit >= 0 else rows
     if len(shown) < len(rows):
         logger.info(
@@ -86,4 +72,4 @@ def _table(artifact: Artifact, limit: int, wrap: int) -> str:
             len(shown),
             len(rows),
         )
-    return render_table(headers, shown, wrap=wrap)
+    sys.stdout.write(render_table(headers, shown, wrap=wrap))

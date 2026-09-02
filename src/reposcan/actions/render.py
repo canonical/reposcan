@@ -8,8 +8,7 @@ import logging
 from reposcan import output
 from reposcan.actions.base import Action
 from reposcan.cli_kit import option, positional
-from reposcan.execution.process import Failure
-from reposcan.output import DEFAULT_ROW_LIMIT, Format
+from reposcan.output import DEFAULT_ROW_LIMIT
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.model import Artifact
 from reposcan.table import DEFAULT_WRAP_LINES
@@ -52,10 +51,7 @@ def render(
     artifact = _load(input_path)
     if artifact is None:
         return 2
-    failure = output.emit(artifact, fmt=Format.TABLE, limit=limit, wrap=wrap)
-    if isinstance(failure, Failure):
-        logger.error(failure.reason)
-        return 1
+    output.write_table(*artifact.rows(), limit=limit, wrap=wrap)
     return 0
 
 

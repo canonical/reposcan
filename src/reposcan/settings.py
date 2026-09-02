@@ -75,7 +75,7 @@ def _resolve_one(
         present.append(("cli", cli_values[param.name]))
     ambient: list[tuple[str, Any]] = []
     if not (param.positional or param.remainder or param.name in _NO_ENV_KEYS):
-        ambient.append(("env", env.get(_env_var(param.name))))
+        ambient.append(("env", env.get(param.env_var or _env_var(param.name))))
     if param.name in _CONFIG_KEYS:
         ambient.append(("config", config.get(param.name)))
     for source, raw in ambient:

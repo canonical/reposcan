@@ -18,6 +18,9 @@ requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 dependencies = []
 
+[project.optional-dependencies]
+service = ["requests>=2.31"]
+
 [project.scripts]
 reposcan = "reposcan.app:main"
 
@@ -79,6 +82,7 @@ deps = [
     "-r{tox_root}/requirements/typecheck.txt",
     "-r{tox_root}/requirements/test.txt",
 ]
+extras = ["service"]
 commands = [
     [
       "basedpyright",
@@ -92,6 +96,7 @@ commands = [
 factors = [["py310", "py312", "py314"]]
 description = "Run unit tests"
 deps = ["-r{tox_root}/requirements/test.txt"]
+extras = ["service"]
 recreate = true  # Recreate tox env on each run
 commands = [["pytest", { replace = "posargs", default = [], extend = true }]]
 

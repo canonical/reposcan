@@ -12,10 +12,7 @@ from contextlib import redirect_stdout
 
 from reposcan import table
 from reposcan.execution.process import Failure
-from reposcan.output import (
-    Format,
-    emit,
-)
+from reposcan.output import write_json, write_table
 from reposcan.scans import cyclonedx, sarif
 
 
@@ -35,7 +32,7 @@ def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> N
     doc = _sarif("note", "error")  # deliberately out of severity order
     out = io.StringIO()
     with redirect_stdout(out):
-        assert emit(doc) is None  # stdout default is a table
+        assert write_table(*doc.rows()) is None  # stdout default is a table
     text = out.getvalue()
     assert "LEVEL" in text and "app.py:1" in text  # its columns and finding data
     rows = [line.split()[0] for line in text.splitlines() if ".py:" in line]
@@ -43,12 +40,14 @@ def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> N
 
     out = io.StringIO()
     with redirect_stdout(out):
-        emit(doc, fmt=Format.JSON)  # --format overrides the stdout default
+        # --format overrides the stdout default
+        write_json(doc.to_dict())
     assert json.loads(out.getvalue())["version"] == "2.1.0"
 
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "r.sarif")
-        assert emit(doc, output=path) is None  # a file defaults to JSON
+        # a file defaults to JSON
+        assert write_json(doc.to_dict(), path) is None
         with open(path) as handle:
             assert json.loads(handle.read())["version"] == "2.1.0"
 
@@ -99,14 +98,15 @@ def test_sbom_renders_a_component_table() -> None:
     )
     out = io.StringIO()
     with redirect_stdout(out):
-        emit(doc)
+        write_table(*doc.rows())
     assert "COMPONENT" in out.getvalue() and "flask" in out.getvalue()
 
 
 def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None:
     out = io.StringIO()
     with redirect_stdout(out):
-        emit(_sarif(*["warning"] * 5), limit=2)
+        doc = _sarif(*["warning"] * 5)
+        write_table(*doc.rows(), limit=2)
     assert len([line for line in out.getvalue().splitlines() if "app.py:" in line]) == 2
 
     long = " ".join(f"word{i}" for i in range(300))
@@ -121,9 +121,9 @@ def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None
     )
     single, wrapped = io.StringIO(), io.StringIO()
     with redirect_stdout(single):
-        emit(doc, wrap=1)
+        write_table(*doc.rows(), wrap=1)
     with redirect_stdout(wrapped):
-        emit(doc)  # wrapping is on by default
+        write_table(*doc.rows())  # wrapping is on by default
     columns = shutil.get_terminal_size(fallback=(80, 24)).columns
     single_rows, wrapped_rows = (
         single.getvalue().splitlines(),
@@ -136,12 +136,13 @@ def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None
         assert len(line) <= columns  # no line is wider than the terminal
 
 
-def test_emit_refuses_to_overwrite_an_existing_file() -> None:
+def test_writing_refuses_to_overwrite_an_existing_file() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "report.sarif")
         with open(path, "w") as handle:
             handle.write("existing")
-        result = emit(_sarif("warning"), output=path)
+        doc = _sarif("warning")
+        result = write_json(doc.to_dict(), path)
         assert isinstance(result, Failure) and "already exists" in result.reason
         with open(path) as handle:
             assert handle.read() == "existing"  # left untouched

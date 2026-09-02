@@ -13,15 +13,18 @@ host, but that is discouraged and not used here. Installing the CLI needs Python
 
 ## Install the CLI
 
-Install `reposcan` directly from the repository with pipx or uv. It has no
-runtime Python dependencies.
+Install `reposcan` directly from the repository with pipx or uv:
 
-    pipx install git+https://github.com/canonical/reposcan
-    # or: uv tool install git+https://github.com/canonical/reposcan
+```
+pipx install git+https://github.com/canonical/reposcan
+# or: uv tool install git+https://github.com/canonical/reposcan
+```
 
 Confirm it is on your path:
 
-    reposcan --help
+```
+reposcan --help
+```
 
 ## Run a scan
 
@@ -29,7 +32,9 @@ Point a scan at a repository directory. The first container scan pulls the
 published tool image (a few seconds), or builds it locally with `--image build`;
 later scans reuse it.
 
-    reposcan scan secrets ./path/to/repo
+```
+reposcan scan secrets ./path/to/repo
+```
 
 The `secrets` scan searches the repository's git history for leaked credentials
 with trufflehog. reposcan prints a table of findings and exits 3 when it finds
@@ -40,12 +45,16 @@ any, or 0 when it finds none.
 By default reposcan prints a concise table to stdout. To keep the full,
 machine-readable report, choose a format and write it to a file:
 
-    reposcan scan secrets ./path/to/repo -o findings.sarif
+```
+reposcan scan secrets ./path/to/repo -o findings.sarif
+```
 
-Security scans emit SARIF. The `render` command prints a saved report as a
-table without re-running the scan:
+Security scans emit SARIF. The `render` command prints a saved report as a table
+without re-running the scan:
 
-    reposcan render findings.sarif
+```
+reposcan render findings.sarif
+```
 
 ## Next steps
 
