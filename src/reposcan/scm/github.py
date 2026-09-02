@@ -16,6 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from reposcan.execution.process import Failure
+from reposcan.logging import TRANSIENT
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,9 @@ def get_org_repositories(
         next_url = _next_page(response.headers.get("Link", ""))
         if next_url is None:
             break
-        logger.info("%s: %d repositories so far", org, len(repositories))
+        logger.info(
+            "%s: %d repositories so far", org, len(repositories), extra=TRANSIENT
+        )
         url = next_url
     else:
         logger.warning(
@@ -240,7 +243,9 @@ def get_enterprise_organizations(
         page = organizations.get("pageInfo") or {}
         if not page.get("hasNextPage"):
             break
-        logger.info("%s: %d organizations so far", enterprise, len(orgs))
+        logger.info(
+            "%s: %d organizations so far", enterprise, len(orgs), extra=TRANSIENT
+        )
         cursor = page.get("endCursor")
     else:
         logger.warning(
