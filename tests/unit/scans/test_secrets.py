@@ -33,7 +33,15 @@ def _ctx(git_dir_exit: int = 0) -> ExecutionContext:
 _TRUFFLEHOG_OUTPUT = (
     json.dumps(
         {
-            "SourceMetadata": {"Data": {"Git": {"file": "src/config.py", "line": 10}}},
+            "SourceMetadata": {
+                "Data": {
+                    "Git": {
+                        "file": "src/config.py",
+                        "line": 10,
+                        "commit": "deadbeef",
+                    }
+                }
+            },
             "DetectorName": "AWS",
             "Verified": True,
             "Raw": "AKIAEXAMPLE",
@@ -100,6 +108,8 @@ def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
     assert aws.line == 10
     assert aws.scanners == ["trufflehog"]  # normalized on ingest
     assert github.rule_id == "GitHub" and github.level == "warning"  # unverified
+    assert aws.commit == "deadbeef"
+    assert github.commit == ""
 
 
 def test_create_run_fingerprints_each_finding_by_its_secret() -> None:

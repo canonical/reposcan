@@ -68,7 +68,9 @@ A finding is dropped if it matches a rule. Each rule has the following fields:
   segment, `**` across segments, and `?` matches a single character.
 - `content-regex` (optional): a regular expression matched against the offending
   content. When given, the finding is dropped only if the regex also matches.
-  The content is the finding's line (or the whole file when it has no line). The
+  The content is the finding's line (or the whole file when it has no line). A
+  secrets finding from git history is read from the commit it was found in rather
+  than the working tree, so a rule still matches a line that has since changed. The
   finding is kept if that content cannot be read.
 
 Notes:

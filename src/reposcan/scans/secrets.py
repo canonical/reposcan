@@ -115,12 +115,14 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
     """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
-    uri, line = _finding_location(finding)
+    uri, line, commit = _finding_location(finding)
     message = f"{detector} secret detected" + (" (verified)" if verified else "")
     level = "error" if verified else "warning"
     result = sarif.SarifResult.build(
         detector, message, uri, line, scanner, target, level=level
     )
+    if commit:
+        result.set_commit(commit)
     # RawV2, where a detector sets it, is a more complete/unique form than Raw.
     secret = finding.get("RawV2") or finding.get("Raw") or ""
     if secret:
@@ -130,11 +132,20 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
     return result
 
 
-def _finding_location(finding: dict[str, Any]) -> tuple[str, int]:
-    """The (file, line) of a finding, from whichever source metadata carries it."""
+def _finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
+    """The (file, line, commit) of a finding.
+
+    'commit' is only produced by truffelhog's history mode. trufflehog dedups its
+    findings, so the reported commit is just *a* commit the secret was in, not
+    necessarily the commit that introduced it.
+    """
     data = finding.get("SourceMetadata", {}).get("Data", {})
     if isinstance(data, dict):
         for value in data.values():  # e.g. Git or Filesystem
             if isinstance(value, dict) and value.get("file"):
-                return str(value["file"]), int(value.get("line") or 0)
-    return "", 0
+                return (
+                    str(value["file"]),
+                    int(value.get("line") or 0),
+                    str(value.get("commit") or ""),
+                )
+    return "", 0, ""

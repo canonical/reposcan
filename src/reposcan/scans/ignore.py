@@ -21,18 +21,18 @@ single or double quotes to include whitespace or a `#`; the quotes are removed.
 The optional fourth field is a regular expression. When present, a finding is dropped
 only if -- in addition to the tool, rule, and path matching -- the offending content
 matches the regex. The offending content is the finding's line (or the whole file when
-the finding has no line); if it cannot be read, the finding is kept. Quote the regex
-(e.g. `"uses: creator/"`) when it contains spaces or a `#`.
+the finding has no line), read from the commit the finding names when it names one
+rather than from the working tree; if it cannot be read, the finding is kept. Quote the
+regex (e.g. `"uses: creator/"`) when it contains spaces or a `#`.
 """
 
 import logging
-import posixpath
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from reposcan.execution.context import ExecutionContext, read_file
+from reposcan.execution.context import ExecutionContext
 from reposcan.scans import sarif
 
 logger = logging.getLogger(__name__)
@@ -192,9 +192,9 @@ def _offending_line(
 
     The line the finding points to, or the whole file when it has no line.
     """
-    if not finding.uri or ctx is None:
+    if ctx is None:
         return None
-    text = read_file(ctx, posixpath.join(target, finding.uri))
+    text = sarif.read_source(ctx, target, finding)
     if text is None:
         return None
     if finding.line <= 0:

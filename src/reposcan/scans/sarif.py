@@ -13,15 +13,20 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from reposcan.execution.context import ExecutionContext, read_file
+from reposcan.execution.process import succeeded
 from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
 from reposcan.scans.repo import PROPERTY_SCHEMA, RepositoryState
 
 logger = logging.getLogger(__name__)
 
-# Namespaced so reposcan's own invocations can be told from another producer's.
+# Namespaced so reposcan properties can be differentiated
 _SCHEMA_PROPERTY = "reposcan:schema"
 _REPOSITORY_PROPERTY = "reposcan:repository"
 _ANALYSIS_PROPERTY = "reposcan:analysis"
+# SARIF's run-level `versionControlProvenance` is used to store the git state at which
+# the scan was performed; the commit property is used to store a scanner-annotated
+# commit, e.g. a historical secret-containing commit reported by trufflehog
+_COMMIT_PROPERTY = "reposcan:commit"
 _TOOL_PROPERTY = "reposcan:tool"
 _VERSION_PROPERTY = "reposcan:version"
 _ARGS_PROPERTY = "reposcan:args"
@@ -127,6 +132,14 @@ class SarifResult:
     def key(self) -> tuple[str, str, int]:
         """A dedup key: the finding's rule and primary location."""
         return (self.rule_id, self.uri, self.line)
+
+    @property
+    def commit(self) -> str:
+        """The commit the finding was found in, or empty for the working tree."""
+        return str(self.result.get("properties", {}).get(_COMMIT_PROPERTY, ""))
+
+    def set_commit(self, commit: str) -> None:
+        self.result.setdefault("properties", {})[_COMMIT_PROPERTY] = commit
 
     def add_fingerprint(self, name: str, value: str) -> None:
         """Record a complete fingerprint.
@@ -425,6 +438,21 @@ def _normalize_result(
 # --- fingerprinting: give each finding a stable partial fingerprint ---
 
 
+def read_source(ctx: ExecutionContext, target: str, finding: SarifResult) -> str | None:
+    """The content of a finding's source file, or None if it cannot be read.
+
+    Read from the commit the finding names, if it names one.
+    """
+    if not finding.uri:
+        return None
+    if finding.commit:
+        shown = ctx.run(
+            ["git", "show", f"{finding.commit}:{finding.uri}"], cwd=target or None
+        )
+        return shown.stdout if succeeded(shown) else None
+    return read_file(ctx, finding.uri, cwd=target or None)
+
+
 def add_primarylocationlinehash(
     run: SarifRun, ctx: ExecutionContext, target: str
 ) -> None:
@@ -447,11 +475,7 @@ def add_primarylocationlinehash(
     for finding in run.results():
         if "primaryLocationLineHash" in finding.result.get("partialFingerprints", {}):
             continue
-        content = (
-            read_file(ctx, finding.uri, cwd=target)
-            if finding.uri and finding.line > 0
-            else None
-        )
+        content = read_source(ctx, target, finding) if finding.line > 0 else None
         lines = content.splitlines() if content is not None else []
         line = lines[finding.line - 1].strip() if 0 < finding.line <= len(lines) else ""
         if not line:
