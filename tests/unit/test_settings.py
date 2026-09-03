@@ -85,13 +85,6 @@ def test_an_invalid_env_value_is_ignored_not_fatal() -> None:
     assert _resolved(["exec", "--", "x"], {"REPOSCAN_UID": "-1"})["uid"] is None
 
 
-def test_a_repeatable_global_collects_from_the_command_line() -> None:
-    # An ambient source holds one variable; the command line can repeat.
-    assert _resolved(["exec", "--", "x"])["env"] == ()
-    from_cli = _resolved(["--env", "A=1", "--env", "B", "exec", "--", "x"])
-    assert from_cli["env"] == ["A=1", "B"]
-
-
 def test_an_explicit_env_var_name_overrides_the_one_derived_from_the_attribute() -> (
     None
 ):

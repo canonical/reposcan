@@ -134,6 +134,7 @@ def option(
     choices: tuple[T, ...] | None = None,
     convert: Callable[[str], T] | None = None,
     many: bool = False,
+    required: bool = False,
     help: str = "",
     requires: dict[str, str | tuple[str, ...]] | None = None,
     env_var: str = "",
@@ -143,7 +144,8 @@ def option(
     The long flag `--<name>` is inferred from the attribute name; `extra_flags` are
     additional spellings (a short form, or aliases), given as a single flag or an
     iterable: `verbosity: str = option("-v", ...)` accepts both `-v` and
-    `--verbosity`. `many=True` makes the option repeatable, collecting each
+    `--verbosity`. `required=True` ensures a usage error if the param is not specified.
+    `many=True` makes the option repeatable, collecting each
     occurrence into a list. `env_var` is not used by cli_kit, but may be used by
     the optional resolver. Pass `name` to declare the option as data rather than as
     a class attribute. `requires` maps another parameter to the value(s) it must have
@@ -156,6 +158,7 @@ def option(
         choices=choices,
         convert=convert,
         many=many,
+        required=required,
         help=help,
         requires=requires,
         env_var=env_var,
@@ -238,6 +241,14 @@ def params_of(cls: type) -> list[Param]:
     for param in getattr(cls, "extra_options", ()):
         found.setdefault(param.name, param)
     return list(found.values())
+
+
+def check_required(params: list[Param], values: Mapping[str, Any]) -> str | None:
+    """Name the first required parameter left without a value, or None."""
+    for param in params:
+        if param.required and not param.positional and values.get(param.name) is None:
+            return f"missing option: {param.flags[-1]}"
+    return None
 
 
 def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | None:
@@ -390,6 +401,10 @@ class Cli:
             resolved = self.resolve(parsed.scope, parsed.values)
         # Apply each parameter's default for anything unresolved
         values = {p.name: resolved.get(p.name, p.default) for p in parsed.scope}
+        missing = check_required(parsed.scope, values)
+        if missing is not None:
+            print(f"{parsed.prog}: {missing}", file=sys.stderr)
+            return 2
         requirement = check_requires(parsed.scope, values)
         if requirement is not None:  # an unmet cross-option dependency is a usage error
             print(f"{parsed.prog}: {requirement}", file=sys.stderr)

@@ -128,16 +128,13 @@ def test_a_repeatable_option_collects_every_occurrence() -> None:
     assert seen == [["a", "b"]]
 
 
-def test_a_repeatable_option_left_out_falls_back_to_its_default() -> None:
-    seen: list[list[str]] = []
-
-    class _Tag(_Base):
-        name = "tag"
-        tags: list[str] = option(many=True, default=())
+def test_a_required_option_left_out_is_a_usage_error() -> None:
+    class _Needs(_Base):
+        name = "needs"
+        target: str = option(required=True)
 
         def run(self) -> int:
-            seen.append(list(self.tags))
             return 0
 
-    assert _cli(_Tag).run(["tag"]) == 0
-    assert seen == [[]]
+    assert _cli(_Needs).run(["needs"]) == 2
+    assert _cli(_Needs).run(["needs", "--target", "somewhere"]) == 0

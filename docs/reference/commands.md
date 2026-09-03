@@ -183,34 +183,42 @@ See [use a published image](../how-to/use-a-published-image.md).
 A command group for interacting with GitHub repositories. Needs the `service`
 extra: `pipx install "reposcan[service]"`.
 
-Every `gh` command supports (and requires) `--org`, `--enterprise`, or both;
-giving neither is a usage error.
+`gh` commands are authenticated with `REPOSCAN_GH_TOKEN` or `--token-file`/
+`REPOSCAN_GH_TOKEN_FILE`. Without a token, API requests are anonymous, and only
+find public repositories and have a much lower rate limit.
+
+`gh` commands support repository filters:
+
+- `--include-archived`: also take archived repositories, skipped by default.
+- `--exclude-forks`: skip forks, which are taken by default.
+- `--exclude <GLOB,GLOB>`: skip repositories whose `owner/name` matches a glob.
+
+Disabled repositories are never included.
+
+### list-repos
+
+`reposcan gh list-repos` lists repositories discovered from `--org` or
+`--enterprise` is required. Options:
 
 - `--org <NAME>`: an organization to read. Env var: `REPOSCAN_GH_ORG`.
 - `--enterprise <SLUG>`: an enterprise whose organizations to read. Env var:
-  `REPOSCAN_GH_ENTERPRISE`.
-- `REPOSCAN_GH_TOKEN`: the actual token. Preferred, and used whenever it is set.
-- `--token-file <FILE>`: read a GitHub token from `FILE`, used only when
-  `REPOSCAN_GH_TOKEN` is unset. Env var: `REPOSCAN_GH_TOKEN_FILE`.
-
-Without a token, API requests are anonymous, so they find only public
-repositories and have a much smaller rate limit.
-
-`reposcan gh list-repos` lists repositories, one per line with its default
-branch and clone URL. Additional options:
-
-- `--include-archived`: also list archived repositories, skipped by default.
-- `--exclude-forks`: skip forks, which are listed by default.
-- `--exclude <GLOB,GLOB>`: skip repositories whose `owner/name` matches a glob.
+  `REPOSCAN_GH_ENTERPRISE`
 - `-o, --output <FILE>`: write selected repositories to `FILE` as JSON.
 - `-f, --format <fmt>`: `table` (the default) or `json`, for stdout only.
 - `-n, --limit <N>`: maximum table rows shown (default 20).
 - `--wrap <N>`: maximum lines a long table cell may wrap across (default 4).
 
-Disabled repositories are never listed; they cannot be cloned.
+### clone-repos
 
-Exit codes: `0` on success, `1` when GitHub could not be read or the extra is
-not installed, `2` for a usage error.
+`reposcan gh clone-repos --workspace <DIR>` clones or syncs a local copy of each
+selected repository under `DIR`. Each repository is cloned as a bare mirror in
+`DIR/mirrors` and its default branch is checked out as a worktree in
+`DIR/worktrees/`.
+
+The repositories to clone are discovered via `--org`, `--enterprise`, or
+`--repo <OWNER/NAME>` (repeatable).
+
+`--threads <N>` sets how many repositories are cloned at once (default 5).
 
 ## config
 

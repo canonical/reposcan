@@ -26,7 +26,11 @@ class Format(str, Enum):
 
 
 def write_json(document: Any, output: str | None = None) -> Failure | None:
-    """Write `document` as JSON to the file at `output`, or to stdout when None.
+    """Write `document` as JSON.
+
+    Args:
+        document: The JSON-serializable value to write.
+        output: A file to write to, or None for stdout.
 
     Returns:
         None on success, or a Failure if the output file already exists (it is not
