@@ -11,7 +11,24 @@ import tempfile
 from pathlib import Path
 
 from reposcan.execution.process import Failure, run_process, succeeded
-from reposcan.image.build_spec import NAME, BuildSpec
+from reposcan.image.spec import NAME, BuildSpec
+
+
+def image_identity(reference: str) -> str | None:
+    """Read the Docker image ID (content hash) of `reference`."""
+    argv = ["docker", "image", "inspect", "--format", "{{.Id}}", reference]
+    result = run_process(argv, timeout=30)
+    if succeeded(result):
+        return result.stdout.strip() or None
+    return None
+
+
+def pull(ref: str) -> Failure | None:
+    """Docker-pull `ref`."""
+    result = run_process(
+        ["docker", "pull", ref], check=True, stream_stdout=True, stream_stderr=True
+    )
+    return result if isinstance(result, Failure) else None
 
 
 class DockerImageBuilder:
@@ -23,12 +40,7 @@ class DockerImageBuilder:
         return f"{NAME}:{spec.short_digest}"
 
     def identity(self, reference: str) -> str | None:
-        # The image ID (a sha256) is Docker's content hash of the image.
-        argv = ["docker", "image", "inspect", "--format", "{{.Id}}", reference]
-        result = run_process(argv, timeout=30)
-        if succeeded(result):
-            return result.stdout.strip() or None
-        return None
+        return image_identity(reference)
 
     def build(self, spec: BuildSpec) -> str | Failure:
         # Build context: a temp dir with the install script and a Dockerfile that

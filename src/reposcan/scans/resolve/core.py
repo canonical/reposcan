@@ -34,7 +34,7 @@ def resolve_dependencies(
     ctx: ExecutionContext,
     target: str,
     tool_root: str,
-    resolved_parent: str,
+    resolution_workdir: str,
     *,
     allow_code_execution: bool = False,
 ) -> str:
@@ -49,7 +49,7 @@ def resolve_dependencies(
         ctx: The started context to run the resolvers in.
         target: The (read-only) repository path as seen in the context.
         tool_root: Where the tools are installed in the context.
-        resolved_parent: The directory to copy the repo under (from the backend).
+        resolution_workdir: The directory to copy the repo under (from the backend).
         allow_code_execution: Permit building source packages to resolve
             source-only dependencies (runs untrusted code).
 
@@ -65,11 +65,11 @@ def resolve_dependencies(
     ]
     if not plans:
         return target
-    # Copy under `resolved_parent` in a scratch directory keyed to the target, keeping
-    # the repo's own name as the last component so scan-output locations still read as
+    # Copy under `resolution_workdir` in a scratch directory keyed to the target,
+    # keeping the repo's own name as the last component so scan-output locations read as
     # "<repo>/...". The key separates two repositories of the same name.
     scratch = hashlib.sha256(target.encode()).hexdigest()[:12]
-    dest = f"{resolved_parent}/{scratch}/{os.path.basename(target.rstrip('/'))}"
+    dest = f"{resolution_workdir}/{scratch}/{os.path.basename(target.rstrip('/'))}"
     if not _copy_repo(ctx, target, dest):
         return target
     for resolver, directory in plans:

@@ -10,10 +10,10 @@ from reposcan.execution.process import ExecResult, Failure
 from reposcan.scans.resolve import resolve_dependencies
 
 TARGET = "/scan/acme"
-RESOLVED_PARENT = "/resolved-deps"
+RESOLUTION_WORKDIR = "/resolved-deps"
 TOOL_ROOT = "/opt/reposcan"
 _SCRATCH = hashlib.sha256(TARGET.encode()).hexdigest()[:12]
-DEST = f"{RESOLVED_PARENT}/{_SCRATCH}/acme"
+DEST = f"{RESOLUTION_WORKDIR}/{_SCRATCH}/acme"
 
 
 def _z(*paths: str) -> str:
@@ -90,7 +90,7 @@ def test_compiles_exactly_the_resolvable_python_inputs_at_any_depth() -> None:
         },
     )
 
-    result = resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT)
+    result = resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR)
 
     assert result == DEST
     assert ctx.compiled() == [
@@ -112,7 +112,7 @@ def test_allow_code_execution_retries_with_source_builds() -> None:
     )
 
     resolve_dependencies(
-        ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT, allow_code_execution=True
+        ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR, allow_code_execution=True
     )
 
     attempts = [cmd for cmd, _ in ctx.runs if "compile" in cmd]
@@ -130,7 +130,9 @@ def test_leaves_target_unchanged_without_resolvable_python() -> None:
             return super().run(command, **kwargs)
 
     for ctx in (_FakeContext(_z("README.md", "src/app.go")), _NoGit(_z())):
-        assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == TARGET
+        assert (
+            resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
+        )
         assert not ctx.copied()
 
 
@@ -142,7 +144,7 @@ def test_resolves_a_legacy_poetry_project() -> None:
         files={f"{DEST}/pyproject.toml": "[tool.poetry]\nname = 'acme'\n"},
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == DEST
+    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
     ran = [cmd for cmd, _ in ctx.runs]
     poetry = f"{TOOL_ROOT}/bin/poetry"
     assert [poetry, "lock"] in ran and any(cmd[:2] == [poetry, "export"] for cmd in ran)
@@ -157,7 +159,7 @@ def test_poetry_defers_to_uv_when_pep621_metadata_is_present() -> None:
         files={f"{DEST}/pyproject.toml": "[project]\nname = 'acme'\n[tool.poetry]\n"},
     )
 
-    resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT)
+    resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR)
     assert ctx.compiled() == [("pyproject.toml", DEST)]
     assert not any("poetry" in cmd[0] for cmd, _ in ctx.runs)
 
@@ -167,7 +169,7 @@ def test_resolves_a_pipenv_project_writing_the_captured_requirements() -> None:
     # written to a *requirements*.txt (pipenv has no output flag).
     ctx = _FakeContext(_z("Pipfile"), files={f"{DEST}/Pipfile": "[packages]\n"})
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == DEST
+    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
     ran = [cmd for cmd, _ in ctx.runs]
     pipenv = f"{TOOL_ROOT}/bin/pipenv"
     assert [pipenv, "lock"] in ran and [pipenv, "requirements"] in ran
@@ -185,7 +187,7 @@ def test_skips_poetry_and_pipenv_directories_that_are_already_locked() -> None:
         files={f"{DEST}/pyproject.toml": "[tool.poetry]\n"},
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == TARGET
+    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
     assert not ctx.copied()
 
 
@@ -195,7 +197,7 @@ def test_resolves_js_projects_dispatching_npm_and_pnpm() -> None:
         _z("package.json", "svc/package.json", "svc/pnpm-workspace.yaml")
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == DEST
+    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
     npm = [f"{TOOL_ROOT}/bin/npm", "install", "--package-lock-only", "--ignore-scripts"]
     pnpm = [f"{TOOL_ROOT}/bin/pnpm", "install", "--lockfile-only", "--ignore-scripts"]
     assert (npm, DEST) in ctx.runs
@@ -214,5 +216,5 @@ def test_skips_js_directories_that_are_already_locked() -> None:
         )
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLVED_PARENT) == TARGET
+    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
     assert not ctx.copied()

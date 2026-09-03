@@ -1,0 +1,163 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+"""Tests for reposcan.image.ensure."""
+
+import os
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+
+import reposcan.image.docker as docker
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.docker import DockerImageBuilder
+from reposcan.image.ensure import ensure_built, ensure_pulled
+from reposcan.image.spec import BuildSpec
+
+_SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
+
+
+@contextmanager
+def _isolated_cache() -> Iterator[None]:
+    saved = os.environ.get("XDG_DATA_HOME")
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["XDG_DATA_HOME"] = tmp
+        try:
+            yield
+        finally:
+            if saved is None:
+                os.environ.pop("XDG_DATA_HOME", None)
+            else:
+                os.environ["XDG_DATA_HOME"] = saved
+
+
+class _FakeBuilder(DockerImageBuilder):
+    """A DockerImageBuilder whose identity and builds are scripted.
+
+    A build makes the image report identity "built-id".
+    """
+
+    name = "fake"
+
+    def __init__(self, *, identity: str | None) -> None:
+        self._id = identity  # identity currently reported, None if absent
+        self.builds = 0
+
+    def reference(self, spec: BuildSpec) -> str:
+        return "img:abc"
+
+    def identity(self, reference: str) -> str | None:
+        return self._id
+
+    def build(self, spec: BuildSpec) -> str:
+        self.builds += 1
+        self._id = "built-id"
+        return "img:abc"
+
+
+class _FakeDocker:
+    """Stands in for the docker CLI, answering `pull` and `image inspect`.
+
+    `identity` is what an inspect reports once the image is present. With
+    `present=False` the image is absent until a pull runs, mirroring a real pull; a
+    test moves a tag by reassigning `identity`.
+    """
+
+    def __init__(
+        self,
+        *,
+        identity: str | None,
+        present: bool = True,
+        pull_error: Failure | None = None,
+    ) -> None:
+        self.identity = identity
+        self.present = present
+        self.pull_error = pull_error
+        self.pulls = 0
+
+    def __call__(
+        self, command: Sequence[str], **kwargs: object
+    ) -> ExecResult | Failure:
+        argv = list(command)
+        if argv[:2] == ["docker", "pull"]:
+            self.pulls += 1
+            if self.pull_error is not None:
+                return self.pull_error
+            self.present = True
+            return ExecResult(0, "", "")
+        if argv[:3] == ["docker", "image", "inspect"]:
+            if not self.present or self.identity is None:
+                return ExecResult(1, "", "No such image")
+            return ExecResult(0, f"{self.identity}\n", "")
+        raise AssertionError(f"unexpected command: {argv}")
+
+
+@contextmanager
+def _docker(fake: _FakeDocker) -> Iterator[_FakeDocker]:
+    """Run the pull path against `fake` instead of the real docker CLI."""
+    saved = docker.run_process
+    docker.run_process = fake
+    try:
+        yield fake
+    finally:
+        docker.run_process = saved
+
+
+def test_a_build_is_reused_until_its_identity_stops_matching() -> None:
+    with _isolated_cache():
+        builder = _FakeBuilder(identity=None)
+        assert ensure_built(builder, _SPEC) == "img:abc"
+        assert builder.builds == 1  # built because absent, identity recorded
+        assert ensure_built(builder, _SPEC) == "img:abc"
+        assert builder.builds == 1  # verified against the record, reused
+        builder._id = "tampered"  # present hash no longer matches the record
+        assert ensure_built(builder, _SPEC) == "img:abc"
+        assert builder.builds == 2  # rebuilt: present hash != recorded identity
+        assert ensure_built(builder, _SPEC, force=True) == "img:abc"
+        assert builder.builds == 3  # force rebuilds even a now-verified image
+
+
+def test_a_tag_is_pinned_on_first_use_and_refused_once_it_moves() -> None:
+    with (
+        _isolated_cache(),
+        _docker(_FakeDocker(identity="sha256:aaa", present=False)) as docker,
+    ):
+        ref = "ghcr.io/acme/thing:latest"
+        assert ensure_pulled(ref) == ref  # first use records the id
+        assert ensure_pulled(ref) == ref  # same id, reused
+        # A tag can move on the registry, so it is pulled every time to re-confirm:
+        # the local fast path is digest-only.
+        assert docker.pulls == 2
+        docker.identity = "sha256:bbb"  # the tag now points at a different image
+        result = ensure_pulled(ref)
+        assert isinstance(result, Failure)
+        assert "changed since first use" in result.reason
+
+
+def test_a_digest_ref_is_pulled_once_then_trusted_locally() -> None:
+    with (
+        _isolated_cache(),
+        _docker(_FakeDocker(identity="sha256:aaa", present=False)) as docker,
+    ):
+        ref = "ghcr.io/acme/thing@sha256:" + "a" * 64
+        assert ensure_pulled(ref) == ref  # absent, so the fast path declines
+        assert docker.pulls == 1
+        docker.identity = "sha256:bbb"  # a differing id never matters for a digest ref
+        assert ensure_pulled(ref) == ref  # present now: verified locally, no pull
+        assert docker.pulls == 1
+
+
+def test_pull_failures_are_returned() -> None:
+    ref = "ghcr.io/acme/thing@sha256:" + "a" * 64
+    unreachable = _FakeDocker(
+        identity=None, present=False, pull_error=Failure(reason="no network")
+    )
+    with _isolated_cache(), _docker(unreachable):
+        result = ensure_pulled(ref)
+        assert isinstance(result, Failure) and "no network" in result.reason
+    # The pull "succeeds" but the image is still not inspectable: a Failure, not a
+    # fall-through to a stale local state.
+    with _isolated_cache(), _docker(_FakeDocker(identity=None, present=False)):
+        result = ensure_pulled(ref)
+        assert isinstance(result, Failure)
+        assert "not present after pull" in result.reason

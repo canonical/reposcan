@@ -5,9 +5,10 @@
 
 Each SARIF scan (secrets/sast/iac/workflow/sca) has a fixture at fixtures/<name>.py
 exposing SCAN, plant, and verify. The docker test runs each registered scan against its
-planted content in the built tool image; the coverage test checks every scan reposcan
-defines has a fixture and is wired to a command. The docker test fails (never skips)
-when docker is unavailable. (The SBOM is covered separately, in test_sbom_fixtures.)
+planted content in the built reposcan image; the coverage test checks every scan
+reposcan defines has a fixture and is wired to a command. The docker test fails
+(never skips) when docker is unavailable. (The SBOM is covered separately, in
+test_sbom_fixtures.)
 """
 
 import logging

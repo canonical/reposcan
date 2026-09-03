@@ -26,9 +26,12 @@ from pathlib import Path
 
 import pytest
 
-from reposcan.backends import DockerBackend, LxdBackend
+from reposcan.backends import BACKENDS
 from reposcan.execution.context import ExecutionContext, mounted_target
+from reposcan.execution.docker import DockerContext
+from reposcan.execution.lxd import LxdContext
 from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.spec import BASE_IMAGE
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +62,14 @@ def _exercise_lifecycle(ctx: ExecutionContext) -> None:
 
 
 def test_docker_context_lifecycle() -> None:
-    backend = DockerBackend()
+    backend = BACKENDS["docker"]
     availability = backend.availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"docker unavailable: {availability.reason}")
 
     logger.info("[docker] starting ubuntu:26.04 container")
-    ctx = backend.context()
+    ctx = DockerContext(BASE_IMAGE)
     started = ctx.start()
     assert started is None, f"docker run failed: {started}"
     try:
@@ -79,7 +82,7 @@ def test_docker_context_lifecycle() -> None:
 
 
 def test_docker_context_mounts_a_source_read_only() -> None:
-    backend = DockerBackend()
+    backend = BACKENDS["docker"]
     availability = backend.availability()
     if not availability.ok:
         logger.warning(availability.reason)
@@ -89,7 +92,7 @@ def test_docker_context_mounts_a_source_read_only() -> None:
         Path(source, "marker.txt").write_text("hello")
         target = mounted_target(source)
         logger.info("[docker] mounting %s at %s", source, target)
-        ctx = backend.context(mount_source=source)
+        ctx = DockerContext(BASE_IMAGE, mount_source=source)
         assert ctx.start() is None
         try:
             # The mounted file is visible inside the container at the kept-name path.
@@ -104,14 +107,14 @@ def test_docker_context_mounts_a_source_read_only() -> None:
 
 
 def test_lxd_context_lifecycle() -> None:
-    backend = LxdBackend()
+    backend = BACKENDS["lxd"]
     availability = backend.availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"lxd unavailable: {availability.reason}")
 
     logger.info("[lxd] launching ubuntu:26.04 container (may download the image)")
-    ctx = backend.context()
+    ctx = LxdContext(BASE_IMAGE)
     started = ctx.start()
     # If this fails right after launch, the container may not be ready to exec yet
     # and LxdContext.start would need a readiness wait.

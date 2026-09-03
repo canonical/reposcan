@@ -120,9 +120,11 @@ is used), and pnpm 11.21.0.
 Discovery uses one `git ls-files` on the target, which lists every tracked
 manifest at any depth so that git-ignored build directories such as `.venv` and
 `node_modules` are never mistaken for sources. Because the repository mount is
-read-only, reposcan copies the repository to `/resolved-deps/<repo-name>`,
+read-only, reposcan copies the repository to `/resolved-deps/<key>/<repo-name>`,
 writes the generated lockfiles into that copy, and runs the scan against the
-copy; the name is preserved so finding locations still read as `<repo>/...`. The
+copy; the name is preserved so finding locations still read as `<repo>/...`, and
+the key (a digest of the source path) keeps two repositories of the same name
+apart when scans run concurrently. The
 step is best-effort, so any failure -- no network, an unsatisfiable resolve, or
 a manifest no package manager handles -- leaves that manifest unchanged and the
 scan still runs, falling back to the lockfile-or-nothing behavior described

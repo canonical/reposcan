@@ -13,7 +13,7 @@ inferred from its name, so only the short `-v` is spelled out here.
 import re
 from collections.abc import Sequence
 
-from reposcan.backends import BACKEND_NAMES
+from reposcan.backends import AUTO, BACKENDS
 from reposcan.cli_kit import Action as _Action
 from reposcan.cli_kit import option
 from reposcan.logging import LOG_LEVELS
@@ -50,8 +50,8 @@ def _parse_image(value: str) -> str:
 
 class Action(_Action):
     backend: str = option(
-        default="auto",
-        choices=BACKEND_NAMES,
+        default=AUTO,
+        choices=(AUTO, *BACKENDS),
         help="The execution backend tools run in.",
     )
     verbosity: str = option(

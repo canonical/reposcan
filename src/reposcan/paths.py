@@ -22,11 +22,11 @@ def _cache_home() -> Path:
     return Path(base) / "reposcan"
 
 
-def resolve_cache() -> Path:
+def resolution_workdir() -> Path:
     """Where the local backend copies a repo to resolve its dependencies.
 
     $XDG_CACHE_HOME/reposcan/resolved (default ~/.cache/reposcan/resolved). Container
-    backends use an in-image directory instead (see RESOLVED_PARENT).
+    backends use an in-image directory instead (see RESOLUTION_WORKDIR).
     """
     return _cache_home() / "resolved"
 

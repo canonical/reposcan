@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from reposcan.execution.context import (
     MOUNT_PARENT,
-    RESOLVED_PARENT,
+    RESOLUTION_WORKDIR,
     SCAN_GID,
     SCAN_UID,
     SCAN_USER,
@@ -30,6 +30,17 @@ NAME = "reposcan"
 # The base image and in-image install location. Both feed the spec digest, so a
 # change to either yields a new image identity.
 BASE_IMAGE = "ubuntu:26.04"
+
+# The `canonical` shorthand: the image reposcan publishes to GHCR (see the
+# publish-image workflow). A user can configure `canonical` instead of the full ref.
+CANONICAL_SHORTHAND = "canonical"
+CANONICAL_REF = (
+    "ghcr.io/canonical/reposcan@sha256:"
+    "4c6a1d4eab499dd0a2a66386ac6fb34aff10020f116fd996d4a4fb50511672bf"
+)
+
+# meta image name for "build locally"
+LOCAL_BUILD_SHORTHAND = "build"
 INSTALL_ROOT = "/opt/reposcan"
 
 # Packages needed at build or scan time that may not be in the base image:
@@ -68,7 +79,7 @@ def build_script(platform: Platform, install_root: str = INSTALL_ROOT) -> str:
         f"git config --system --add safe.directory '{MOUNT_PARENT}/*'",
         # dependency resolution copies the repo here; git ls-files (exclusion) runs on
         # the copy, so trust it too.
-        f"git config --system --add safe.directory '{RESOLVED_PARENT}/*'",
+        f"git config --system --add safe.directory '{RESOLUTION_WORKDIR}/*'",
         # create an unprivileged user for later use
         f"groupadd --gid {SCAN_GID} {SCAN_USER}",
         f"useradd --create-home --uid {SCAN_UID} --gid {SCAN_GID} "
@@ -77,8 +88,8 @@ def build_script(platform: Platform, install_root: str = INSTALL_ROOT) -> str:
         # the resolution copy dir, world-writable (sticky, like /tmp) so the
         # invoking host user can write the repo copy there -- it is not known at
         # build time, and the container is ephemeral and single-tenant.
-        f"mkdir -p {RESOLVED_PARENT}",
-        f"chmod 1777 {RESOLVED_PARENT}",
+        f"mkdir -p {RESOLUTION_WORKDIR}",
+        f"chmod 1777 {RESOLUTION_WORKDIR}",
     ]
     for step in install_plan(
         [*TOOLS.values(), *RESOLVER_TOOLS], platform, install_root

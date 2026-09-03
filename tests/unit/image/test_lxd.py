@@ -13,7 +13,7 @@ from contextlib import contextmanager
 
 import reposcan.image.lxd as lxd
 from reposcan.execution.process import ExecResult, Failure
-from reposcan.image.build_spec import BuildSpec
+from reposcan.image.spec import BuildSpec
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = lxd.LxdImageBuilder()

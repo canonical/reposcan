@@ -4,7 +4,7 @@
 """Test the database with a real scan.
 
 This plants a real repository, runs `reposcan scan` against it in the
-real tool image, and checks what the command wrote (a SARIF report on disk and an
+real reposcan image, and checks what the command wrote (a SARIF report on disk and an
 analysis in a database).
 
 Excluded from the default unit run; invoke explicitly:

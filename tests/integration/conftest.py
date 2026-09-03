@@ -3,7 +3,7 @@
 
 """Pytest options shared by the integration tests.
 
-Adds `--short`: reuse an already-built tool image when it still verifies, instead
+Adds `--short`: reuse an already-built reposcan image when it still verifies, instead
 of forcing a fresh rebuild. The LXD image build is slow, so this makes local
 re-runs quick once the image exists. The tests read it with
 `request.config.getoption("--short")`.
@@ -21,6 +21,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--short",
         action="store_true",
         default=False,
-        help="Reuse an existing tool image if it still verifies, instead of "
+        help="Reuse an existing reposcan image if it still verifies, instead of "
         "forcing a rebuild (skips the slow LXD image build).",
     )

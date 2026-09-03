@@ -220,7 +220,7 @@ container gets its tools from the reposcan image, so `--backend docker` or
 
 ### image
 
-- `reposcan image build [--backend <name>]`: build (or rebuild) the tool image
+- `reposcan image build [--backend <name>]`: build (or rebuild) the reposcan image
   and print its reference. Reuses an existing image when nothing changed.
 - `reposcan image cache list`: list the recorded built and pulled images.
 - `reposcan image cache remove <reference>`: remove one record.
@@ -239,7 +239,7 @@ reposcan exec -- trivy --version
 reposcan exec -- semgrep -h
 ```
 
-The scanning tools are symlinked onto `/usr/local/bin` in the tool image, so
+The scanning tools are symlinked onto `/usr/local/bin` in the reposcan image, so
 they are on `PATH` and can be run by name. Use `reposcan list-tools` to list
 them.
 

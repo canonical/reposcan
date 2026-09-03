@@ -14,7 +14,7 @@ from pathlib import Path
 from types import ModuleType
 
 import reposcan.scans as scans_pkg
-from reposcan.backends import DockerBackend, Session, start_session
+from reposcan.backends import BACKENDS, Session, start_session
 from reposcan.execution.context import host_user
 from reposcan.scans.base import Scan
 
@@ -54,7 +54,7 @@ def discover_scans() -> dict[str, type[Scan]]:
 
 def require_docker() -> None:
     """Fail (never skip) when docker is unavailable -- fixtures must run for real."""
-    availability = DockerBackend().availability()
+    availability = BACKENDS["docker"].availability()
     assert availability.ok, f"docker unavailable: {availability.reason}"
 
 

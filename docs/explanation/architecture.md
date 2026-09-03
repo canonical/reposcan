@@ -28,7 +28,7 @@ naturally, and run each tool as an unprivileged user (UID 10000) via `setpriv`.
 The local backend runs the tools as the invoking user with no isolation, which
 is why it is discouraged for untrusted repositories.
 
-## The tool image
+## The reposcan image
 
 Every pinned tool is installed into one image, so a container scan starts from a
 single, reproducible environment. The image is content-addressed: its identity

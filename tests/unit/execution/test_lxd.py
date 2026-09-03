@@ -164,7 +164,7 @@ def test_ensure_project_creates_a_missing_project_isolating_images() -> None:
         assert ensure_project() is None
     create = calls[-1]
     assert create[:4] == ["lxc", "project", "create", "reposcan"]
-    assert "features.images=true" in create  # tool image stays out of `default`
+    assert "features.images=true" in create  # reposcan image stays out of `default`
     assert "features.profiles=false" in create  # borrow default's working profile
 
 

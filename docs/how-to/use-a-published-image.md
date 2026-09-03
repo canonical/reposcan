@@ -1,9 +1,9 @@
 # Use a published image
 
-The container backends run scans in a single tool image that holds every pinned
-tool. By default, reposcan pulls a published, digest-pinned image from GHCR on
-first use and reuses it afterward. You can also build the image locally or pull
-a different one.
+The container backends run scans in a custom image containing every required
+scanning tool. By default, reposcan pulls a published, digest-pinned image from
+GHCR on first use and reuses it afterward. You can also build the image locally
+or pull a different one.
 
 ## Run the default published image
 
@@ -42,14 +42,14 @@ reposcan config unset image
 
 ## Build the image locally
 
-Pass `--image build` to build the tool image locally instead:
+Pass `--image build` to build the reposcan image locally instead:
 
 ```
 reposcan --image build sbom ./repo           # build, then inventory
 reposcan config set image build              # persisted
 ```
 
-Build (or rebuild) the tool image without running a scan:
+Build (or rebuild) the reposcan image without running a scan:
 
 ```
 reposcan image build

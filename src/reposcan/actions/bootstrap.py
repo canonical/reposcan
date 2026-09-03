@@ -10,6 +10,7 @@ import logging
 import sys
 
 from reposcan.actions.base import Action
+from reposcan.backends import AUTO
 from reposcan.cli_kit import flag, positional
 from reposcan.execution.context import ExecutionContext, resolved_env
 from reposcan.execution.local import LocalContext
@@ -34,7 +35,7 @@ class BootstrapAction(Action):
 
     def run(self) -> int:
         """Install the requested tools onto this host and return an exit code."""
-        if self.backend not in (None, "auto", "local"):
+        if self.backend not in (None, AUTO, "local"):
             logger.error(
                 "The %s backend was selected, but bootstrap only applies to 'local'.",
                 self.backend,

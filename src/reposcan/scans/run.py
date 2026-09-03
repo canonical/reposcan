@@ -126,7 +126,7 @@ def run_scan(
     target: str,
     tool_root: str,
     *,
-    resolved_parent: str = "",
+    resolution_workdir: str = "",
     stream: bool = False,
 ) -> sarif.SarifRun | Failure:
     """Run a security `scan` against `target`, returning a consolidated SarifRun.
@@ -139,7 +139,7 @@ def run_scan(
             ctx,
             target,
             tool_root,
-            resolved_parent,
+            resolution_workdir,
             allow_code_execution=getattr(scan, "allow_code_execution", False),
         )
     ignored = GitIgnore.from_context(ctx, target)
@@ -173,7 +173,7 @@ def run_sbom_scan(
     target: str,
     tool_root: str,
     *,
-    resolved_parent: str = "",
+    resolution_workdir: str = "",
     stream: bool = False,
 ) -> cyclonedx.CycloneDxDocument | Failure:
     """Generate an SBOM.
@@ -185,7 +185,7 @@ def run_sbom_scan(
         ctx,
         target,
         tool_root,
-        resolved_parent,
+        resolution_workdir,
         allow_code_execution=sbom.allow_code_execution,
     )
     ignored = GitIgnore.from_context(ctx, target)
@@ -240,7 +240,7 @@ def run_analysis(
                 session.context,
                 session.target,
                 session.tool_root,
-                resolved_parent=session.resolved_parent,
+                resolution_workdir=session.resolution_workdir,
                 stream=stream,
             )
             if isinstance(run, Failure):

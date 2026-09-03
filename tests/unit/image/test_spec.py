@@ -1,9 +1,9 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the image build spec (reposcan.image.build_spec)."""
+"""Tests for the image build spec (reposcan.image.spec)."""
 
-from reposcan.image.build_spec import BuildSpec, build_spec
+from reposcan.image.spec import BuildSpec, build_spec
 from reposcan.tools.model import Platform
 
 _LINUX = Platform("linux", "amd64")

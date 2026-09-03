@@ -10,33 +10,33 @@ import logging
 
 import pytest
 
-from reposcan.backends import DockerBackend
+from reposcan.backends import BACKENDS
+from reposcan.execution.docker import DockerContext
 from reposcan.execution.process import ExecResult, Failure
-from reposcan.image.remote import CANONICAL_REF, ensure_pulled
+from reposcan.image.ensure import ensure_pulled
+from reposcan.image.spec import CANONICAL_REF
 from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
+
 
 _TEST_CMD = "trivy"
 
 
 def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
-    backend = DockerBackend()
+    backend = BACKENDS["docker"]
     availability = backend.availability()
     assert availability.ok, f"docker unavailable: {availability.reason}"
 
-    puller = backend.image_puller()
-    assert puller is not None  # DockerBackend can always pull
-
     logger.info("pulling the ghcr image %s", CANONICAL_REF)
-    reference = ensure_pulled(puller, CANONICAL_REF)
+    reference = ensure_pulled(CANONICAL_REF)
     if isinstance(reference, Failure):
         pytest.fail(
             f"could not pull the ghcr image {CANONICAL_REF}: {reference.reason}"
         )
 
     assert isinstance(reference, str)
-    ctx = backend.context(reference)
+    ctx = DockerContext(reference)
     started = ctx.start()
     assert started is None, f"container from the ghcr image failed to start: {started}"
     try:

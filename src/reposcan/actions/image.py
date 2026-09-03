@@ -1,38 +1,41 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan image` group: build the tool image and manage the image cache."""
+"""The `reposcan image` group: build the image and manage the image cache."""
 
 import logging
 import sys
 
 from reposcan.actions.base import Action
-from reposcan.backends import ContainerBackend, select_backend
+from reposcan.backends import select_backend
 from reposcan.cli_kit import Group, flag, positional
 from reposcan.execution.process import Failure
 from reposcan.image import cache
-from reposcan.image.build_spec import build_spec
-from reposcan.image.builder import ImageBuilder, ensure_built
-from reposcan.tools.install import current_platform
 
 logger = logging.getLogger(__name__)
 
 
 class ImageBuild(Action):
     name = "build"
-    help = "Build the tool image on demand for the selected backend; reused if built."
+    help = "Build the reposcan image for the selected backend (it is reused if built)."
 
     force: bool = flag(help="Rebuild even if an image for this spec exists.")
 
     def run(self) -> int:
+        """Build (or reuse) the reposcan image and print its reference."""
         backend = select_backend(self.backend)
         if isinstance(backend, Failure):
             logger.error(backend.reason)
             return 2
-        if not isinstance(backend, ContainerBackend):
+        if not backend.containerized:
             logger.error("the %s backend cannot build images", backend.name)
             return 2
-        return build_image(backend.image_builder(), force=self.force)
+        result = backend.build_image(force=self.force)
+        if isinstance(result, Failure):
+            logger.error(result.reason)
+            return 1
+        sys.stdout.write(f"{result}\n")
+        return 0
 
 
 class CacheList(Action):
@@ -59,20 +62,6 @@ class CacheClear(Action):
 
     def run(self) -> int:
         return clear_cache()
-
-
-def build_image(builder: ImageBuilder, *, force: bool) -> int:
-    """Build (or reuse) the tool image with `builder`.
-
-    Returns 0 with the image reference printed, or 1 if the build failed.
-    """
-    spec = build_spec(current_platform())
-    result = ensure_built(builder, spec, force=force)
-    if isinstance(result, Failure):
-        logger.error(result.reason)
-        return 1
-    sys.stdout.write(f"{result}\n")
-    return 0
 
 
 def list_cache() -> int:
@@ -127,5 +116,5 @@ class CacheGroup(Group):
 
 class ImageGroup(Group):
     name = "image"
-    help = "Build the tool image and manage the image cache."
+    help = "Build the reposcan image and manage the image cache."
     subcommands = (ImageBuild, CacheGroup)

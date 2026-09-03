@@ -41,7 +41,7 @@ def scan_repositories(
         scan_names: The scan types to run against each.
         db: The database to record every analysis in.
         backend: The execution backend, or None to select one.
-        image: The tool image, or None for the default.
+        image: The reposcan image, or None for the default.
         user: The identity in-container processes run as.
         env: Extra environment variables for in-container processes.
         threads: How many repositories to scan at once.

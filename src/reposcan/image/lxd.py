@@ -16,7 +16,7 @@ import tempfile
 from reposcan.execution.firewall import lxd_bridge_hint
 from reposcan.execution.lxd import LXC, ensure_project
 from reposcan.execution.process import ExecResult, Failure, run_process, succeeded
-from reposcan.image.build_spec import NAME, BuildSpec
+from reposcan.image.spec import NAME, BuildSpec
 
 logger = logging.getLogger(__name__)
 

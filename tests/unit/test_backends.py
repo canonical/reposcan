@@ -8,23 +8,21 @@ local is always available. `select_backend` takes an already-resolved backend na
 (env/config precedence happens upstream, in parameter resolution).
 """
 
-import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 
 import reposcan.backends as backends
 from reposcan.backends import (
+    BACKENDS,
     Backend,
-    DockerBackend,
-    LocalBackend,
-    LxdBackend,
-    _tool_image_for,
+    _reposcan_image_for,
     select_backend,
     start_session,
 )
 from reposcan.execution.local import LocalContext
 from reposcan.execution.process import ExecResult, Failure
-from reposcan.image.remote import CANONICAL_REF
+from reposcan.image.spec import CANONICAL_REF
 from reposcan.paths import tools_root
 
 
@@ -86,23 +84,6 @@ def test_invalid_selections_are_failures() -> None:
     assert isinstance(failure, Failure) and "docker" in failure.reason
 
 
-def test_resolved_parent_is_the_image_dir_for_containers_and_a_cache_for_local() -> (
-    None
-):
-    assert DockerBackend().get_resolved_parent() == "/resolved-deps"
-    assert LxdBackend().get_resolved_parent() == "/resolved-deps"
-    saved = os.environ.get("XDG_CACHE_HOME")
-    os.environ["XDG_CACHE_HOME"] = "/tmp/xdg-cache"
-    try:
-        local = LocalBackend().get_resolved_parent()
-    finally:
-        if saved is None:
-            del os.environ["XDG_CACHE_HOME"]
-        else:
-            os.environ["XDG_CACHE_HOME"] = saved
-    assert local == "/tmp/xdg-cache/reposcan/resolved"
-
-
 def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> None:
     def build_ok(builder: object, spec: object, *, force: bool = False) -> str:
         return "reposcan:tools"
@@ -113,36 +94,31 @@ def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> 
     saved = backends.ensure_built
     try:
         backends.ensure_built = build_ok
-        assert _tool_image_for(DockerBackend(), "build") == "reposcan:tools"
+        assert _reposcan_image_for(BACKENDS["docker"], "build") == "reposcan:tools"
         # LXD cannot pull yet, so a configured image still builds locally.
-        assert _tool_image_for(LxdBackend(), "canonical") == "reposcan:tools"
+        assert _reposcan_image_for(BACKENDS["lxd"], "canonical") == "reposcan:tools"
         backends.ensure_built = build_fail
-        assert isinstance(_tool_image_for(DockerBackend(), "build"), Failure)
+        assert isinstance(_reposcan_image_for(BACKENDS["docker"], "build"), Failure)
     finally:
         backends.ensure_built = saved
 
 
 def test_the_configured_or_canonical_image_is_pulled_when_the_backend_can() -> None:
-    def pull_ok(puller: object, ref: str) -> str:
+    def pull_ok(ref: str) -> str:
         return f"pulled:{ref}"
 
-    def pull_fail(puller: object, ref: str) -> Failure:
+    def pull_fail(ref: str) -> Failure:
         return Failure(reason="pull failed")
 
-    saved = backends.ensure_pulled
-    try:
-        backends.ensure_pulled = pull_ok
-        # Unset and the `canonical` shorthand both resolve to the pinned image.
-        assert _tool_image_for(DockerBackend(), None) == f"pulled:{CANONICAL_REF}"
-        assert (
-            _tool_image_for(DockerBackend(), "canonical") == f"pulled:{CANONICAL_REF}"
-        )
-        backends.ensure_pulled = pull_fail
-        result = _tool_image_for(DockerBackend(), None)
-        assert isinstance(result, Failure)
-        assert "--image build" in result.reason  # names the alternative
-    finally:
-        backends.ensure_pulled = saved
+    docker = replace(BACKENDS["docker"], puller=pull_ok)
+    pinned = f"pulled:{CANONICAL_REF}"
+    # Unset and the `canonical` shorthand both resolve to the pinned image.
+    assert _reposcan_image_for(docker, None) == pinned
+    assert _reposcan_image_for(docker, "canonical") == pinned
+
+    result = _reposcan_image_for(replace(docker, puller=pull_fail), None)
+    assert isinstance(result, Failure)
+    assert "--image build" in result.reason  # names the alternative
 
 
 def test_start_session_reports_the_local_mount_target() -> None:

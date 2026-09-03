@@ -32,7 +32,7 @@ MOUNT_PARENT = "/scan"
 # name>", preserving the name so scan-output locations read naturally). The copy is
 # writable, unlike the read-only mount. Set up in the image: owned by the scan user
 # and trusted by git.
-RESOLVED_PARENT = "/resolved-deps"
+RESOLUTION_WORKDIR = "/resolved-deps"
 
 # default unprivileged user for in-container processes. Kept as the image's
 # fallback user (created at build time) and as the model-layer default identity;

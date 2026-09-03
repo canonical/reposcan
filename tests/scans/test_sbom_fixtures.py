@@ -4,7 +4,7 @@
 """SBOM fixture test.
 
 fixtures/sbom.py exposes SCAN, plant, and verify. This runs the SBOM against its
-planted content in the built tool image and checks the CycloneDX inventory. It fails
+planted content in the built reposcan image and checks the CycloneDX inventory. It fails
 (never skips) when docker is unavailable. Fixture coverage (that the SBOM has a
 fixture and is the lone inventory scan) is checked in test_scan_fixtures.
 """

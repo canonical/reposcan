@@ -4,13 +4,12 @@
 """Execution/build backends: docker, lxd, local."""
 
 import logging
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 
 from reposcan.execution.context import (
-    RESOLVED_PARENT,
+    RESOLUTION_WORKDIR,
     ExecutionContext,
     RunUser,
     mounted_target,
@@ -19,19 +18,18 @@ from reposcan.execution.docker import DockerContext
 from reposcan.execution.local import LocalContext
 from reposcan.execution.lxd import LxdContext
 from reposcan.execution.process import Failure, run_process
-from reposcan.image.build_spec import BASE_IMAGE, INSTALL_ROOT, build_spec
-from reposcan.image.builder import ImageBuilder, ensure_built
 from reposcan.image.docker import DockerImageBuilder
+from reposcan.image.ensure import ImageBuilder, ensure_built, ensure_pulled
 from reposcan.image.lxd import LxdImageBuilder
-from reposcan.image.remote import (
+from reposcan.image.spec import (
+    BASE_IMAGE,
     CANONICAL_REF,
+    CANONICAL_SHORTHAND,
+    INSTALL_ROOT,
     LOCAL_BUILD_SHORTHAND,
-    DockerRemote,
-    ImagePuller,
-    ensure_pulled,
-    resolve_remote_ref,
+    build_spec,
 )
-from reposcan.paths import resolve_cache, tools_root
+from reposcan.paths import resolution_workdir, tools_root
 from reposcan.tools.install import current_platform
 
 logger = logging.getLogger(__name__)
@@ -45,192 +43,69 @@ class Availability:
     reason: str = ""
 
 
-def _probe(command: list[str]) -> Availability:
-    """Report availability from a quick liveness command such as `docker info`.
-
-    The command is ok on exit 0, otherwise not, carrying the reason.
-    """
-    result = run_process(command, timeout=10)
-    if isinstance(result, Failure):
-        return Availability(ok=False, reason=result.reason)
-    if result.exit_code != 0:
-        return Availability(
-            ok=False, reason=result.stderr.strip() or f"{command[0]} is not available"
-        )
-    return Availability(ok=True)
-
-
-class Backend(Protocol):
-    """A place reposcan can work, reporting availability and tool/resolve paths.
-
-    The universal surface -- the methods that mean the same thing for every backend:
-    its name, whether it is usable here, where its tools live, and where dependency
-    resolution copies a repo. Container-specific concerns (running in an image,
-    building/pulling one) live on `ContainerBackend`.
-    """
+@dataclass(frozen=True)
+class Backend:
+    """A backend for reposcan command execution."""
 
     name: str
+    tool_root: str
+    resolution_workdir: str
+    probe: tuple[str, ...] = ()  # liveness command; empty means always usable
+    containerized: bool = False
+    context: Callable[..., ExecutionContext] | None = None  # None runs on the host
+    builder: ImageBuilder | None = None
+    puller: Callable[[str], str | Failure] | None = None  # None cannot pull
 
     def availability(self) -> Availability:
-        """Whether this backend is usable on this host, with a reason to show."""
-        ...
+        """Report whether this backend is usable on this host."""
+        if not self.probe:
+            return Availability(ok=True, reason="runs on the host")
+        result = run_process(list(self.probe), timeout=10)
+        if isinstance(result, Failure):
+            return Availability(ok=False, reason=result.reason)
+        if result.exit_code != 0:
+            reason = result.stderr.strip() or f"{self.probe[0]} is not available"
+            return Availability(ok=False, reason=reason)
+        return Availability(ok=True)
 
-    def tool_root(self) -> str:
-        """Where tools live for this backend.
-
-        The host tools dir for local, the image install root for a container.
-        """
-        ...
-
-    def get_resolved_parent(self) -> str:
-        """Locate the directory reposcan uses for dependency resolution copies.
-
-        A user-writable cache dir for local, the in-image RESOLVED_PARENT for a
-        container. Parallels `tool_root`: a host path locally, an image path in a
-        container.
-        """
-        ...
+    def build_image(self, *, force: bool = False) -> str | Failure:
+        """Build this backend's reposcan image, returning its verified reference."""
+        if self.builder is None:
+            return Failure(reason=f"the {self.name} backend cannot build images")
+        return ensure_built(self.builder, build_spec(current_platform()), force=force)
 
 
-@runtime_checkable
-class ContainerBackend(Backend, Protocol):
-    """A backend that runs in a built or pulled image.
+# Keyed by name, in selection-precedence order: docker, then lxd, then local.
+BACKENDS = {
+    "docker": Backend(
+        name="docker",
+        tool_root=INSTALL_ROOT,
+        resolution_workdir=RESOLUTION_WORKDIR,
+        probe=("docker", "info"),
+        containerized=True,
+        context=DockerContext,
+        builder=DockerImageBuilder(),
+        puller=ensure_pulled,
+    ),
+    "lxd": Backend(
+        name="lxd",
+        tool_root=INSTALL_ROOT,
+        resolution_workdir=RESOLUTION_WORKDIR,
+        probe=("lxc", "info"),
+        containerized=True,
+        context=LxdContext,
+        builder=LxdImageBuilder(),
+        # No puller: LXD consumes OCI images differently, so it builds instead.
+    ),
+    "local": Backend(
+        name="local",
+        tool_root=str(tools_root()),
+        resolution_workdir=str(resolution_workdir()),
+    ),
+}
 
-    Adds the container surface to `Backend`: producing a context (optionally from
-    an image, with a source mounted and an identity pinned), and building/pulling
-    an image. `image_builder` is non-Optional (every container backend can build);
-    `image_puller` is Optional.
-    """
-
-    def context(
-        self,
-        image: str | None = None,
-        *,
-        mount_source: str | None = None,
-        user: RunUser | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> ExecutionContext:
-        """Build an ExecutionContext.
-
-        Args:
-            image: The image to run, or None for the backend's default base.
-            mount_source: A host directory to make available for scanning, or None.
-            user: The identity in-container processes run as by default; None runs
-                as root.
-            env: Variables to add to every command.
-
-        Returns:
-            An unstarted execution context.
-        """
-        ...
-
-    def image_builder(self) -> ImageBuilder:
-        """Return an ImageBuilder for this backend."""
-        ...
-
-    def image_puller(self) -> ImagePuller | None:
-        """Return an ImagePuller for this backend.
-
-        None for a backend that cannot pull (LXD for now), which then builds locally.
-        """
-        ...
-
-
-class LxdBackend:
-    name = "lxd"
-
-    def availability(self) -> Availability:
-        return _probe(["lxc", "info"])
-
-    def context(
-        self,
-        image: str | None = None,
-        *,
-        mount_source: str | None = None,
-        user: RunUser | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> ExecutionContext:
-        return LxdContext(
-            image or BASE_IMAGE,
-            mount_source=mount_source,
-            user=user,
-            env=env,
-        )
-
-    def image_builder(self) -> ImageBuilder:
-        return LxdImageBuilder()
-
-    def image_puller(self) -> None:
-        return None  # LXD consumes OCI images differently; not supported yet
-
-    def tool_root(self) -> str:
-        return INSTALL_ROOT
-
-    def get_resolved_parent(self) -> str:
-        return RESOLVED_PARENT
-
-
-class DockerBackend:
-    name = "docker"
-
-    def availability(self) -> Availability:
-        return _probe(["docker", "info"])
-
-    def context(
-        self,
-        image: str | None = None,
-        *,
-        mount_source: str | None = None,
-        user: RunUser | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> ExecutionContext:
-        return DockerContext(
-            image or BASE_IMAGE,
-            mount_source=mount_source,
-            user=user,
-            env=env,
-        )
-
-    def image_builder(self) -> ImageBuilder:
-        return DockerImageBuilder()
-
-    def image_puller(self) -> ImagePuller:
-        return DockerRemote()
-
-    def tool_root(self) -> str:
-        return INSTALL_ROOT
-
-    def get_resolved_parent(self) -> str:
-        return RESOLVED_PARENT
-
-
-class LocalBackend:
-    """Runs on the host.
-
-    Carries no identity (it runs as the invoking user and cannot drop privileges) and
-    mounts nothing (the source path is the scan target, used directly as a cwd).
-    """
-
-    name = "local"
-
-    def availability(self) -> Availability:
-        return Availability(ok=True, reason="runs on the host")
-
-    def tool_root(self) -> str:
-        return str(tools_root())
-
-    def get_resolved_parent(self) -> str:
-        # A user-writable cache dir: the host has no root-provisioned scratch dir,
-        # and resolution must not mutate the user's actual repo.
-        return str(resolve_cache())
-
-
-# Backends in selection-precedence order: docker, then lxd, then local.
-_BACKENDS: tuple[Backend, ...] = (DockerBackend(), LxdBackend(), LocalBackend())
-_BY_NAME = {backend.name: backend for backend in _BACKENDS}
-
-# Values accepted for --backend and the `backend` config key.
-BACKEND_NAMES = ("auto", *_BY_NAME)
+# meta-name that means "pick the first available"
+AUTO = "auto"
 
 
 def select_backend(requested: str | None) -> Backend | Failure:
@@ -245,44 +120,41 @@ def select_backend(requested: str | None) -> Backend | Failure:
         then local. A Failure if the requested backend is unknown or
         unavailable, or if none is available.
     """
-    backend = requested or "auto"
+    name = requested or AUTO
+    if name != AUTO and name not in BACKENDS:
+        return Failure(reason=f"unknown backend {name}")
 
-    if backend != "auto" and backend not in _BY_NAME:
-        return Failure(reason=f"unknown backend {backend}")
-
-    for candidate in _BACKENDS:
-        if backend not in (candidate.name, "auto"):
-            continue
+    for candidate in BACKENDS.values() if name == AUTO else [BACKENDS[name]]:
         availability = candidate.availability()
         if availability.ok:
             return candidate
-        if backend == candidate.name:
+        if name != AUTO:
             return Failure(
-                f"selected backend ({candidate.name}) not available: "
-                f"{availability.reason}"
+                f"selected backend ({name}) not available: {availability.reason}"
             )
     return Failure(reason="no execution backend is available")
 
 
-def _tool_image_for(backend: ContainerBackend, image: str | None) -> str | Failure:
-    """Build or pull `backend`'s tool image, returning the reference to run."""
-    puller = backend.image_puller()
+def _reposcan_image_for(backend: Backend, image: str | None) -> str | Failure:
+    """Build or pull `backend`'s reposcan image, returning the reference to run."""
+    puller = backend.puller
     if puller is None or image == LOCAL_BUILD_SHORTHAND:
         if image and image != LOCAL_BUILD_SHORTHAND and puller is None:
             logger.warning(
                 "the %s backend cannot pull the configured image %r; building the "
-                "tool image locally",
+                "reposcan image locally",
                 backend.name,
                 image,
             )
-        return ensure_built(backend.image_builder(), build_spec(current_platform()))
-    ref = resolve_remote_ref(image) if image else CANONICAL_REF
-    reference = ensure_pulled(puller, ref)
+        return backend.build_image()
+    # Unset and the `canonical` shorthand both mean the pinned published image.
+    ref = CANONICAL_REF if not image or image == CANONICAL_SHORTHAND else image
+    reference = puller(ref)
     if isinstance(reference, Failure) and image is None:
         return Failure(
             reason=(
                 f"could not pull the image {ref}: {reference.reason}. "
-                f"Pass --image build to build the tool image locally."
+                f"Pass --image build to build the reposcan image locally."
             )
         )
     return reference
@@ -290,18 +162,18 @@ def _tool_image_for(backend: ContainerBackend, image: str | None) -> str | Failu
 
 @dataclass(frozen=True)
 class Session:
-    """A started place to run a command in.
+    """A running execution context and corresponding filesystem paths.
 
-    It carries its context and where its tools live, or -- when not `ok` -- a
-    failure exit code. `context` is valid only when `ok`; it is stopped when the
-    `start_session` block exits.
+    A session that is not `ok` failed to start and carries only its exit code, so
+    `context` must not be read. The context is stopped when the `start_session`
+    block exits.
     """
 
     _context: ExecutionContext | None
     tool_root: str
     exit_code: int
     target: str | None = None  # where the scanned source is reachable in the context
-    resolved_parent: str = ""  # where dependency resolution copies the repo
+    resolution_workdir: str = ""  # where dependency resolution copies the repo
 
     @property
     def ok(self) -> bool:
@@ -314,7 +186,7 @@ class Session:
 
 
 def ensure_image(requested_backend: str | None, image: str | None) -> Failure | None:
-    """Build or pull the tool image once, before many sessions ask for it.
+    """Build or pull the reposcan image once, before many sessions ask for it.
 
     Each session still resolves `image` itself and finds the result already present.
     Doing it once here first is what keeps concurrent sessions from each starting the
@@ -330,9 +202,9 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Failure | 
     backend = select_backend(requested_backend)
     if isinstance(backend, Failure):
         return backend
-    if not isinstance(backend, ContainerBackend):
+    if not backend.containerized:
         return None
-    resolved = _tool_image_for(backend, image)
+    resolved = _reposcan_image_for(backend, image)
     return resolved if isinstance(resolved, Failure) else None
 
 
@@ -355,7 +227,7 @@ def start_session(
         requested_backend: The backend to select, or None for 'auto'.
         mount_source: A host directory to make available for scanning, or None. The
             session's `target` reports where it is reachable in the context.
-        image: The tool image to run: an OCI reference, `canonical` (the published
+        image: The reposcan image to run: an OCI reference, `canonical` (the published
             image, used by default when unset), or `build` (build locally). Ignored by
             the local backend beyond `build`.
         user: The identity in-container processes run as by default (container backends
@@ -369,13 +241,15 @@ def start_session(
         logger.error(backend.reason)
         yield Session(None, "", 2)
         return
-    if isinstance(backend, ContainerBackend):
-        reference = _tool_image_for(backend, image)
+    if backend.context is not None:
+        reference = _reposcan_image_for(backend, image)
         if isinstance(reference, Failure):
             logger.error(reference.reason)
             yield Session(None, "", 1)
             return
-        ctx = backend.context(reference, mount_source=mount_source, user=user, env=env)
+        ctx = backend.context(
+            reference or BASE_IMAGE, mount_source=mount_source, user=user, env=env
+        )
         # A container mounts the source under MOUNT_PARENT.
         target = mounted_target(mount_source) if mount_source is not None else None
     else:
@@ -388,7 +262,7 @@ def start_session(
                 backend.name,
                 image,
             )
-        ctx = LocalContext(f"{backend.tool_root()}/bin", env)
+        ctx = LocalContext(f"{backend.tool_root}/bin", env)
         target = mount_source
     error = ctx.start()
     if error is not None:
@@ -396,8 +270,6 @@ def start_session(
         yield Session(None, "", 1)
         return
     try:
-        yield Session(
-            ctx, backend.tool_root(), 0, target, backend.get_resolved_parent()
-        )
+        yield Session(ctx, backend.tool_root, 0, target, backend.resolution_workdir)
     finally:
         ctx.stop()

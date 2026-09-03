@@ -29,7 +29,7 @@ reposcan --help
 ## Run a scan
 
 Point a scan at a repository directory. The first container scan pulls the
-published tool image (a few seconds), or builds it locally with `--image build`;
+published reposcan image (a few seconds), or builds it locally with `--image build`;
 later scans reuse it.
 
 ```

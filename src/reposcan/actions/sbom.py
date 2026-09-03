@@ -101,7 +101,7 @@ class SbomCommand(Action):
                     session.context,
                     session.target,
                     session.tool_root,
-                    resolved_parent=session.resolved_parent,
+                    resolution_workdir=session.resolution_workdir,
                     stream=True,
                 )
                 if isinstance(artifact, Failure):

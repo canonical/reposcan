@@ -91,4 +91,5 @@ reposcan scan secrets ./repo --mode history --depth 500
 ## Related tasks
 
 - Select where the tools run: [choose a backend](choose-a-backend.md).
-- Use a published tool image: [use a published image](use-a-published-image.md).
+- Use a published reposcan image:
+  [use a published image](use-a-published-image.md).

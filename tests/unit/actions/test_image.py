@@ -1,49 +1,50 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the `reposcan image build` action (reposcan.actions.image).
-
-The builder is chosen by the action and passed in, so this covers only
-build/print/force and the failure exit code. `ensure_built` is patched so no daemon
-is touched.
-"""
+"""Tests for the `reposcan image build` action (reposcan.actions.image)."""
 
 import io
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 
 import reposcan.actions.image as image_cmd
-from reposcan.execution.process import Failure
-from reposcan.image.build_spec import BuildSpec
-from reposcan.image.docker import DockerImageBuilder
+import reposcan.backends as backends
+from reposcan.execution.process import ExecResult, Failure
+from reposcan.image.spec import BuildSpec
 
 
 @contextmanager
-def _patched_ensure(result: str | Failure) -> Iterator[dict[str, bool]]:
+def _mocks(result: str | Failure) -> Iterator[dict[str, bool]]:
+    """Make every backend available and script what a build returns."""
     seen: dict[str, bool] = {}
 
-    def fake(builder: object, spec: BuildSpec, *, force: bool) -> str | Failure:
+    def fake_build(builder: object, spec: BuildSpec, *, force: bool) -> str | Failure:
         seen["force"] = force
         return result
 
-    saved = image_cmd.ensure_built
-    image_cmd.ensure_built = fake
+    saved_built, saved_run = backends.ensure_built, backends.run_process
+    backends.ensure_built = fake_build
+    backends.run_process = lambda *a, **k: ExecResult(0, "", "")
     try:
         yield seen
     finally:
-        image_cmd.ensure_built = saved
+        backends.ensure_built, backends.run_process = saved_built, saved_run
 
 
 def test_success_prints_the_reference_and_forwards_force() -> None:
     out = io.StringIO()
-    with _patched_ensure("reposcan:deadbeef12") as seen, redirect_stdout(out):
-        code = image_cmd.build_image(DockerImageBuilder(), force=True)
+    with _mocks("reposcan:deadbeef12") as seen, redirect_stdout(out):
+        code = image_cmd.ImageBuild(backend="docker", force=True).run()
     assert code == 0
     assert "reposcan:deadbeef12" in out.getvalue()
     assert seen["force"] is True  # --force reached ensure_built
 
 
 def test_build_failure_returns_one() -> None:
-    with _patched_ensure(Failure(reason="docker build failed")):
-        code = image_cmd.build_image(DockerImageBuilder(), force=False)
+    with _mocks(Failure(reason="docker build failed")):
+        code = image_cmd.ImageBuild(backend="docker", force=False).run()
     assert code == 1
+
+
+def test_local_backend_is_a_usage_error() -> None:
+    assert image_cmd.ImageBuild(backend="local", force=False).run() == 2

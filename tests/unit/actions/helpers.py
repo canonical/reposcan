@@ -47,7 +47,7 @@ class FakeSession:
     context = cast(ExecutionContext, None)
     target = "/scan/x"
     tool_root = "/opt/reposcan"
-    resolved_parent = ""
+    resolution_workdir = ""
 
     def __enter__(self) -> "FakeSession":
         return self

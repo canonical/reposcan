@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Integration tests: build the real tool image and invoke every tool in it.
+"""Integration tests: build the real reposcan image and invoke every tool in it.
 
 For each container backend (docker, lxd), force a real, hash-verified build of the tool
 image, then run every tool through the real, unpatched `exec` with a
@@ -17,7 +17,7 @@ Excluded from the default unit run; invoke explicitly:
     pytest tests/integration -s --log-cli-level=INFO
 
 Pass `--short` (e.g. `tox run -f integration -- --short`) to reuse an existing
-tool image when it still verifies instead of forcing a rebuild, which skips the
+reposcan image when it still verifies instead of forcing a rebuild, which skips the
 slow LXD image build on re-runs.
 
 Skipped when a backend is unavailable. Slow: the image build downloads and installs
@@ -42,15 +42,16 @@ from contextlib import (
 import pytest
 
 from reposcan.actions.exec import execute
-from reposcan.backends import ContainerBackend, DockerBackend, LxdBackend
+from reposcan.backends import BACKENDS, Backend
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import Failure
-from reposcan.image.build_spec import build_spec
-from reposcan.image.builder import ensure_built
+from reposcan.image.ensure import ensure_built
+from reposcan.image.spec import build_spec
 from reposcan.tools.install import current_platform
 from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
+
 
 # The command that makes each tool print its version. The expected result is the tool's
 # pinned version from the registry, so the fixture can't drift from what is installed.
@@ -90,25 +91,24 @@ def _invoke(ctx: ExecutionContext, name: str, args: list[str]) -> tuple[int, str
     return code, out.getvalue() + err.getvalue()
 
 
-def _probe_every_tool_in(
-    backend: ContainerBackend, *, force_rebuild: bool = False
-) -> None:
+def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> None:
     availability = backend.availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"{backend.name} unavailable: {availability.reason}")
     assert set(_VERSION_PROBE) == set(TOOLS)  # probe table matches the tool set
 
-    builder = backend.image_builder()
+    builder, open_context = backend.builder, backend.context
+    assert builder is not None and open_context is not None  # a container backend
     with _isolated_cache() if force_rebuild else nullcontext():
         action = "reusing" if force_rebuild else "building"
-        logger.info("[%s] %s tool image; output follows", backend.name, action)
+        logger.info("[%s] %s reposcan image; output follows", backend.name, action)
         reference = ensure_built(
             builder, build_spec(current_platform()), force=force_rebuild
         )
         assert not isinstance(reference, Failure), reference
         logger.info("[%s] starting container from %s", backend.name, reference)
-        ctx = backend.context(reference)
+        ctx = open_context(reference)
         started = ctx.start()
         assert started is None, f"{backend.name} container failed to start: {started}"
         try:
@@ -124,9 +124,9 @@ def _probe_every_tool_in(
 
 def test_every_tool_runs_in_the_docker_image(request: pytest.FixtureRequest) -> None:
     short = bool(request.config.getoption("--short"))
-    _probe_every_tool_in(DockerBackend(), force_rebuild=not short)
+    _probe_every_tool_in(BACKENDS["docker"], force_rebuild=not short)
 
 
 def test_every_tool_runs_in_the_lxd_image(request: pytest.FixtureRequest) -> None:
     short = bool(request.config.getoption("--short"))
-    _probe_every_tool_in(LxdBackend(), force_rebuild=not short)
+    _probe_every_tool_in(BACKENDS["lxd"], force_rebuild=not short)

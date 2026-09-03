@@ -17,7 +17,7 @@ from reposcan.execution.process import ExecResult, Failure, run_process, succeed
 
 # The dedicated LXD project reposcan works in. Every instance- or image-acting lxc
 # command is pinned to it (the LXC prefix) so reposcan's ephemeral containers and its
-# built tool image never land in the user's default project.
+# built reposcan image never land in the user's default project.
 PROJECT = "reposcan"
 LXC = ["lxc", "--project", PROJECT]
 
@@ -25,9 +25,10 @@ LXC = ["lxc", "--project", PROJECT]
 def ensure_project() -> Failure | None:
     """Create reposcan's LXD project if it does not exist yet; a no-op once it does.
 
-    features.images=true keeps the built tool image inside this project rather than the
-    default one; features.profiles=false borrows the default project's profile so
-    containers still get its root disk and network and launch with no per-project setup.
+    features.images=true keeps the built reposcan image inside this project rather
+    than the default one; features.profiles=false borrows the default project's
+    profile so containers still get its root disk and network and launch with no
+    per-project setup.
 
     Returns:
         None when the project already exists or was created; a Failure if creating
@@ -55,7 +56,7 @@ def ensure_project() -> Failure | None:
 class LxdContext:
     """Runs commands in an ephemeral container via `lxc`, launched from `image`.
 
-    `image` is a stock base for plain runs, or the tool image for scans.
+    `image` is a stock base for plain runs, or the reposcan image for scans.
     """
 
     name = "lxd"
