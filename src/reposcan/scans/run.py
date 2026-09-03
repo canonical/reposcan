@@ -12,13 +12,18 @@ from typing import TYPE_CHECKING
 
 from reposcan.execution.context import ExecutionContext, read_file
 from reposcan.execution.process import ExecResult, Failure
-from reposcan.scans import cyclonedx, sarif
+from reposcan.scans import cyclonedx, ignore, sarif
+from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.gitignore import GitIgnore
 from reposcan.scans.model import ToolInvocation, ToolInvocationRecord
+from reposcan.scans.repo import read_repository_state
 from reposcan.scans.resolve import resolve_dependencies
 from reposcan.tools.registry import TOOLS
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from reposcan.backends import Session
     from reposcan.scans.base import Scan, SecurityScan
     from reposcan.scans.sbom import SbomScan
 
@@ -200,3 +205,55 @@ def run_sbom_scan(
     merged = cyclonedx.merge(documents)
     merged.record_invocations(provenance)
     return merged
+
+
+def run_analysis(
+    session: Session,
+    scans: Sequence[SecurityScan],
+    *,
+    ignore_rules: Sequence[ignore.IgnoreRule] = (),
+    stream: bool = True,
+) -> Analysis:
+    """Run `scans` against `session`'s target.
+
+    A failing scan is logged and does not crash the analysis; it is recorded on the
+    analysis, which closes PARTIAL or FAILED accordingly. Suppression runs after the
+    last `add` and before `close`.
+
+    Args:
+        session: A started session whose target is the repository to scan.
+        scans: The scan instances to run.
+        ignore_rules: reposcan ignorefile rules to suppress findings with.
+        stream: Echo each tool's progress to the console. A bulk run passes False,
+            so several repositories do not interleave their output.
+
+    Returns:
+        The closed analysis.
+    """
+    assert session.target is not None  # a source was mounted, so target is set
+    state = read_repository_state(session.context, session.target)
+    with Analysis.begin(state) as analysis:
+        for scan in scans:
+            started_at = utc_now()
+            run = run_scan(
+                scan,
+                session.context,
+                session.target,
+                session.tool_root,
+                resolved_parent=session.resolved_parent,
+                stream=stream,
+            )
+            if isinstance(run, Failure):
+                logger.error("%s scan failed: %s", scan.name, run.reason)
+                analysis.fail(scan.name)
+                continue
+            analysis.add(
+                ScanRecord.from_artifact(scan.name, run, started_at=started_at)
+            )
+
+        removed = ignore.apply(
+            analysis.sarif_runs, list(ignore_rules), session.context, session.target
+        )
+        if removed:
+            logger.info("ignored %d finding(s)", removed)
+    return analysis

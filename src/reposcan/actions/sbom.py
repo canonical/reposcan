@@ -15,7 +15,7 @@ from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser, host_user, resolved_env
 from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
-from reposcan.scans.analysis import Analysis, utc_now
+from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.repo import read_repository_state
 from reposcan.scans.run import run_sbom_scan
 from reposcan.scans.sbom import SbomScan
@@ -109,7 +109,9 @@ class SbomCommand(Action):
                     logger.error("sbom failed: %s", artifact.reason)
                     return 1
 
-                analysis.add(scan.name, artifact, started_at=started_at)
+                analysis.add(
+                    ScanRecord.from_artifact(scan.name, artifact, started_at=started_at)
+                )
             if self.db is not None:
                 failed = db_write.analysis(self.db, analysis)
                 if failed is not None:

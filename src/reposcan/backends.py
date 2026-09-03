@@ -20,7 +20,7 @@ from reposcan.execution.local import LocalContext
 from reposcan.execution.lxd import LxdContext
 from reposcan.execution.process import Failure, run_process
 from reposcan.image.build_spec import BASE_IMAGE, INSTALL_ROOT, build_spec
-from reposcan.image.builder import ImageBuilder, ensure_image
+from reposcan.image.builder import ImageBuilder, ensure_built
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.lxd import LxdImageBuilder
 from reposcan.image.remote import (
@@ -264,41 +264,19 @@ def select_backend(requested: str | None) -> Backend | Failure:
     return Failure(reason="no execution backend is available")
 
 
-def context_for(
-    backend: ContainerBackend,
-    mount_source: str | None = None,
-    *,
-    tool_image: bool = True,
-    image: str | None = None,
-    user: RunUser | None = None,
-    env: Mapping[str, str] | None = None,
-) -> ExecutionContext | Failure:
-    """Build an ExecutionContext for the requested ContainerBackend.
+def _tool_image_for(
+    backend: ContainerBackend, image: str | None, *, tool_image: bool
+) -> str | None | Failure:
+    """Build or pull `backend`'s tool image, returning the reference to run.
 
-    The image comes from `image`, resolved in this order:
-
-      - `"build"`: build the tool image locally.
-      - an explicit reference or `"canonical"`: pull the referenced image.
-      - None (the default): pull the canonical published image.
-
-    A backend that cannot pull (LXD) builds locally instead, regardless of `image`,
-    with a warning.
-
-    Args:
-        backend: The container backend to produce a context for.
-        mount_source: A host directory to make available for scanning, or None.
-        tool_image: Unused when `image` resolves the context; kept for callers that
-            request a plain base container (tool_image=False, image="build").
-        image: The image to run, or a shorthand, or None for the default pull.
-        user: The identity in-container processes run as by default; None runs as
-            root.
-        env: Variables to add to every command.
-
-    Returns:
-        A ready context, or a Failure if a pull or build failed.
+    None means run the backend's plain base image. `tool_image=False` asks for that,
+    but only where the image would have been built: a configured pull is honoured
+    either way, so the bootstrap path still gets the image it named.
     """
     puller = backend.image_puller()
-    if image == LOCAL_BUILD_SHORTHAND or puller is None:
+    if puller is None or image == LOCAL_BUILD_SHORTHAND:
+        if not tool_image:
+            return None
         if image and image != LOCAL_BUILD_SHORTHAND and puller is None:
             logger.warning(
                 "the %s backend cannot pull the configured image %r; building the "
@@ -306,38 +284,17 @@ def context_for(
                 backend.name,
                 image,
             )
-        return _build_tool_context(backend, mount_source, user, tool_image, env)
+        return ensure_built(backend.image_builder(), build_spec(current_platform()))
     ref = resolve_remote_ref(image) if image else CANONICAL_REF
     reference = ensure_pulled(puller, ref)
-    if isinstance(reference, Failure):
-        if image is None:
-            return Failure(
-                reason=(
-                    f"could not pull the image {ref}: {reference.reason}. "
-                    f"Pass --image build to build the tool image locally."
-                )
+    if isinstance(reference, Failure) and image is None:
+        return Failure(
+            reason=(
+                f"could not pull the image {ref}: {reference.reason}. "
+                f"Pass --image build to build the tool image locally."
             )
-        return reference
-    return backend.context(reference, mount_source=mount_source, user=user, env=env)
-
-
-def _build_tool_context(
-    backend: ContainerBackend,
-    mount_source: str | None,
-    user: RunUser | None,
-    tool_image: bool,
-    env: Mapping[str, str] | None,
-) -> ExecutionContext | Failure:
-    """Build the tool image locally and return its context, or a plain base one."""
-    if tool_image:
-        reference = ensure_image(
-            backend.image_builder(), build_spec(current_platform())
         )
-        if isinstance(reference, Failure):
-            return reference
-        return backend.context(reference, mount_source=mount_source, user=user, env=env)
-    # a plain base container
-    return backend.context(mount_source=mount_source, user=user, env=env)
+    return reference
 
 
 @dataclass(frozen=True)
@@ -363,6 +320,29 @@ class Session:
     def context(self) -> ExecutionContext:
         assert self._context is not None  # valid only when ok
         return self._context
+
+
+def ensure_image(requested_backend: str | None, image: str | None) -> Failure | None:
+    """Build or pull the tool image once, before many sessions ask for it.
+
+    Each session still resolves `image` itself and finds the result already present.
+    Doing it once here first is what keeps concurrent sessions from each starting the
+    same build, or racing on the image cache, which is read and rewritten unlocked.
+
+    Deliberately does not return the reference: handing a resolved reference back to a
+    caller that passes it as `image` would route a locally built tag to the pull path.
+
+    Returns:
+        None when the image is ready, or when the backend runs no image; else the
+        Failure that prevented it.
+    """
+    backend = select_backend(requested_backend)
+    if isinstance(backend, Failure):
+        return backend
+    if not isinstance(backend, ContainerBackend):
+        return None
+    resolved = _tool_image_for(backend, image, tool_image=True)
+    return resolved if isinstance(resolved, Failure) else None
 
 
 @contextmanager
@@ -402,18 +382,12 @@ def start_session(
         yield Session(None, "", 2)
         return
     if isinstance(backend, ContainerBackend):
-        ctx = context_for(
-            backend,
-            mount_source,
-            tool_image=tool_image,
-            image=image,
-            user=user,
-            env=env,
-        )
-        if isinstance(ctx, Failure):
-            logger.error(ctx.reason)
+        reference = _tool_image_for(backend, image, tool_image=tool_image)
+        if isinstance(reference, Failure):
+            logger.error(reference.reason)
             yield Session(None, "", 1)
             return
+        ctx = backend.context(reference, mount_source=mount_source, user=user, env=env)
         # A container mounts the source under MOUNT_PARENT.
         target = mounted_target(mount_source) if mount_source is not None else None
     else:

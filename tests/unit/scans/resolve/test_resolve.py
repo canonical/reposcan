@@ -3,6 +3,7 @@
 
 """Test the dependency-resolution pre-step (reposcan.scans.resolve)."""
 
+import hashlib
 from collections.abc import Mapping, Sequence
 
 from reposcan.execution.process import ExecResult, Failure
@@ -11,7 +12,8 @@ from reposcan.scans.resolve import resolve_dependencies
 TARGET = "/scan/acme"
 RESOLVED_PARENT = "/resolved-deps"
 TOOL_ROOT = "/opt/reposcan"
-DEST = f"{RESOLVED_PARENT}/acme"
+_SCRATCH = hashlib.sha256(TARGET.encode()).hexdigest()[:12]
+DEST = f"{RESOLVED_PARENT}/{_SCRATCH}/acme"
 
 
 def _z(*paths: str) -> str:

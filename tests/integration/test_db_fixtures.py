@@ -42,7 +42,7 @@ def _round_trip(scan: ScanRecord) -> list[Artifact]:
     )
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
-        analysis.scans.extend([scan])
+        analysis.successful_scans.extend([scan])
         assert write.analysis(path, analysis) is None
         return read.artifacts(path)
 

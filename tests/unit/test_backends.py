@@ -18,13 +18,11 @@ from reposcan.backends import (
     DockerBackend,
     LocalBackend,
     LxdBackend,
-    context_for,
+    _tool_image_for,
     select_backend,
     start_session,
 )
-from reposcan.execution.docker import DockerContext
 from reposcan.execution.local import LocalContext
-from reposcan.execution.lxd import LxdContext
 from reposcan.execution.process import ExecResult, Failure
 from reposcan.image.remote import CANONICAL_REF
 from reposcan.paths import tools_root
@@ -105,80 +103,66 @@ def test_resolved_parent_is_the_image_dir_for_containers_and_a_cache_for_local()
     assert local == "/tmp/xdg-cache/reposcan/resolved"
 
 
-def test_context_for_builds_the_tool_image_with_image_build() -> None:
-    def ensure_ok(builder: object, spec: object, *, force: bool = False) -> str:
-        return "reposcan:tools"
-
-    def ensure_fail(builder: object, spec: object, *, force: bool = False) -> Failure:
-        return Failure(reason="build failed")
-
-    saved = backends.ensure_image
-    try:
-        backends.ensure_image = ensure_ok
-        ctx = context_for(DockerBackend(), image="build")
-        assert isinstance(ctx, DockerContext) and ctx._image == "reposcan:tools"
-        backends.ensure_image = ensure_fail
-        assert isinstance(context_for(DockerBackend(), image="build"), Failure)
-    finally:
-        backends.ensure_image = saved
-
-
-def test_context_for_defaults_to_pulling_the_canonical_image() -> None:
-    def remote_ok(puller: object, ref: str) -> str:
-        assert ref == CANONICAL_REF  # the default is the pinned canonical image
-        return f"pulled:{ref}"
-
-    def remote_fail(puller: object, ref: str) -> Failure:
-        return Failure(reason="pull failed")
-
-    saved_pulled = backends.ensure_pulled
-    try:
-        backends.ensure_pulled = remote_ok
-        ctx = context_for(DockerBackend())
-        assert isinstance(ctx, DockerContext)
-        assert ctx._image == f"pulled:{CANONICAL_REF}"
-        backends.ensure_pulled = remote_fail
-        result = context_for(DockerBackend())
-        assert isinstance(result, Failure)
-        assert "--image build" in result.reason  # instructions/alternative in log
-    finally:
-        backends.ensure_pulled = saved_pulled
-
-
-def test_a_configured_image_is_used_whenever_the_backend_can_pull_it() -> None:
-    def remote_ok(puller: object, ref: str) -> str:
-        return f"pulled:{ref}"
-
-    def remote_fail(puller: object, ref: str) -> Failure:
-        return Failure(reason="pull failed")
-
+def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> None:
     def build_ok(builder: object, spec: object, *, force: bool = False) -> str:
         return "reposcan:tools"
 
-    saved_pulled = backends.ensure_pulled
-    saved_build = backends.ensure_image
+    def build_fail(builder: object, spec: object, *, force: bool = False) -> Failure:
+        return Failure(reason="build failed")
+
+    saved = backends.ensure_built
     try:
-        # Docker resolves the shorthand, pulls it, and runs the pulled image.
-        backends.ensure_pulled = remote_ok
-        ctx = context_for(DockerBackend(), image="canonical")
-        assert isinstance(ctx, DockerContext)
-        assert ctx._image == f"pulled:{CANONICAL_REF}"
-        # An explicit image is honored even when tool_image is not requested (the
-        # bootstrap path), rather than falling back to a plain base container.
-        ctx = context_for(DockerBackend(), tool_image=False, image="canonical")
-        assert isinstance(ctx, DockerContext)
-        assert ctx._image == f"pulled:{CANONICAL_REF}"
-        # A pull failure surfaces as a Failure.
-        backends.ensure_pulled = remote_fail
-        assert isinstance(context_for(DockerBackend(), image="canonical"), Failure)
-        # LXD cannot pull yet, so it warns and builds the tool image instead.
-        backends.ensure_image = build_ok
-        lxd_ctx = context_for(LxdBackend(), image="canonical")
-        assert isinstance(lxd_ctx, LxdContext)
-        assert lxd_ctx._image == "reposcan:tools"
+        backends.ensure_built = build_ok
+        assert (
+            _tool_image_for(DockerBackend(), "build", tool_image=True)
+            == "reposcan:tools"
+        )
+        # LXD cannot pull yet, so a configured image still builds locally.
+        assert (
+            _tool_image_for(LxdBackend(), "canonical", tool_image=True)
+            == "reposcan:tools"
+        )
+        backends.ensure_built = build_fail
+        assert isinstance(
+            _tool_image_for(DockerBackend(), "build", tool_image=True), Failure
+        )
     finally:
-        backends.ensure_pulled = saved_pulled
-        backends.ensure_image = saved_build
+        backends.ensure_built = saved
+
+
+def test_the_configured_or_canonical_image_is_pulled_when_the_backend_can() -> None:
+    def pull_ok(puller: object, ref: str) -> str:
+        return f"pulled:{ref}"
+
+    def pull_fail(puller: object, ref: str) -> Failure:
+        return Failure(reason="pull failed")
+
+    saved = backends.ensure_pulled
+    try:
+        backends.ensure_pulled = pull_ok
+        # Unset and the `canonical` shorthand both resolve to the pinned image.
+        assert (
+            _tool_image_for(DockerBackend(), None, tool_image=True)
+            == f"pulled:{CANONICAL_REF}"
+        )
+        assert (
+            _tool_image_for(DockerBackend(), "canonical", tool_image=True)
+            == f"pulled:{CANONICAL_REF}"
+        )
+        # A configured pull is honoured even when the tool image is not requested, so
+        # the bootstrap path gets the image rather than a plain base container.
+        assert (
+            _tool_image_for(DockerBackend(), "canonical", tool_image=False)
+            == f"pulled:{CANONICAL_REF}"
+        )
+        # Without one, tool_image=False is a plain base container: no reference.
+        assert _tool_image_for(DockerBackend(), "build", tool_image=False) is None
+        backends.ensure_pulled = pull_fail
+        result = _tool_image_for(DockerBackend(), None, tool_image=True)
+        assert isinstance(result, Failure)
+        assert "--image build" in result.reason  # names the alternative
+    finally:
+        backends.ensure_pulled = saved
 
 
 def test_start_session_reports_the_local_mount_target() -> None:

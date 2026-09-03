@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 # concurrency benefit is derived from threads blocking on I/O, so thread count is
 # decoupled from CPU count.
-_DEFAULT_THREAD_COUNT = 5
+_DEFAULT_CLONE_THREADS = 5
+
 
 FORMATS = tuple(f.value for f in Format)
 
@@ -191,9 +192,9 @@ class CloneGhRepos(GhAction):
         help="Working directory to hold mirrors and worktrees.",
     )
     threads: int = option(
-        default=_DEFAULT_THREAD_COUNT,
+        default=_DEFAULT_CLONE_THREADS,
         convert=int,
-        help=f"Number of concurrent jobs to run (default {_DEFAULT_THREAD_COUNT}).",
+        help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREADS}).",
     )
 
     def get_repositories(self) -> "list[Repository] | Failure":

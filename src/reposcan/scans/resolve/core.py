@@ -14,6 +14,7 @@ Discovery uses one `git ls-files` on the target. Each ecosystem has its own
 `Resolver`.
 """
 
+import hashlib
 import logging
 import os
 
@@ -64,9 +65,11 @@ def resolve_dependencies(
     ]
     if not plans:
         return target
-    # Copy under `resolved_parent` keeping the repo's own name, so scan-output
-    # locations read as "<repo>/..." rather than a scratch-dir name.
-    dest = f"{resolved_parent}/{os.path.basename(target.rstrip('/'))}"
+    # Copy under `resolved_parent` in a scratch directory keyed to the target, keeping
+    # the repo's own name as the last component so scan-output locations still read as
+    # "<repo>/...". The key separates two repositories of the same name.
+    scratch = hashlib.sha256(target.encode()).hexdigest()[:12]
+    dest = f"{resolved_parent}/{scratch}/{os.path.basename(target.rstrip('/'))}"
     if not _copy_repo(ctx, target, dest):
         return target
     for resolver, directory in plans:

@@ -26,7 +26,6 @@ rather than from the working tree; if it cannot be read, the finding is kept. Qu
 regex (e.g. `"uses: creator/"`) when it contains spaces or a `#`.
 """
 
-import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -34,8 +33,6 @@ from pathlib import Path
 
 from reposcan.execution.context import ExecutionContext
 from reposcan.scans import sarif
-
-logger = logging.getLogger(__name__)
 
 # The ignorefile reposcan looks for in a scanned repository by default.
 DEFAULT_IGNORE_FILE = ".reposcan-ignore"

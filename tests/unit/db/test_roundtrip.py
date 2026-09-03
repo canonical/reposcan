@@ -17,7 +17,7 @@ from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 def _with(analysis: Analysis, *scans: ScanRecord) -> Analysis:
     """Add `scans` to `analysis` and return `analysis`."""
-    analysis.scans.extend(scans)
+    analysis.successful_scans.extend(scans)
     return analysis
 
 

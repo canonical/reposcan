@@ -3,7 +3,7 @@
 
 """Tests for the shared image ensure step (reposcan.image.builder).
 
-ensure_image is the trust boundary: it rebuilds unless the present image's hash
+ensure_built is the trust boundary: it rebuilds unless the present image's hash
 matches the identity recorded at its last build. A fake builder scripts the present
 identity and build result; the identity cache is isolated to a temp XDG_DATA_HOME.
 """
@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from reposcan.image.build_spec import BuildSpec
-from reposcan.image.builder import ensure_image
+from reposcan.image.builder import ensure_built
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 
@@ -58,18 +58,18 @@ class _FakeBuilder:
 def test_a_missing_image_is_built_recorded_and_then_reused() -> None:
     with _isolated_cache():
         builder = _FakeBuilder(identity=None)
-        assert ensure_image(builder, _SPEC) == "img:abc"
+        assert ensure_built(builder, _SPEC) == "img:abc"
         assert builder.builds == 1  # built because absent, identity recorded
-        assert ensure_image(builder, _SPEC) == "img:abc"
+        assert ensure_built(builder, _SPEC) == "img:abc"
         assert builder.builds == 1  # verified against the record, reused
 
 
 def test_rebuilds_when_the_image_is_unverified_or_forced() -> None:
     with _isolated_cache():
         builder = _FakeBuilder(identity=None)
-        ensure_image(builder, _SPEC)  # builds, records "built-id"
+        ensure_built(builder, _SPEC)  # builds, records "built-id"
         builder._id = "tampered"  # present hash no longer matches the record
-        assert ensure_image(builder, _SPEC) == "img:abc"
+        assert ensure_built(builder, _SPEC) == "img:abc"
         assert builder.builds == 2  # rebuilt: present hash != recorded identity
-        assert ensure_image(builder, _SPEC, force=True) == "img:abc"
+        assert ensure_built(builder, _SPEC, force=True) == "img:abc"
         assert builder.builds == 3  # force rebuilds even a now-verified image

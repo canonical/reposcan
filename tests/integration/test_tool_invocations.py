@@ -46,7 +46,7 @@ from reposcan.backends import ContainerBackend, DockerBackend, LxdBackend
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import Failure
 from reposcan.image.build_spec import build_spec
-from reposcan.image.builder import ensure_image
+from reposcan.image.builder import ensure_built
 from reposcan.tools.install import current_platform
 from reposcan.tools.registry import TOOLS
 
@@ -103,7 +103,7 @@ def _probe_every_tool_in(
     with _isolated_cache() if force_rebuild else nullcontext():
         action = "reusing" if force_rebuild else "building"
         logger.info("[%s] %s tool image; output follows", backend.name, action)
-        reference = ensure_image(
+        reference = ensure_built(
             builder, build_spec(current_platform()), force=force_rebuild
         )
         assert not isinstance(reference, Failure), reference

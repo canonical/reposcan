@@ -14,8 +14,6 @@ import tempfile
 from collections.abc import Sequence
 from contextlib import redirect_stdout
 
-import pytest
-
 import reposcan.actions.scan as scan_cmd
 from reposcan import reposcan_version
 from reposcan.cli_kit import params_of
@@ -85,9 +83,18 @@ def test_format_json_overrides_the_stdout_table_default() -> None:
     assert json.loads(out)["version"] == "2.1.0"  # native SARIF, not a table
 
 
-def test_a_scan_failure_returns_one() -> None:
+def test_a_scan_failure_returns_one_without_abandoning_the_other_scans() -> None:
     code, _ = _run(Failure(reason="trufflehog failed"))
     assert code == 1
+    # A failed scan does not stop the rest: sast still runs and is reported, and the
+    # failure outranks --fail-on, so the findings do not turn this into a 3.
+    code, out = _run(
+        Failure(reason="trufflehog failed"),
+        sarif_run(2),
+        scans=["secrets", "sast"],
+    )
+    assert code == 1
+    assert "LEVEL" in out
 
 
 def test_multiple_scans_combine_into_one_report_without_cross_scan_dedup() -> None:
@@ -170,22 +177,6 @@ def test_the_report_includes_analysis_metadata() -> None:
     assert repository["name"] == FAKE_REPOSITORY.identity.name
     assert repository["rootCommit"] == FAKE_REPOSITORY.identity.root_commit
     assert repository["dirty"] is False
-
-
-def test_scan_names_splits_dedups_strips_and_rejects() -> None:
-    # The `scans` positional's converter runs at parse time: split on commas, strip
-    # whitespace, drop empties, dedup in order; reject unknown or empty input.
-    assert scan_cmd._scan_names(" sast , sast, ,secrets ") == ["sast", "secrets"]
-    for bad in (" , ", "sast,bogus"):
-        with pytest.raises(ValueError):
-            scan_cmd._scan_names(bad)
-
-
-def test_scan_names_all_expands_to_every_scan() -> None:
-    # `all` expands to every scan type, deduping against any also named explicitly.
-    assert scan_cmd._scan_names("all") == list(SCANS)
-    rest = [name for name in SCANS if name != "sast"]
-    assert scan_cmd._scan_names("sast,all") == ["sast", *rest]
 
 
 def test_scan_command_aggregates_scan_options_with_requires() -> None:

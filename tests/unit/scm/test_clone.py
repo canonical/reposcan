@@ -6,10 +6,8 @@
 import os
 import subprocess
 import tempfile
-from collections.abc import Mapping, Sequence
-from typing import Any
 
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import Failure
 from reposcan.scm import clone
 
 

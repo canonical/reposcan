@@ -12,7 +12,7 @@ from reposcan.cli_kit import Group, flag, positional
 from reposcan.execution.process import Failure
 from reposcan.image import cache
 from reposcan.image.build_spec import build_spec
-from reposcan.image.builder import ImageBuilder, ensure_image
+from reposcan.image.builder import ImageBuilder, ensure_built
 from reposcan.tools.install import current_platform
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def build_image(builder: ImageBuilder, *, force: bool) -> int:
     Returns 0 with the image reference printed, or 1 if the build failed.
     """
     spec = build_spec(current_platform())
-    result = ensure_image(builder, spec, force=force)
+    result = ensure_built(builder, spec, force=force)
     if isinstance(result, Failure):
         logger.error(result.reason)
         return 1

@@ -18,7 +18,7 @@ from reposcan.db.identity import (
 from reposcan.db.sqlite import Session, Table
 from reposcan.execution.process import Failure
 from reposcan.scans import cyclonedx, sarif
-from reposcan.scans.analysis import Analysis, ScanRecord
+from reposcan.scans.analysis import Analysis, ScanOutput, ScanRecord
 from reposcan.scans.model import ToolInvocationRecord
 from reposcan.scans.repo import ProjectIdentity
 
@@ -54,7 +54,7 @@ def analysis(path: str, record: Analysis) -> Failure | None:
             return None
         project_id = resolve_project(session, record.repository.identity)
         analysis_id = insert_analysis(session, record, project_id)
-        for scan in record.scans:
+        for scan in record.successful_scans:
             insert_scan(session, analysis_id, project_id, scan)
     return None
 
@@ -115,6 +115,7 @@ def insert_scan(
     session: Session, analysis_id: int, project_id: int, record: ScanRecord
 ) -> None:
     """Insert one scan type's row, its invocations, and its reports."""
+    produced = record.produced
     scan_id = session.insert_row(
         schema.SCAN.insert,
         (
@@ -124,31 +125,28 @@ def insert_scan(
             record.started_at,
             record.finished_at,
             record.status.value,
-            json.dumps(get_shell(record)),
+            json.dumps(get_shell(produced)),
         ),
     )
     session.insert(
-        Table(
-            schema.INVOCATION,
-            _invocation_rows(scan_id, record.produced.tool_invocations),
-        )
+        Table(schema.INVOCATION, _invocation_rows(scan_id, produced.tool_invocations))
     )
     tracker = _Tracker(session, project_id, record.category)
-    if isinstance(record.produced, sarif.SarifRun):
-        insert_issue_reports(session, scan_id, record.produced, tracker)
+    if isinstance(produced, sarif.SarifRun):
+        insert_issue_reports(session, scan_id, produced, tracker)
     else:
         session.insert(
             Table(
                 schema.COMPONENT_REPORT,
-                _component_report_rows(scan_id, record.produced, tracker),
+                _component_report_rows(scan_id, produced, tracker),
             )
         )
 
 
-def get_shell(record: ScanRecord) -> dict[str, Any]:
-    """Return the record's document without results or components."""
-    shell = copy.deepcopy(record.produced.to_dict())
-    if isinstance(record.produced, sarif.SarifRun):
+def get_shell(produced: ScanOutput) -> dict[str, Any]:
+    """Return the scan's document without results or components."""
+    shell = copy.deepcopy(produced.to_dict())
+    if isinstance(produced, sarif.SarifRun):
         shell["results"] = []
     else:
         shell["components"] = []

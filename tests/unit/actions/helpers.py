@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 
+import reposcan.scans.run as scans_run
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import Failure
 from reposcan.scans import cyclonedx, sarif
@@ -61,10 +62,12 @@ def patch_run_scan(
     *outcomes: sarif.SarifRun | Failure,
     captured: list[SecurityScan] | None = None,
 ) -> Iterator[None]:
-    """Patch the scan command `module`'s `run_scan` to return `outcomes` in turn.
+    """Patch `run_scan` to return `outcomes` in turn, one per scan the command runs.
 
-    Also patches `start_session` to a fake session and `read_repository_state` to
-    `FAKE_REPOSITORY`; each call's scan is recorded into `captured` when given.
+    The command drives scans through `run_analysis`, so `run_scan` and
+    `read_repository_state` are patched where that lives (`reposcan.scans.run`) while
+    `start_session` is patched on the command `module`. Each call's scan is recorded
+    into `captured` when given.
     """
     remaining: list[sarif.SarifRun | Failure] = list(outcomes)
 
@@ -75,18 +78,18 @@ def patch_run_scan(
             captured.append(scan)
         return remaining.pop(0)
 
-    saved_run = module.run_scan
+    saved_run = scans_run.run_scan
     saved_session = module.start_session
-    saved_repository = module.read_repository_state
-    module.run_scan = fake
+    saved_repository = scans_run.read_repository_state
+    scans_run.run_scan = fake
     module.start_session = lambda *a, **k: FakeSession()
-    module.read_repository_state = lambda *a, **k: FAKE_REPOSITORY
+    scans_run.read_repository_state = lambda *a, **k: FAKE_REPOSITORY
     try:
         yield
     finally:
-        module.run_scan = saved_run
+        scans_run.run_scan = saved_run
         module.start_session = saved_session
-        module.read_repository_state = saved_repository
+        scans_run.read_repository_state = saved_repository
 
 
 @contextmanager

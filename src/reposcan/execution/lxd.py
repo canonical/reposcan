@@ -3,8 +3,8 @@
 
 """LXD execution context: run commands in an ephemeral container."""
 
-import os
 from collections.abc import Mapping, Sequence
+from uuid import uuid4
 
 from reposcan.execution.context import (
     RunUser,
@@ -78,7 +78,7 @@ class LxdContext:
         project_creation_error = ensure_project()
         if project_creation_error is not None:
             return project_creation_error
-        handle = f"reposcan-{os.getpid()}"
+        handle = f"reposcan-{uuid4().hex[:12]}"
         argv = [*LXC, "launch", self._image, handle, "--ephemeral"]
         idmap = _raw_idmap(self._user)
         if idmap is not None:

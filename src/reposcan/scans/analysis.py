@@ -26,6 +26,7 @@ def utc_now() -> str:
 
 
 class ScanStatus(str, Enum):
+    STARTED = "started"
     COMPLETE = "complete"
     PARTIAL = "partial"
     FAILED = "failed"
@@ -51,14 +52,14 @@ class ScanRecord:
 
     @classmethod
     def from_artifact(
-        cls, category: str, produced: ScanOutput, *, started_at: str, finished_at: str
+        cls, category: str, produced: ScanOutput, *, started_at: str
     ) -> "ScanRecord":
         """Create a ScanRecord from a SarifRun or CycloneDxDocument."""
         return cls(
             category=category,
             kind=produced.kind,
             started_at=started_at,
-            finished_at=finished_at,
+            finished_at=utc_now(),
             status=scan_status(produced),
             produced=produced,
         )
@@ -69,8 +70,8 @@ class Analysis:
     """One reposcan session with one or more scans.
 
     The Analysis object is built as the scans run rather than assembled afterwards.
-    `begin` sets the start timestamp and reads the repository metadata; `add` records
-    the product of each new scan; `close` sets the end timestamp and writes the
+    `begin` sets the start timestamp and reads the repository metadata; `add` takes
+    each finished scan's record; `close` sets the end timestamp and writes the
     analysis metadata into each associated artifact.
 
     Use it as a context manager so `close` cannot be forgotten.
@@ -82,8 +83,9 @@ class Analysis:
     repository: RepositoryState
     finished_at: str = ""
     produced_by: str = ""
-    status: ScanStatus = ScanStatus.COMPLETE
-    scans: list[ScanRecord] = field(default_factory=list)
+    status: ScanStatus = ScanStatus.STARTED
+    successful_scans: list[ScanRecord] = field(default_factory=list)
+    failed_scans: list[str] = field(default_factory=list)
 
     @classmethod
     def begin(cls, repository: RepositoryState) -> "Analysis":
@@ -102,13 +104,13 @@ class Analysis:
         """Close the analysis on every exit, including an error path."""
         self.close()
 
-    def add(self, category: str, produced: ScanOutput, *, started_at: str) -> None:
-        """Add the record of a finalized scan to the analysis."""
-        self.scans.append(
-            ScanRecord.from_artifact(
-                category, produced, started_at=started_at, finished_at=utc_now()
-            )
-        )
+    def add(self, record: ScanRecord) -> None:
+        """Add a finished scan's record to the analysis."""
+        self.successful_scans.append(record)
+
+    def fail(self, category: str) -> None:
+        """Record that `category`'s scan produced nothing."""
+        self.failed_scans.append(category)
 
     @property
     def sarif_runs(self) -> list[sarif.SarifRun]:
@@ -118,14 +120,14 @@ class Analysis:
         """
         return [
             record.produced
-            for record in self.scans
+            for record in self.successful_scans
             if isinstance(record.produced, sarif.SarifRun)
         ]
 
     def close(self) -> None:
         """Finalize the analysis."""
         self.finished_at = utc_now()
-        for scan in self.scans:
+        for scan in self.successful_scans:
             scan.produced.record_provenance(
                 self.repository,
                 analysis_uuid=self.uuid,
@@ -133,3 +135,9 @@ class Analysis:
                 finished_at=self.finished_at,
                 reposcan_version=self.reposcan_version,
             )
+        if not self.failed_scans:
+            self.status = ScanStatus.COMPLETE
+        elif not self.successful_scans:
+            self.status = ScanStatus.FAILED
+        else:
+            self.status = ScanStatus.PARTIAL

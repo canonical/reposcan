@@ -27,11 +27,9 @@ from reposcan.execution.context import RunUser, host_user, resolved_env
 from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.scans import ignore, sarif
-from reposcan.scans.analysis import Analysis, utc_now
 from reposcan.scans.base import SecurityScan
-from reposcan.scans.registry import SCANS
-from reposcan.scans.repo import read_repository_state
-from reposcan.scans.run import run_scan
+from reposcan.scans.registry import SCANS, scan_names
+from reposcan.scans.run import run_analysis
 from reposcan.table import DEFAULT_WRAP_LINES
 
 logger = logging.getLogger(__name__)
@@ -44,32 +42,6 @@ FINDINGS_EXIT_CODE = 3
 # SARIF levels ranked for --fail-on's "at or above" threshold; a finding with no level
 # counts as warning, per SARIF. 'none' is absent (rank 0), so it never fails.
 _FAIL_RANK = {"note": 1, "warning": 2, "error": 3}
-
-
-def _scan_names(raw: str) -> list[str]:
-    """Split comma-separated `raw` into scan-type names, validated and deduped in order.
-
-    Used as the `scans` positional's converter, so an empty or unknown type is a usage
-    error before anything runs. The meta-name `all` expands to every scan type.
-    """
-    names: list[str] = []
-    for token in raw.split(","):
-        name = token.strip()
-        if not name:
-            continue
-        if name == "all":
-            selected = list(SCANS)
-        elif name in SCANS:
-            selected = [name]
-        else:
-            valid = ", ".join([*SCANS, "all"])
-            raise ValueError(f"unknown scan type {name!r} (choose from: {valid})")
-        for chosen in selected:
-            if chosen not in names:
-                names.append(chosen)
-    if not names:
-        raise ValueError("give at least one scan type")
-    return names
 
 
 def _aggregate_scan_options(scans: dict[str, type[SecurityScan]]) -> tuple[Param, ...]:
@@ -103,7 +75,7 @@ class ScanCommand(Action):
     help = "Scan a repository with one or more scan types."
 
     scans: list[str] = positional(
-        convert=_scan_names,
+        convert=scan_names,
         help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
     )
@@ -140,7 +112,7 @@ class ScanCommand(Action):
 
     extra_options = _aggregate_scan_options(SCANS)
 
-    def run(self) -> int:  # noqa: PLR0912 (too many branches, 14 > 12)
+    def run(self) -> int:
         """Run the requested scans and return an exit code.
 
         Exit codes:
@@ -194,31 +166,9 @@ class ScanCommand(Action):
                 return session.exit_code
             assert session.target is not None  # a source was given, so target is set
 
-            state = read_repository_state(session.context, session.target)
-            with Analysis.begin(state) as analysis:
-                for scan in scans:
-                    started_at = utc_now()
-                    run = run_scan(
-                        scan,
-                        session.context,
-                        session.target,
-                        session.tool_root,
-                        resolved_parent=session.resolved_parent,
-                        stream=True,
-                    )
-                    if isinstance(run, Failure):
-                        logger.error("%s scan failed: %s", scan.name, run.reason)
-                        return 1
-                    analysis.add(scan.name, run, started_at=started_at)
-                removed = ignore.apply(
-                    analysis.sarif_runs,
-                    ignore_rules,
-                    session.context,
-                    session.target,
-                )
-                if removed:
-                    logger.info("ignored %d finding(s) via %s", removed, ignore_path)
-
+            analysis = run_analysis(
+                session, scans, ignore_rules=ignore_rules, stream=True
+            )
             report = sarif.SarifDocument.from_runs(analysis.sarif_runs)
 
             if self.db is not None:
@@ -234,10 +184,12 @@ class ScanCommand(Action):
                     return 1
             else:
                 output.write_table(*report.rows(), limit=self.limit, wrap=self.wrap)
+            logger.info("scan complete: %d finding(s)", report.count())
+            if analysis.failed_scans:
+                return 1
             threshold = _FAIL_RANK.get(self.fail_on, 0)  # 'none' -> 0, never fails
             fails = bool(threshold) and any(
                 _FAIL_RANK.get(finding.level, 2) >= threshold
                 for finding in report.results()
             )
-            logger.info("scan complete: %d finding(s)", report.count())
             return FINDINGS_EXIT_CODE if fails else 0

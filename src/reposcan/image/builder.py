@@ -6,9 +6,9 @@
 An ImageBuilder turns a BuildSpec into a built image for one backend (Docker or LXD).
 The backends differ only in how they name, hash, and build an image; the
 build-on-demand-and-verify logic is the same for both and lives here, in
-`ensure_image`.
+`ensure_built`.
 
-`ensure_image` is the trust boundary: an image is reused only when the one present
+`ensure_built` is the trust boundary: an image is reused only when the one present
 matches the identity we recorded when we built it (see image/cache.py). A missing
 image, or one whose hash does not match what we recorded, is (re)built and its new
 identity captured. So a tampered-with or unknown image is never run.
@@ -46,7 +46,7 @@ class ImageBuilder(Protocol):
         ...
 
 
-def ensure_image(
+def ensure_built(
     builder: ImageBuilder, spec: BuildSpec, *, force: bool = False
 ) -> str | Failure:
     """Build a verified image from `spec` and return its reference.

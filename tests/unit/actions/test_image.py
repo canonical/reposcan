@@ -4,7 +4,7 @@
 """Tests for the `reposcan image build` action (reposcan.actions.image).
 
 The builder is chosen by the action and passed in, so this covers only
-build/print/force and the failure exit code. `ensure_image` is patched so no daemon
+build/print/force and the failure exit code. `ensure_built` is patched so no daemon
 is touched.
 """
 
@@ -26,12 +26,12 @@ def _patched_ensure(result: str | Failure) -> Iterator[dict[str, bool]]:
         seen["force"] = force
         return result
 
-    saved = image_cmd.ensure_image
-    image_cmd.ensure_image = fake
+    saved = image_cmd.ensure_built
+    image_cmd.ensure_built = fake
     try:
         yield seen
     finally:
-        image_cmd.ensure_image = saved
+        image_cmd.ensure_built = saved
 
 
 def test_success_prints_the_reference_and_forwards_force() -> None:
@@ -40,7 +40,7 @@ def test_success_prints_the_reference_and_forwards_force() -> None:
         code = image_cmd.build_image(DockerImageBuilder(), force=True)
     assert code == 0
     assert "reposcan:deadbeef12" in out.getvalue()
-    assert seen["force"] is True  # --force reached ensure_image
+    assert seen["force"] is True  # --force reached ensure_built
 
 
 def test_build_failure_returns_one() -> None:

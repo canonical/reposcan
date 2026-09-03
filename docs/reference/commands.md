@@ -75,7 +75,11 @@ option for several variables.
 | Config key     | `env` (one variable via `config set`)                          |
 | Default value  | none -- see [select a backend](../how-to/select-a-backend.md). |
 
-## scan
+## Scanning
+
+Run the scanners over a local repository.
+
+### scan
 
 `reposcan scan <types> <path>` runs one or more scans against a repository
 directory and maps the outcome to an exit code. `<types>` is a scan type or
@@ -114,7 +118,7 @@ error.
 Exit codes: `0` nothing at or above `--fail-on`, `3` a finding at or above
 `--fail-on`, `1` scan or tool error, `2` usage error.
 
-## sbom
+### sbom
 
 `reposcan sbom <path>` builds a CycloneDX software bill of materials for a
 repository. An SBOM is an inventory rather than a pass/fail check, so it always
@@ -126,19 +130,104 @@ exits `0` when it runs. It shares the `-o/--output`, `--db`, `-f/--format`,
 
 Exit codes: `0` on success, `1` on a tool or write error, `2` usage error.
 
-## render
+### render
 
 `reposcan render <path>` prints a saved SARIF or CycloneDX JSON report as a
 table, without re-running the scan. Options: `-n/--limit` and `--wrap`, as for
 `scan`. Runs locally with no backend.
 
-## the database
+## Work with SCM
 
-`--db FILE` records an analysis in a SQLite database: one pass of reposcan over
-a repository, holding one scan per scan type. Re-running against the same file
-appends a second analysis without overwriting.
+Discover, clone, and scan repositories.
 
-## exec
+### gh
+
+A command group for interacting with GitHub repositories. Needs the `service`
+extra: `pipx install "reposcan[service]"`.
+
+`gh` commands are authenticated with `REPOSCAN_GH_TOKEN` or `--token-file`/
+`REPOSCAN_GH_TOKEN_FILE`. Without a token, API requests are anonymous, and only
+find public repositories and have a much lower rate limit.
+
+`gh` commands support repository filters:
+
+- `--include-archived`: also take archived repositories, skipped by default.
+- `--exclude-forks`: skip forks, which are taken by default.
+- `--exclude <GLOB,GLOB>`: skip repositories whose `owner/name` matches a glob.
+
+Disabled repositories are never included.
+
+#### list-repos
+
+`reposcan gh list-repos` lists repositories discovered from `--org` or
+`--enterprise` is required. Options:
+
+- `--org <NAME>`: an organization to read. Env var: `REPOSCAN_GH_ORG`.
+- `--enterprise <SLUG>`: an enterprise whose organizations to read. Env var:
+  `REPOSCAN_GH_ENTERPRISE`
+- `-o, --output <FILE>`: write selected repositories to `FILE` as JSON.
+- `-f, --format <fmt>`: `table` (the default) or `json`, for stdout only.
+- `-n, --limit <N>`: maximum table rows shown (default 20).
+- `--wrap <N>`: maximum lines a long table cell may wrap across (default 4).
+
+#### clone-repos
+
+`reposcan gh clone-repos --workspace <DIR>` clones or syncs a local copy of each
+selected repository under `DIR`. Each repository is cloned as a bare mirror in
+`DIR/mirrors` and its default branch is checked out as a worktree in
+`DIR/worktrees/`.
+
+The repositories to clone are discovered via `--org`, `--enterprise`, or
+`--repo <OWNER/NAME>` (repeatable).
+
+`--threads <N>` sets how many repositories are cloned at once (default 5).
+
+### scan-repos
+
+`reposcan scan-repos --workspace <DIR> --db <FILE>` scans every repository in a
+workspace (as produced by `reposcan gh clone-repos`) and records each analysis
+in one database. Options:
+
+- `--workspace <DIR>`: the workspace to scan. Env var: `REPOSCAN_WORKSPACE`.
+- `--db <FILE>`: the database to record every analysis in. Env var:
+  `REPOSCAN_DB`.
+- `--scans <types>`: comma-separated scan types, as for [`scan`](#scan). Every
+  type by default.
+- `--threads <N>`: repositories to scan at once (default: one per processor).
+
+A repository that cannot be scanned is reported without crashing the overall
+scan.
+
+Exit codes: `0` when every repository and scan succeeded, `1` when any failed,
+`2` when the workspace holds no repositories.
+
+## Tools and images
+
+What the scans run, and where they run.
+
+### list-tools
+
+`reposcan list-tools` lists the scanning tools and whether each is installed in
+the selected backend.
+
+### bootstrap
+
+`reposcan bootstrap [tools...]` installs tools onto the host (or into the
+backend when `--backend` is given). With no tool names, it installs all of them.
+A host install is confirmed interactively unless `--confirm` is passed. The
+container backends do not need this; they build or pull the tool image.
+
+### image
+
+- `reposcan image build [--backend <name>]`: build (or rebuild) the tool image
+  and print its reference. Reuses an existing image when nothing changed.
+- `reposcan image cache list`: list the recorded built and pulled images.
+- `reposcan image cache remove <reference>`: remove one record.
+- `reposcan image cache clear`: remove all records.
+
+See [use a published image](../how-to/use-a-published-image.md).
+
+### exec
 
 `reposcan exec -- <command>` runs an arbitrary command in the selected execution
 context. Separate the command from reposcan's own options with `--`. Option:
@@ -156,71 +245,9 @@ them.
 By default, most host system environment variables are _not_ passed through. See
 `--env`.
 
-## list-tools
+## Configuration
 
-`reposcan list-tools` lists the scanning tools and whether each is installed in
-the selected backend.
-
-## bootstrap
-
-`reposcan bootstrap [tools...]` installs tools onto the host (or into the
-backend when `--backend` is given). With no tool names, it installs all of them.
-A host install is confirmed interactively unless `--confirm` is passed. The
-container backends do not need this; they build or pull the tool image.
-
-## image
-
-- `reposcan image build [--backend <name>]`: build (or rebuild) the tool image
-  and print its reference. Reuses an existing image when nothing changed.
-- `reposcan image cache list`: list the recorded built and pulled images.
-- `reposcan image cache remove <reference>`: remove one record.
-- `reposcan image cache clear`: remove all records.
-
-See [use a published image](../how-to/use-a-published-image.md).
-
-## gh
-
-A command group for interacting with GitHub repositories. Needs the `service`
-extra: `pipx install "reposcan[service]"`.
-
-`gh` commands are authenticated with `REPOSCAN_GH_TOKEN` or `--token-file`/
-`REPOSCAN_GH_TOKEN_FILE`. Without a token, API requests are anonymous, and only
-find public repositories and have a much lower rate limit.
-
-`gh` commands support repository filters:
-
-- `--include-archived`: also take archived repositories, skipped by default.
-- `--exclude-forks`: skip forks, which are taken by default.
-- `--exclude <GLOB,GLOB>`: skip repositories whose `owner/name` matches a glob.
-
-Disabled repositories are never included.
-
-### list-repos
-
-`reposcan gh list-repos` lists repositories discovered from `--org` or
-`--enterprise` is required. Options:
-
-- `--org <NAME>`: an organization to read. Env var: `REPOSCAN_GH_ORG`.
-- `--enterprise <SLUG>`: an enterprise whose organizations to read. Env var:
-  `REPOSCAN_GH_ENTERPRISE`
-- `-o, --output <FILE>`: write selected repositories to `FILE` as JSON.
-- `-f, --format <fmt>`: `table` (the default) or `json`, for stdout only.
-- `-n, --limit <N>`: maximum table rows shown (default 20).
-- `--wrap <N>`: maximum lines a long table cell may wrap across (default 4).
-
-### clone-repos
-
-`reposcan gh clone-repos --workspace <DIR>` clones or syncs a local copy of each
-selected repository under `DIR`. Each repository is cloned as a bare mirror in
-`DIR/mirrors` and its default branch is checked out as a worktree in
-`DIR/worktrees/`.
-
-The repositories to clone are discovered via `--org`, `--enterprise`, or
-`--repo <OWNER/NAME>` (repeatable).
-
-`--threads <N>` sets how many repositories are cloned at once (default 5).
-
-## config
+### config
 
 Persist and inspect settings (see [configuration](configuration.md)).
 
