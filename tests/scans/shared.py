@@ -67,7 +67,6 @@ def planted_session(name: str, plant: Callable[[Path], None]) -> Iterator[Sessio
         logger.info("[docker] scanning the %s fixture", name)
         with start_session(
             "docker",
-            tool_image=True,
             mount_source=str(repo),
             user=host_user(),
             image="build",

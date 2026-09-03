@@ -33,7 +33,6 @@ class ExecAction(Action):
     def run(self) -> int:
         with start_session(
             self.backend,
-            tool_image=True,
             image=self.image,
             env=resolved_env(self.env),
         ) as session:

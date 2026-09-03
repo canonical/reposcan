@@ -1,21 +1,20 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan bootstrap` action: install tools onto the host or a container.
+"""The `reposcan bootstrap` action: install scanning tools.
 
-With an explicit --backend, install into a container. All scanning tools by
-default, or a named subset; either way each tool's prerequisites (uv, the Go SDK)
-are pulled in automatically.
+Host-only: containers use the reposcan image.
 """
 
 import logging
 import sys
 
 from reposcan.actions.base import Action
-from reposcan.backends import start_session
 from reposcan.cli_kit import flag, positional
 from reposcan.execution.context import ExecutionContext, resolved_env
+from reposcan.execution.local import LocalContext
 from reposcan.execution.process import Failure
+from reposcan.paths import tools_root
 from reposcan.tools.install import current_platform, install_plan
 from reposcan.tools.model import Platform, Tool
 from reposcan.tools.registry import TOOLS
@@ -25,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class BootstrapAction(Action):
     name = "bootstrap"
-    help = "Install tools onto the host. Runs locally unless --backend is given."
+    help = "Install the scanning tools on this host."
 
     tools: list[str] = positional(
         many=True,
@@ -34,24 +33,18 @@ class BootstrapAction(Action):
     confirm: bool = flag(help="Skip interactive confirmation before installing tools.")
 
     def run(self) -> int:
-        backend = self.backend if self.backend != "auto" else "local"
-        with start_session(
-            backend,
-            tool_image=False,
-            image=self.image,
-            env=resolved_env(self.env),
-        ) as session:
-            if not session.ok:
-                return session.exit_code
-            if (
-                session.context.name == "local"
-                and not self.confirm
-                and not _confirm_host_install()
-            ):
-                return 1
-            return bootstrap(
-                session.context, self.tools, current_platform(), session.tool_root
+        """Install the requested tools onto this host and return an exit code."""
+        if self.backend not in (None, "auto", "local"):
+            logger.error(
+                "The %s backend was selected, but bootstrap only applies to 'local'.",
+                self.backend,
             )
+            return 2
+        if not self.confirm and not _confirm_host_install():
+            return 1
+        root = str(tools_root())
+        ctx = LocalContext(f"{root}/bin", resolved_env(self.env))
+        return bootstrap(ctx, self.tools, current_platform(), root)
 
 
 def bootstrap(

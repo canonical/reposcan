@@ -156,7 +156,6 @@ class ScanCommand(Action):
         ]
         with start_session(
             self.backend,
-            tool_image=True,
             mount_source=path,
             image=self.image,
             user=user,

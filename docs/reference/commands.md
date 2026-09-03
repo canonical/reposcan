@@ -212,10 +212,11 @@ the selected backend.
 
 ### bootstrap
 
-`reposcan bootstrap [tools...]` installs tools onto the host (or into the
-backend when `--backend` is given). With no tool names, it installs all of them.
-A host install is confirmed interactively unless `--confirm` is passed. The
-container backends do not need this; they build or pull the tool image.
+`reposcan bootstrap [tools...]` installs the requested scanning tools onto this
+host. With no tool names, it installs all tools. The install is confirmed
+interactively unless `--confirm` is passed. It runs on the host only: a
+container gets its tools from the reposcan image, so `--backend docker` or
+`--backend lxd` is a usage error.
 
 ### image
 

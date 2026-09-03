@@ -264,19 +264,10 @@ def select_backend(requested: str | None) -> Backend | Failure:
     return Failure(reason="no execution backend is available")
 
 
-def _tool_image_for(
-    backend: ContainerBackend, image: str | None, *, tool_image: bool
-) -> str | None | Failure:
-    """Build or pull `backend`'s tool image, returning the reference to run.
-
-    None means run the backend's plain base image. `tool_image=False` asks for that,
-    but only where the image would have been built: a configured pull is honoured
-    either way, so the bootstrap path still gets the image it named.
-    """
+def _tool_image_for(backend: ContainerBackend, image: str | None) -> str | Failure:
+    """Build or pull `backend`'s tool image, returning the reference to run."""
     puller = backend.image_puller()
     if puller is None or image == LOCAL_BUILD_SHORTHAND:
-        if not tool_image:
-            return None
         if image and image != LOCAL_BUILD_SHORTHAND and puller is None:
             logger.warning(
                 "the %s backend cannot pull the configured image %r; building the "
@@ -341,7 +332,7 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Failure | 
         return backend
     if not isinstance(backend, ContainerBackend):
         return None
-    resolved = _tool_image_for(backend, image, tool_image=True)
+    resolved = _tool_image_for(backend, image)
     return resolved if isinstance(resolved, Failure) else None
 
 
@@ -349,7 +340,6 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Failure | 
 def start_session(
     requested_backend: str | None,
     *,
-    tool_image: bool,
     mount_source: str | None = None,
     image: str | None = None,
     user: RunUser | None = None,
@@ -363,8 +353,6 @@ def start_session(
 
     Args:
         requested_backend: The backend to select, or None for 'auto'.
-        tool_image: Use the verified tool image (built on demand) when True,
-            else a plain container.
         mount_source: A host directory to make available for scanning, or None. The
             session's `target` reports where it is reachable in the context.
         image: The tool image to run: an OCI reference, `canonical` (the published
@@ -382,7 +370,7 @@ def start_session(
         yield Session(None, "", 2)
         return
     if isinstance(backend, ContainerBackend):
-        reference = _tool_image_for(backend, image, tool_image=tool_image)
+        reference = _tool_image_for(backend, image)
         if isinstance(reference, Failure):
             logger.error(reference.reason)
             yield Session(None, "", 1)

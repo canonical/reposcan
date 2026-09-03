@@ -104,7 +104,6 @@ def _scan_one(
             logger.warning("%s: %s", path, message)
     with start_session(
         backend,
-        tool_image=True,
         mount_source=path,
         image=image,
         user=user,
