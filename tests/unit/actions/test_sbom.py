@@ -9,13 +9,13 @@ import tempfile
 from contextlib import redirect_stdout
 
 import reposcan.actions.sbom as sbom_cmd
-from reposcan import reposcan_version
+from reposcan import __version__
 from reposcan.execution.process import Failure
 from reposcan.scans.sbom import SbomScan
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
+    build_sbom_artifact,
     patch_run_sbom_scan,
-    sbom_artifact,
 )
 
 
@@ -23,7 +23,10 @@ def test_sbom_exits_zero_and_prints_a_component_table() -> None:
     out = io.StringIO()
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo)
-        with patch_run_sbom_scan(sbom_cmd, sbom_artifact(3)), redirect_stdout(out):
+        with (
+            patch_run_sbom_scan(sbom_cmd, build_sbom_artifact(3)),
+            redirect_stdout(out),
+        ):
             code = action.run()
     assert code == 0  # an SBOM is an inventory, never pass/fail
     assert "COMPONENT" in out.getvalue() and "c0" in out.getvalue()
@@ -36,7 +39,7 @@ def test_sbom_forwards_dependency_options_to_the_scan() -> None:
             path=repo, include_dev_dependencies=True, allow_code_execution=True
         )
         with (
-            patch_run_sbom_scan(sbom_cmd, sbom_artifact(0), captured=captured),
+            patch_run_sbom_scan(sbom_cmd, build_sbom_artifact(0), captured=captured),
             redirect_stdout(io.StringIO()),
         ):
             action.run()
@@ -56,10 +59,13 @@ def test_the_sbom_carries_analysis_metadata() -> None:
     out = io.StringIO()
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo, format="json")
-        with patch_run_sbom_scan(sbom_cmd, sbom_artifact(2)), redirect_stdout(out):
+        with (
+            patch_run_sbom_scan(sbom_cmd, build_sbom_artifact(2)),
+            redirect_stdout(out),
+        ):
             action.run()
     metadata = json.loads(out.getvalue())["metadata"]
-    assert metadata["tools"] == [{"name": "reposcan", "version": reposcan_version()}]
+    assert metadata["tools"] == [{"name": "reposcan", "version": __version__}]
     assert metadata["timestamp"]
     properties = {p["name"]: json.loads(p["value"]) for p in metadata["properties"]}
     assert properties["reposcan:analysis"]["uuid"]

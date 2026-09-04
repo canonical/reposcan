@@ -39,7 +39,7 @@ class Poetry:
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
@@ -47,7 +47,7 @@ class Poetry:
         content = read_file(ctx, f"{workdir}/pyproject.toml")
         if content is None or not _is_legacy_poetry(content):
             return  # PEP 621 or not Poetry at all: the uv package manager handles it
-        poetry = POETRY.installed_path(tool_root)
+        poetry = POETRY.locate_executable(install_dir)
         logger.debug("detected poetry; running: %s lock", poetry)
         if not succeeded(ctx.run([poetry, "lock"], cwd=workdir, env=_ENV)):
             logger.warning("poetry resolution skipped for %s: lock failed", workdir)

@@ -21,14 +21,14 @@ from pathlib import Path
 from reposcan import output
 from reposcan.actions.base import Action
 from reposcan.backends import start_session
-from reposcan.cli_kit import Param, flag, option, params_of, positional
+from reposcan.cli_kit import Param, collect_params, flag, option, positional
 from reposcan.db import write as db_write
-from reposcan.execution.context import RunUser, host_user, resolved_env
+from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.scans import ignore, sarif
 from reposcan.scans.base import SecurityScan
-from reposcan.scans.registry import SCANS, scan_names
+from reposcan.scans.registry import SCANS, parse_scan_names
 from reposcan.scans.run import run_analysis
 from reposcan.table import DEFAULT_WRAP_LINES
 
@@ -54,7 +54,7 @@ def _aggregate_scan_options(scans: dict[str, type[SecurityScan]]) -> tuple[Param
     declared_by: dict[str, list[str]] = {}
     params: dict[str, Param] = {}
     for scan_name, scan_class in scans.items():
-        for param in params_of(scan_class):
+        for param in collect_params(scan_class):
             params.setdefault(param.name, param)
             declared_by.setdefault(param.name, []).append(scan_name)
     aggregated: list[Param] = []
@@ -75,7 +75,7 @@ class ScanCommand(Action):
     help = "Scan a repository with one or more scan types."
 
     scans: list[str] = positional(
-        convert=scan_names,
+        convert=parse_scan_names,
         help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
     )
@@ -144,12 +144,12 @@ class ScanCommand(Action):
             for msg in errors:
                 logger.warning("%s", msg)
 
-        user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
+        user = get_host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
         scans = [
             SCANS[name](
                 **{
                     param.name: getattr(self, param.name)
-                    for param in params_of(SCANS[name])
+                    for param in collect_params(SCANS[name])
                 }
             )
             for name in names
@@ -159,7 +159,7 @@ class ScanCommand(Action):
             mount_source=path,
             image=self.image,
             user=user,
-            env=resolved_env(self.env),
+            env=resolve_env(self.env),
         ) as session:
             if not session.ok:
                 return session.exit_code
@@ -171,7 +171,7 @@ class ScanCommand(Action):
             report = sarif.SarifDocument.from_runs(analysis.sarif_runs)
 
             if self.db is not None:
-                failed = db_write.analysis(self.db, analysis)
+                failed = db_write.write_analysis(self.db, analysis)
                 if failed is not None:
                     logger.error(failed.reason)
                     return 1
@@ -182,13 +182,13 @@ class ScanCommand(Action):
                     logger.error(failure.reason)
                     return 1
             else:
-                output.write_table(*report.rows(), limit=self.limit, wrap=self.wrap)
+                output.write_table(*report.to_table(), limit=self.limit, wrap=self.wrap)
             logger.info("scan complete: %d finding(s)", report.count())
             if analysis.failed_scans:
                 return 1
             threshold = _FAIL_RANK.get(self.fail_on, 0)  # 'none' -> 0, never fails
             fails = bool(threshold) and any(
                 _FAIL_RANK.get(finding.level, 2) >= threshold
-                for finding in report.results()
+                for finding in report.results
             )
             return FINDINGS_EXIT_CODE if fails else 0

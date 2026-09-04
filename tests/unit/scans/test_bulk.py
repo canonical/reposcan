@@ -16,7 +16,7 @@ from reposcan.scans.analysis import Analysis
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 
-def _analysis() -> Analysis:
+def _build_analysis() -> Analysis:
     return Analysis.begin(RepositoryState(identity=ProjectIdentity("acme")))
 
 
@@ -29,14 +29,14 @@ def _mocks(
     def fake_run_analysis(
         session: Any, scans: Sequence[Any], **kwargs: Any
     ) -> Analysis:
-        return _analysis()
+        return _build_analysis()
 
     def fake_scan_one(path: str, *args: Any, **kwargs: Any) -> Analysis | Failure:
         scanned.append(path)
         if path in failures:
             return Failure(reason=failures[path])
         recorded.append(path)
-        return _analysis()
+        return _build_analysis()
 
     saved = (bulk.ensure_image, bulk._scan_one, bulk.run_analysis)
     bulk.ensure_image = lambda backend, image: None

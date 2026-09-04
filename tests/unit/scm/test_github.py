@@ -78,7 +78,7 @@ def _answering(*responses: Any) -> Iterator[_FakeSession]:
         github.time.sleep = sleep
 
 
-def _payload(name: str) -> dict[str, str]:
+def _build_payload(name: str) -> dict[str, str]:
     return {
         "full_name": f"acme/{name}",
         "clone_url": f"https://github.com/acme/{name}.git",
@@ -91,9 +91,9 @@ def test_pagination_follows_the_link_header_and_skips_unusable_entries() -> None
     # naming no clone url is skipped rather than failing the whole page.
     link = '<https://api.github.com/x?a=1,2&page=2>; rel="next"'
     first = _Response(
-        body=[_payload("one"), {"full_name": "acme/x"}], headers={"Link": link}
+        body=[_build_payload("one"), {"full_name": "acme/x"}], headers={"Link": link}
     )
-    with _answering(first, _Response(body=[_payload("two")])) as fake:
+    with _answering(first, _Response(body=[_build_payload("two")])) as fake:
         listed = list_repositories(org="acme")
     assert not isinstance(listed, Failure)
     assert [repo.full_name for repo in listed] == ["acme/one", "acme/two"]
@@ -128,7 +128,7 @@ def test_every_failure_becomes_a_failure_naming_its_cause() -> None:
 def test_a_secondary_rate_limit_is_waited_out_then_eventually_given_up_on() -> None:
     # Unlike a primary limit, GitHub names a short delay and expects it honoured.
     slow = _Response(403, headers={"Retry-After": "5"})
-    with _answering(slow, _Response(body=[_payload("one")])) as fake:
+    with _answering(slow, _Response(body=[_build_payload("one")])) as fake:
         listed = list_repositories(org="acme")
     assert fake.slept == [5.0]
     assert not isinstance(listed, Failure)
@@ -147,7 +147,9 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
     # its organizations over GraphQL and each listed over REST.
     page = {"nodes": [{"login": "one"}], "pageInfo": {"hasNextPage": False}}
     enterprise = {"data": {"enterprise": {"organizations": page}}}
-    with _answering(_Response(body=enterprise), _Response(body=[_payload("a")])) as f:
+    with _answering(
+        _Response(body=enterprise), _Response(body=[_build_payload("a")])
+    ) as f:
         listed = list_repositories(org="one", enterprise="acme-inc", token="s3cret")
     assert not isinstance(listed, Failure)
     assert [repo.full_name for repo in listed] == ["acme/a"]
@@ -156,7 +158,7 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
 
 
 def test_a_repository_can_be_fetched_by_name() -> None:
-    with _answering(_Response(body=_payload("one"))) as fake:
+    with _answering(_Response(body=_build_payload("one"))) as fake:
         found = get_repositories(["acme/one"])
     assert not isinstance(found, Failure)
     assert [repo.full_name for repo in found] == ["acme/one"]

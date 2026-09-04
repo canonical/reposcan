@@ -36,7 +36,7 @@ def _lock(name: str) -> str:
     return (_LOCKS / f"{name}.txt").read_text()
 
 
-def _gh(repo: str, tag: str, asset: str) -> str:
+def _build_gh_url(repo: str, tag: str, asset: str) -> str:
     """Build a GitHub release download URL.
 
     Spelled from its parts because the full URLs run past the line limit and
@@ -57,20 +57,24 @@ UV = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("astral-sh/uv", "0.11.26", "uv-x86_64-unknown-linux-gnu.tar.gz"),
+            url=_build_gh_url(
+                "astral-sh/uv", "0.11.26", "uv-x86_64-unknown-linux-gnu.tar.gz"
+            ),
             sha256="6426a73c3837e6e2483ee344cbc00f36394d179afcba6183cb77437e67db4af0",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("astral-sh/uv", "0.11.26", "uv-aarch64-unknown-linux-gnu.tar.gz"),
+            url=_build_gh_url(
+                "astral-sh/uv", "0.11.26", "uv-aarch64-unknown-linux-gnu.tar.gz"
+            ),
             sha256="befa1a59c91e96eb601b0fd9a97c03dd666f17baba644b2b4db9c59a767e387e",
         ),
     ),
 )
 
-# Subdirectory of the install root where uv keeps its managed Python interpreters
-# (via UV_PYTHON_INSTALL_DIR). Kept under the install root for unified perms mgmt.
+# Subdirectory of the install dir where uv keeps its managed Python interpreters
+# (via UV_PYTHON_INSTALL_DIR). Kept under the install dir for unified perms mgmt.
 UV_PYTHON_SUBDIR = "python"
 
 # The Go toolchain: an ordinary native binary. Its download is a multi-file tree, so
@@ -106,7 +110,7 @@ TRUFFLEHOG = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh(
+            url=_build_gh_url(
                 "trufflesecurity/trufflehog",
                 "v3.95.8",
                 "trufflehog_3.95.8_linux_amd64.tar.gz",
@@ -116,7 +120,7 @@ TRUFFLEHOG = NativeBinary(
         Download(
             os="linux",
             arch="arm64",
-            url=_gh(
+            url=_build_gh_url(
                 "trufflesecurity/trufflehog",
                 "v3.95.8",
                 "trufflehog_3.95.8_linux_arm64.tar.gz",
@@ -134,13 +138,17 @@ SYFT = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("anchore/syft", "v1.46.0", "syft_1.46.0_linux_amd64.tar.gz"),
+            url=_build_gh_url(
+                "anchore/syft", "v1.46.0", "syft_1.46.0_linux_amd64.tar.gz"
+            ),
             sha256="d654f678b709eb53c393d38519d5ed7d2e57205529404018614cfefa0fb2b5ca",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("anchore/syft", "v1.46.0", "syft_1.46.0_linux_arm64.tar.gz"),
+            url=_build_gh_url(
+                "anchore/syft", "v1.46.0", "syft_1.46.0_linux_arm64.tar.gz"
+            ),
             sha256="9fafef4db4f032ce81008d3a1529985d41ceb6ccdf2b388c9ce2f1ed7d32082e",
         ),
     ),
@@ -154,13 +162,17 @@ GRYPE = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("anchore/grype", "v0.115.0", "grype_0.115.0_linux_amd64.tar.gz"),
+            url=_build_gh_url(
+                "anchore/grype", "v0.115.0", "grype_0.115.0_linux_amd64.tar.gz"
+            ),
             sha256="3fad92940650e514c0aa2dad83526942a055e210cec09a8a59d9c024adc2b90e",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("anchore/grype", "v0.115.0", "grype_0.115.0_linux_arm64.tar.gz"),
+            url=_build_gh_url(
+                "anchore/grype", "v0.115.0", "grype_0.115.0_linux_arm64.tar.gz"
+            ),
             sha256="b8541b9ecc3e936e7db4ff14b71a9474b25f3898ccaad63ee0bfe3449fcd734d",
         ),
     ),
@@ -174,13 +186,17 @@ TRIVY = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("aquasecurity/trivy", "v0.72.0", "trivy_0.72.0_Linux-64bit.tar.gz"),
+            url=_build_gh_url(
+                "aquasecurity/trivy", "v0.72.0", "trivy_0.72.0_Linux-64bit.tar.gz"
+            ),
             sha256="bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("aquasecurity/trivy", "v0.72.0", "trivy_0.72.0_Linux-ARM64.tar.gz"),
+            url=_build_gh_url(
+                "aquasecurity/trivy", "v0.72.0", "trivy_0.72.0_Linux-ARM64.tar.gz"
+            ),
             sha256="2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467",
         ),
     ),
@@ -194,13 +210,17 @@ POUTINE = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("boostsecurityio/poutine", "v1.1.6", "poutine_Linux_x86_64.tar.gz"),
+            url=_build_gh_url(
+                "boostsecurityio/poutine", "v1.1.6", "poutine_Linux_x86_64.tar.gz"
+            ),
             sha256="abde716599a65608b023a69ed9316e5f083a7bca48612151c2720835883757ea",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("boostsecurityio/poutine", "v1.1.6", "poutine_Linux_arm64.tar.gz"),
+            url=_build_gh_url(
+                "boostsecurityio/poutine", "v1.1.6", "poutine_Linux_arm64.tar.gz"
+            ),
             sha256="460c90300c6329106b551c150682d12e457365f6436a6cbbd08fe79eb9a98131",
         ),
     ),
@@ -215,13 +235,13 @@ CDXGEN = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("CycloneDX/cdxgen", "v12.7.0", "cdxgen-linux-amd64"),
+            url=_build_gh_url("CycloneDX/cdxgen", "v12.7.0", "cdxgen-linux-amd64"),
             sha256="e202de54d1a99e388eddf9b21bf11b3301f8495a77e84a5d323f9b867160d731",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("CycloneDX/cdxgen", "v12.7.0", "cdxgen-linux-arm64"),
+            url=_build_gh_url("CycloneDX/cdxgen", "v12.7.0", "cdxgen-linux-arm64"),
             sha256="b9df01473f0cd28a1911b276feb81a8ed410c947eb84266b59333513ec8afdc5",
         ),
     ),
@@ -342,13 +362,13 @@ PNPM = NativeBinary(
         Download(
             os="linux",
             arch="amd64",
-            url=_gh("pnpm/pnpm", "v11.21.0", "pnpm-linux-x64.tar.gz"),
+            url=_build_gh_url("pnpm/pnpm", "v11.21.0", "pnpm-linux-x64.tar.gz"),
             sha256="aadc489ce4473c2af0fec06a5c19e113b5793d404eac49853c8153bf4b0d8263",
         ),
         Download(
             os="linux",
             arch="arm64",
-            url=_gh("pnpm/pnpm", "v11.21.0", "pnpm-linux-arm64.tar.gz"),
+            url=_build_gh_url("pnpm/pnpm", "v11.21.0", "pnpm-linux-arm64.tar.gz"),
             sha256="64eb219b008f7a4c176d81fbce919c20b0b7e093e815cbb669d46e681451f43b",
         ),
     ),

@@ -29,10 +29,10 @@ def test_write_file_feeds_content_over_stdin_and_read_file_reads_it_back() -> No
         assert read_file(ctx, path) == "flask==3.0.0\nrequests==2.31.0\n"
 
 
-def test_a_tool_root_is_prepended_to_path_so_exec_finds_tools() -> None:
+def test_a_bin_dir_is_prepended_to_path_so_exec_finds_tools() -> None:
     show_path = [sys.executable, "-c", "import os; print(os.environ['PATH'])"]
     with tempfile.TemporaryDirectory() as tmp:
-        ctx = LocalContext(tool_root=tmp)
+        ctx = LocalContext(bin_dir=tmp)
         result = ctx.run(show_path)
         assert isinstance(result, ExecResult)
         assert result.stdout.strip().startswith(f"{tmp}{os.pathsep}")

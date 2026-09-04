@@ -7,13 +7,13 @@ import logging
 import sys
 
 from reposcan.actions.base import Action
-from reposcan.cli_kit import Group, coerce, params_of, positional
+from reposcan.cli_kit import Group, coerce, collect_params, positional
 from reposcan.config import load, save
 from reposcan.table import render_table
 
 logger = logging.getLogger(__name__)
 
-_KEYS = {p.name: p for p in params_of(Action)}
+_KEYS = {p.name: p for p in collect_params(Action)}
 
 
 class ConfigSet(Action):

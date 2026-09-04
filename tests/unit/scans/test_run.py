@@ -54,7 +54,9 @@ class _FakeScan(SecurityScan):
     # Invokes one real registered tool so installed-path lookup resolves.
     name = "faux"
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
     def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
@@ -70,7 +72,9 @@ class _Scan(SecurityScan):
         self._invocations = invocations
         self.seen: list[ExecResult] = []
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         return self._invocations
 
     def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
@@ -82,7 +86,9 @@ class _ScanWithFinding(SecurityScan):
     # create_run yields one finding at app.py:2 so run_scan has a finding to hash.
     name = "faux"
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
     def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
@@ -97,7 +103,7 @@ def test_run_scan_adds_the_github_line_hash_to_every_scans_findings() -> None:
     ctx = _FakeContext(ExecResult(0, "import os\nSECRET = 'x'\n", ""))
     run = run_scan(_ScanWithFinding(), ctx, "/scan/acme", "/opt/reposcan")
     assert not isinstance(run, Failure)
-    (finding,) = run.results()
+    (finding,) = run.results
     digest = hashlib.sha256(b"SECRET = 'x'").hexdigest()[:16]
     expected = f"{digest}:1"  # the first occurrence of that line in that file
     assert finding.result["partialFingerprints"]["primaryLocationLineHash"] == expected

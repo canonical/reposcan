@@ -25,7 +25,7 @@ from reposcan.scans.run import run_scan
 from reposcan.scans.sbom import SbomScan
 from tests.scans.shared import (
     discover_scans,
-    fixture_names,
+    list_fixture_names,
     load_fixture,
     planted_session,
     require_docker,
@@ -45,7 +45,9 @@ class SecurityFixture(Protocol):
 def test_every_scan_has_a_fixture_and_is_wired_to_a_command() -> None:
     discovered = discover_scans()
     assert discovered, "no scans discovered under src/reposcan/scans"
-    assert fixture_names() == set(discovered), "fixtures and scans are not one-to-one"
+    assert list_fixture_names() == set(discovered), (
+        "fixtures and scans are not one-to-one"
+    )
     security = {n for n, c in discovered.items() if issubclass(c, SecurityScan)}
     assert security == set(SCANS)  # the SARIF scans are exactly the SCANS registry
     assert set(discovered) - security == {
@@ -61,7 +63,7 @@ def _run(name: str) -> None:
             fixture.SCAN,
             session.context,
             session.target,
-            session.tool_root,
+            session.install_dir,
             stream=True,
         )
         assert not isinstance(run, Failure), f"{name}: {run}"
@@ -77,7 +79,7 @@ def _assert_normalized(name: str, document: sarif.SarifDocument) -> None:
     assert len(runs) == 1, f"{name}: expected one run, got {len(runs)}"
     driver = runs[0]["tool"]["driver"]["name"]
     assert driver == "reposcan", f"{name}: driver not reposcan ({driver})"
-    for result in document.results():
+    for result in document.results:
         assert result.scanners, f"{name}: result {result.rule_id!r} names no scanners"
 
 

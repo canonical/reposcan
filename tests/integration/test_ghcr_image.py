@@ -25,7 +25,7 @@ _TEST_CMD = "trivy"
 
 def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
     backend = BACKENDS["docker"]
-    availability = backend.availability()
+    availability = backend.check_availability()
     assert availability.ok, f"docker unavailable: {availability.reason}"
 
     logger.info("pulling the ghcr image %s", CANONICAL_REF)
@@ -41,7 +41,7 @@ def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
     assert started is None, f"container from the ghcr image failed to start: {started}"
     try:
         tool = TOOLS[_TEST_CMD]
-        executable = tool.installed_path("/opt/reposcan")
+        executable = tool.locate_executable("/opt/reposcan")
         logger.info("[%s] checking %s --version", _TEST_CMD, executable)
         result = ctx.run([executable, "--version"])
         assert isinstance(result, ExecResult), result

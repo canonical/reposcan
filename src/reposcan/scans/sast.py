@@ -20,7 +20,9 @@ class SastScan(SecurityScan):
     name = "sast"
     help = "Static analysis of source with semgrep."
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:
@@ -64,7 +66,7 @@ class SastScan(SecurityScan):
             return Failure(reason=f"{tool} did not produce SARIF output")
         # remove semgrep's "not logged in" failure; confuses downstream tools with a
         # "hash" that says "requires login"
-        for finding in run.results():
+        for finding in run.results:
             for field in ("fingerprints", "partialFingerprints"):
                 entries = finding.result.get(field)
                 if not entries:

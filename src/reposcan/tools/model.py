@@ -13,8 +13,9 @@ separate manifest:
   - Go tools pin the module by its go.sum h1 hashes, verified at build;
   - PyPI tools install from a hash-pinned requirements lock (--require-hashes).
 
-Each tool also knows how to install itself: `install_commands(platform, install_root)`
-returns the shell lines that install it, for a platform, under an install root. Those
+Each tool also knows how to install itself:
+`script_install(platform, install_dir)` returns the shell lines that install
+it, for a platform, under an install dir. Those
 lines are the single definition that both `reposcan bootstrap` (run through an
 execution context) and image generation (a build script) consume; see
 tools/install.py.
@@ -78,16 +79,16 @@ class Tool(Protocol):
     @property
     def version(self) -> str: ...
 
-    def install_commands(self, platform: Platform, install_root: str) -> list[str]:
-        """Shell lines that install this tool, for `platform`, under `install_root`.
+    def script_install(self, platform: Platform, install_dir: str) -> list[str]:
+        """Shell lines that install this tool, for `platform`, under `install_dir`.
 
         Each line is run via the execution context (bootstrap) or concatenated into
         an image build script (image generation).
         """
         ...
 
-    def installed_path(self, install_root: str) -> str:
-        """Locate the installed executable under `install_root`.
+    def locate_executable(self, install_dir: str) -> str:
+        """Locate the installed executable under `install_dir`.
 
         It exists only once the tool is installed, so it doubles as an install marker.
         """
@@ -119,7 +120,7 @@ class NativeBinary:
     downloads: tuple[Download, ...] = ()
     kind: ClassVar[ToolKind] = ToolKind.NATIVE_BINARY
 
-    def _download_for(self, platform: Platform) -> Download | None:
+    def _select_download(self, platform: Platform) -> Download | None:
         for download in self.downloads:
             if download.os == platform.os and download.arch == platform.arch:
                 return download
@@ -132,11 +133,11 @@ class NativeBinary:
             f'echo "{download.sha256}  {archive}" | sha256sum -c -',
         ]
 
-    def installed_path(self, install_root: str) -> str:
-        return f"{install_root}/bin/{self.name}"
+    def locate_executable(self, install_dir: str) -> str:
+        return f"{install_dir}/bin/{self.name}"
 
-    def install_commands(self, platform: Platform, install_root: str) -> list[str]:
-        download = self._download_for(platform)
+    def script_install(self, platform: Platform, install_dir: str) -> list[str]:
+        download = self._select_download(platform)
         if download is None:
             return [
                 _NO_DOWNLOAD.format(
@@ -146,18 +147,18 @@ class NativeBinary:
                     arch=platform.arch,
                 )
             ]
-        cache = f"{install_root}/cache"
+        cache = f"{install_dir}/cache"
         archive = f"{cache}/{self.name}-{self.version}"
-        dest = f"{install_root}/bin/{self.name}"
+        dest = f"{install_dir}/bin/{self.name}"
         executable = self.executable or self.name
         commands = [
-            f'mkdir -p "{cache}" "{install_root}/bin"',
+            f'mkdir -p "{cache}" "{install_dir}/bin"',
             *self._fetch(download, archive),
         ]
         if download.url.endswith((".tar.gz", ".tgz", ".tar")):
             # Extract the archive whole and symlink the executable (found wherever it
             # sits, so platform-nested layouts need no special-casing) into bin/.
-            tree = f"{install_root}/opt/{self.name}"
+            tree = f"{install_dir}/opt/{self.name}"
             commands += [
                 f'rm -rf "{tree}" && mkdir -p "{tree}"',
                 f'tar -xf "{archive}" -C "{tree}"',
@@ -167,7 +168,7 @@ class NativeBinary:
             # Expose extra sibling executables (e.g. Node's `npm`) from the tree's bin/.
             commands += [
                 f'ln -sf "$(find "{tree}" -path "*/bin/{extra}" | head -1)" '
-                f'"{install_root}/bin/{extra}"'
+                f'"{install_dir}/bin/{extra}"'
                 for extra in self.also_link
             ]
         else:
@@ -193,14 +194,14 @@ class PypiTool:
     requires: tuple[Tool, ...] = ()
     kind: ClassVar[ToolKind] = ToolKind.PYPI
 
-    def installed_path(self, install_root: str) -> str:
+    def locate_executable(self, install_dir: str) -> str:
         # path to invoke the package's first console script.
         entry = self.entrypoints[0] if self.entrypoints else self.name
-        return f"{install_root}/bin/{entry}"
+        return f"{install_dir}/bin/{entry}"
 
-    def install_commands(self, platform: Platform, install_root: str) -> list[str]:
-        uv = f"{install_root}/bin/uv"  # the uv binary, installed first
-        pypi = f"{install_root}/pypi"
+    def script_install(self, platform: Platform, install_dir: str) -> list[str]:
+        uv = f"{install_dir}/bin/uv"  # the uv binary, installed first
+        pypi = f"{install_dir}/pypi"
         venv = f"{pypi}/{self.name}"
         lock = f"{pypi}/{self.name}.txt"
         # Write the pinned lock into place first (a quoted heredoc keeps the contents
@@ -216,7 +217,7 @@ class PypiTool:
             f'"{uv}" pip install --python "{venv}" --require-hashes -r "{lock}"',
         ]
         lines += [
-            f'ln -sf "{venv}/bin/{entrypoint}" "{install_root}/bin/{entrypoint}"'
+            f'ln -sf "{venv}/bin/{entrypoint}" "{install_dir}/bin/{entrypoint}"'
             for entrypoint in self.entrypoints
         ]
         return lines
@@ -241,14 +242,14 @@ class GoTool:
     requires: tuple[Tool, ...] = ()
     kind: ClassVar[ToolKind] = ToolKind.GO
 
-    def installed_path(self, install_root: str) -> str:
-        return f"{install_root}/bin/{self.name}"
+    def locate_executable(self, install_dir: str) -> str:
+        return f"{install_dir}/bin/{self.name}"
 
-    def install_commands(self, platform: Platform, install_root: str) -> list[str]:
+    def script_install(self, platform: Platform, install_dir: str) -> list[str]:
         # Build with the Go toolchain this tool depends on: its sole requirement is
-        # the Go SDK, whose installed_path is the `go` binary.
-        go = self.requires[0].installed_path(install_root)
-        work = f"{install_root}/cache/go-build/{self.name}"
+        # the Go SDK, whose executable is the `go` binary.
+        go = self.requires[0].locate_executable(install_dir)
+        work = f"{install_dir}/cache/go-build/{self.name}"
         package = self.package or self.module
         write_go_sum = (
             f"printf '%s v%s %s\\n%s v%s/go.mod %s\\n' "
@@ -266,7 +267,7 @@ class GoTool:
             f'"{go}" mod edit -require="{self.module}@v{self.version}"',
             write_go_sum,
             f'GOSUMDB=off GOFLAGS=-mod=mod "{go}" mod download "{self.module}"',
-            f'GOBIN="{install_root}/bin" GOSUMDB=off GOFLAGS=-mod=mod '
+            f'GOBIN="{install_dir}/bin" GOSUMDB=off GOFLAGS=-mod=mod '
             f'"{go}" install "{package}@v{self.version}"',
         ]
         return [" && ".join(steps)]

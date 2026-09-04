@@ -21,7 +21,7 @@ def verify(artifact: sarif.SarifDocument) -> None:
     # Django 2.2.0 (EOL since 2020) has many known CVEs. trivy and grype report them
     # as SARIF results with CVE-format rule IDs; the result messages and/or rule
     # descriptions reference the vulnerable package by name.
-    results = artifact.results()
+    results = artifact.results
     assert results, "expected at least one vulnerability finding"
     rule_ids = {r.rule_id for r in results}
     cves = {rid for rid in rule_ids if rid.startswith("CVE-")}

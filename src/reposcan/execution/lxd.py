@@ -8,9 +8,9 @@ from uuid import uuid4
 
 from reposcan.execution.context import (
     RunUser,
-    as_user,
-    home_for,
-    mounted_target,
+    locate_mounted_target,
+    select_home,
+    wrap_with_setpriv,
 )
 from reposcan.execution.firewall import warn_if_lxd_bridge_blocked
 from reposcan.execution.process import ExecResult, Failure, run_process, succeeded
@@ -81,7 +81,7 @@ class LxdContext:
             return project_creation_error
         handle = f"reposcan-{uuid4().hex[:12]}"
         argv = [*LXC, "launch", self._image, handle, "--ephemeral"]
-        idmap = _raw_idmap(self._user)
+        idmap = _build_raw_idmap(self._user)
         if idmap is not None:
             # Set at launch: LXD shifts the rootfs uids as it starts, so the idmap
             # must be in place before the instance runs. Per-instance (not a profile)
@@ -98,7 +98,7 @@ class LxdContext:
         return None
 
     def _mount(self, handle: str, mount_source: str) -> Failure | None:
-        """Attach `mount_source` read-only at `mounted_target(mount_source)`.
+        """Attach `mount_source` read-only at `locate_mounted_target(mount_source)`.
 
         Args:
             handle: The running instance to attach the disk to.
@@ -117,7 +117,7 @@ class LxdContext:
                 "scan",
                 "disk",
                 f"source={mount_source}",
-                f"path={mounted_target(mount_source)}",
+                f"path={locate_mounted_target(mount_source)}",
                 "readonly=true",
             ],
             check=True,
@@ -145,8 +145,8 @@ class LxdContext:
         command = list(command)
         effective = self._user if user is None else user
         if effective is not None:
-            run_env.setdefault("HOME", home_for(effective.uid))
-            command = as_user(command, effective)
+            run_env.setdefault("HOME", select_home(effective.uid))
+            command = wrap_with_setpriv(command, effective)
         for key, value in sorted(run_env.items()):
             argv += ["--env", f"{key}={value}"]
         argv += ["--", *command]
@@ -164,7 +164,7 @@ class LxdContext:
             self._instance_name = None
 
 
-def _raw_idmap(user: RunUser | None) -> str | None:
+def _build_raw_idmap(user: RunUser | None) -> str | None:
     """Build an LXD raw.idmap for `user`.
 
     `both <uid> <uid>` maps both the uid and the primary gid to identity; each

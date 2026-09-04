@@ -6,42 +6,23 @@
 Config lives under $XDG_CONFIG_HOME (see config.py); installed tools live under
 $XDG_DATA_HOME; transient scratch (dependency-resolution repo copies) lives under
 $XDG_CACHE_HOME, all following the XDG convention.
+
+Resolved once at import.
 """
 
 import os
 from pathlib import Path
 
+_DATA_HOME = Path(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+)
+_CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"))
 
-def _data_home() -> Path:
-    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return Path(base) / "reposcan"
+# used as a working directory for dependency resolution by the local backend.
+# Container backends use an in-image dirinstead (execution.context.RESOLUTION_WORKDIR).
+LOCAL_RESOLUTION_WORKDIR = _CACHE_HOME / "reposcan" / "resolved"
 
+# used when installing and running reposcan-managed executables
+TOOL_INSTALL_DIR = _DATA_HOME / "reposcan" / "tools"
 
-def _cache_home() -> Path:
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    return Path(base) / "reposcan"
-
-
-def resolution_workdir() -> Path:
-    """Where the local backend copies a repo to resolve its dependencies.
-
-    $XDG_CACHE_HOME/reposcan/resolved (default ~/.cache/reposcan/resolved). Container
-    backends use an in-image directory instead (see RESOLUTION_WORKDIR).
-    """
-    return _cache_home() / "resolved"
-
-
-def tools_root() -> Path:
-    """Where `bootstrap` installs tools and `tools` looks for them.
-
-    $XDG_DATA_HOME/reposcan/tools (default ~/.local/share/reposcan/tools).
-    """
-    return _data_home() / "tools"
-
-
-def image_cache() -> Path:
-    """Where built images' verified identities are recorded (see image/cache.py).
-
-    $XDG_DATA_HOME/reposcan/images.json.
-    """
-    return _data_home() / "images.json"
+IMAGE_CACHE = _DATA_HOME / "reposcan" / "images.json"

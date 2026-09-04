@@ -43,14 +43,14 @@ def _round_trip(scan: ScanRecord) -> list[Artifact]:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
         analysis.successful_scans.extend([scan])
-        assert write.analysis(path, analysis) is None
-        return read.artifacts(path)
+        assert write.write_analysis(path, analysis) is None
+        return read.list_artifacts(path)
 
 
 def test_sarif_round_trip() -> None:
     document = sarif.parse(_read_fixture("sast.sarif"))
     assert document is not None
-    (run,) = document.runs()
+    (run,) = document.runs
     assert [inv.tool for inv in run.tool_invocations] == ["semgrep"]
     (restored,) = _round_trip(
         ScanRecord(

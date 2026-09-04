@@ -57,7 +57,7 @@ def _fit_to_terminal(widths: list[int]) -> None:
 def _render_row(cells: list[str], widths: list[int], wrap: int) -> list[str]:
     """Lay out one row: a single line, or several when a cell wraps."""
     columns = [
-        _cell_lines(cell, widths[index], wrap) for index, cell in enumerate(cells)
+        _wrap_cell(cell, widths[index], wrap) for index, cell in enumerate(cells)
     ]
     height = max((len(column) for column in columns), default=1)
     lines = []
@@ -70,7 +70,7 @@ def _render_row(cells: list[str], widths: list[int], wrap: int) -> list[str]:
     return lines
 
 
-def _cell_lines(cell: str, width: int, wrap: int) -> list[str]:
+def _wrap_cell(cell: str, width: int, wrap: int) -> list[str]:
     """Wrap a cell to at most `wrap` lines, or clip it to one when `wrap` <= 1."""
     if wrap <= 1:
         return [_clip(cell, width)]

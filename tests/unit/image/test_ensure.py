@@ -3,12 +3,13 @@
 
 """Tests for reposcan.image.ensure."""
 
-import os
+import pathlib
 import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 import reposcan.image.docker as docker
+from reposcan import paths
 from reposcan.execution.process import ExecResult, Failure
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.ensure import ensure_built, ensure_pulled
@@ -19,16 +20,13 @@ _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 
 @contextmanager
 def _isolated_cache() -> Iterator[None]:
-    saved = os.environ.get("XDG_DATA_HOME")
+    saved = paths.IMAGE_CACHE
     with tempfile.TemporaryDirectory() as tmp:
-        os.environ["XDG_DATA_HOME"] = tmp
+        paths.IMAGE_CACHE = pathlib.Path(tmp) / "reposcan" / "images.json"
         try:
             yield
         finally:
-            if saved is None:
-                os.environ.pop("XDG_DATA_HOME", None)
-            else:
-                os.environ["XDG_DATA_HOME"] = saved
+            paths.IMAGE_CACHE = saved
 
 
 class _FakeBuilder(DockerImageBuilder):
@@ -43,10 +41,10 @@ class _FakeBuilder(DockerImageBuilder):
         self._id = identity  # identity currently reported, None if absent
         self.builds = 0
 
-    def reference(self, spec: BuildSpec) -> str:
+    def derive_reference(self, spec: BuildSpec) -> str:
         return "img:abc"
 
-    def identity(self, reference: str) -> str | None:
+    def read_identity(self, reference: str) -> str | None:
         return self._id
 
     def build(self, spec: BuildSpec) -> str:

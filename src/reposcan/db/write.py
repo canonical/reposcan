@@ -13,7 +13,7 @@ from reposcan.db import schema, sqlite
 from reposcan.db.identity import (
     IssueAttributes,
     derive_component_key,
-    same_issue,
+    is_same_issue,
 )
 from reposcan.db.sqlite import Session, Table
 from reposcan.execution.process import Failure
@@ -25,12 +25,12 @@ from reposcan.scans.repo import ProjectIdentity
 logger = logging.getLogger(__name__)
 
 
-def analysis(path: str, record: Analysis) -> Failure | None:
-    """Ingest one analysis into the database at `path`, creating it when absent.
+def write_analysis(path: str, record: Analysis) -> Failure | None:
+    """Write one analysis into the database at `path`, creating it when absent.
 
     Resolves the analysis's repository to a project, creating one when nothing
     matches, then appends the analysis and everything under it. An analysis whose uuid
-    the database already holds is skipped, so ingesting the same one twice changes
+    the database already holds is skipped, so writing the same one twice changes
     nothing.
 
     Args:
@@ -41,7 +41,7 @@ def analysis(path: str, record: Analysis) -> Failure | None:
         None on success, or a Failure when `path` is not a reposcan database of this
         version, or cannot be opened.
     """
-    refusal = schema.unusable(path)
+    refusal = schema.explain_unusable(path)
     if refusal is not None:
         return Failure(reason=refusal)
     session, error = sqlite.connect(path)
@@ -129,7 +129,10 @@ def insert_scan(
         ),
     )
     session.insert(
-        Table(schema.INVOCATION, _invocation_rows(scan_id, produced.tool_invocations))
+        Table(
+            schema.INVOCATION,
+            _build_invocation_rows(scan_id, produced.tool_invocations),
+        )
     )
     tracker = _Tracker(session, project_id, record.category)
     if isinstance(produced, sarif.SarifRun):
@@ -138,7 +141,7 @@ def insert_scan(
         session.insert(
             Table(
                 schema.COMPONENT_REPORT,
-                _component_report_rows(scan_id, produced, tracker),
+                _build_component_report_rows(scan_id, produced, tracker),
             )
         )
 
@@ -192,8 +195,8 @@ class _Tracker:
     def resolve_issue(self, finding: sarif.SarifResult) -> int:
         """Resolve the finding to an issue id, creating it if new."""
         incoming = IssueAttributes.from_result(finding)
-        for issue_id, known in self._candidates(incoming.rule):
-            if same_issue(known, incoming, self.category):
+        for issue_id, known in self._find_candidates(incoming.rule):
+            if is_same_issue(known, incoming, self.category):
                 self._remember(issue_id, incoming)
                 return issue_id
         issue_id = self.session.insert_row(
@@ -202,7 +205,7 @@ class _Tracker:
         self._remember(issue_id, incoming)
         return issue_id
 
-    def _candidates(self, rule: str) -> list[tuple[int, IssueAttributes]]:
+    def _find_candidates(self, rule: str) -> list[tuple[int, IssueAttributes]]:
         """Every issue of this scan type that `rule` found, and what is known of it.
 
         A row per fingerprint, so they are gathered back onto one set of attributes
@@ -269,7 +272,7 @@ def insert_issue_reports(
         )
 
 
-def _component_report_rows(
+def _build_component_report_rows(
     scan_id: int, document: cyclonedx.CycloneDxDocument, tracker: "_Tracker"
 ) -> list[tuple[object, ...]]:
     """One row per component, addressed by its index in the inventory."""
@@ -295,7 +298,7 @@ def _component_report_rows(
     ]
 
 
-def _invocation_rows(
+def _build_invocation_rows(
     scan_id: int, invocations: Sequence[ToolInvocationRecord]
 ) -> list[tuple[object, ...]]:
     """One row per executed tool command, indexed by the order they ran in."""

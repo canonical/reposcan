@@ -14,20 +14,20 @@ Stored as a JSON map of reference -> identity at $XDG_DATA_HOME/reposcan/images.
 import json
 import logging
 
+from reposcan import paths
 from reposcan.execution.process import Failure
-from reposcan.paths import image_cache
 
 logger = logging.getLogger(__name__)
 
 
-def entries() -> dict[str, str]:
-    """Every recorded reference -> identity pair, read from the cache file.
+def load() -> dict[str, str]:
+    """Load the cache: every recorded reference -> identity pair.
 
     Returns:
         The recorded reference -> identity map, empty if the file is missing or
         malformed (a bad cache is ignored, not fatal).
     """
-    path = image_cache()
+    path = paths.IMAGE_CACHE
     try:
         data = json.loads(path.read_text())
     except FileNotFoundError:
@@ -47,7 +47,7 @@ def _save(data: dict[str, str]) -> Failure | None:
     Returns:
         None on success, or a Failure if it could not be written.
     """
-    path = image_cache()
+    path = paths.IMAGE_CACHE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
@@ -56,9 +56,13 @@ def _save(data: dict[str, str]) -> Failure | None:
     return None
 
 
-def recorded(reference: str) -> str | None:
-    """Identify the recorded identity of the `reference` image."""
-    return entries().get(reference)
+def find_recorded_identity(reference: str) -> str | None:
+    """Find what identity was recorded for the `reference` image, if any.
+
+    This is the identity captured when reposcan built or first pulled it, not the
+    one the backend reports now (see the builders' `read_identity`).
+    """
+    return load().get(reference)
 
 
 def record(reference: str, identity: str) -> None:
@@ -67,7 +71,7 @@ def record(reference: str, identity: str) -> None:
     A cache that cannot be written is a warning, not a failure: the image just gets
     rebuilt next time rather than reused.
     """
-    data = entries()
+    data = load()
     data[reference] = identity
     error = _save(data)
     if error is not None:
@@ -81,7 +85,7 @@ def remove(reference: str) -> bool | Failure:
         True if it was present and removed, False if it was not there, or a Failure
         if the cache could not be written.
     """
-    data = entries()
+    data = load()
     if reference not in data:
         return False
     del data[reference]
@@ -96,6 +100,6 @@ def clear() -> Failure | None:
         None on success (including when already empty), or a Failure if the cache
         could not be written.
     """
-    if not entries():
+    if not load():
         return None
     return _save({})

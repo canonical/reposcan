@@ -53,6 +53,7 @@ deps = ["-r{tox_root}/requirements/lint.txt"]
 commands = [
     ["bash", "tests/lint/ascii-check.sh", "py"],
     ["bash", "tests/lint/license-check.sh"],
+    ["python", "tests/lint/verb-check.py"],
     ["ruff", "check", "{tox_root}/src", "{tox_root}/tests"],
     ["ruff", "format", "--check", "{tox_root}/src", "{tox_root}/tests"],
 ]

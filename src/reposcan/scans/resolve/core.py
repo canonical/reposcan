@@ -33,7 +33,7 @@ _RESOLVERS: tuple[Resolver, ...] = (PythonResolver(), JsResolver())
 def resolve_dependencies(
     ctx: ExecutionContext,
     target: str,
-    tool_root: str,
+    install_dir: str,
     resolution_workdir: str,
     *,
     allow_code_execution: bool = False,
@@ -48,7 +48,7 @@ def resolve_dependencies(
     Args:
         ctx: The started context to run the resolvers in.
         target: The (read-only) repository path as seen in the context.
-        tool_root: Where the tools are installed in the context.
+        install_dir: Where the tools are installed in the context.
         resolution_workdir: The directory to copy the repo under (from the backend).
         allow_code_execution: Permit building source packages to resolve
             source-only dependencies (runs untrusted code).
@@ -57,7 +57,7 @@ def resolve_dependencies(
         The directory the scan should target.
     """
     logger.info("Attempting to resolve dependencies and create lockfiles")
-    tracked = _tracked_files(ctx, target)
+    tracked = _list_tracked_files(ctx, target)
     plans = [
         (resolver, directory)
         for resolver in _RESOLVERS
@@ -78,13 +78,13 @@ def resolve_dependencies(
             dest,
             directory,
             tracked[directory],
-            tool_root,
+            install_dir,
             allow_code_execution=allow_code_execution,
         )
     return dest
 
 
-def _tracked_files(ctx: ExecutionContext, target: str) -> dict[str, set[str]]:
+def _list_tracked_files(ctx: ExecutionContext, target: str) -> dict[str, set[str]]:
     """Every tracked file under `target`, grouped by directory.
 
     Uses `git ls-files` so the listing is confined to tracked files and skips

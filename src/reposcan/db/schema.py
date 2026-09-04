@@ -446,7 +446,7 @@ def is_current(path: str) -> bool:
     return read_version(path) == SCHEMA_VERSION
 
 
-def unusable(path: str) -> str | None:
+def explain_unusable(path: str) -> str | None:
     """Why `path` cannot be written to as a reposcan database, or None if it can.
 
     A path that does not exist, or an empty file a caller has reserved, is usable: it

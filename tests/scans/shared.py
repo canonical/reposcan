@@ -15,7 +15,7 @@ from types import ModuleType
 
 import reposcan.scans as scans_pkg
 from reposcan.backends import BACKENDS, Session, start_session
-from reposcan.execution.context import host_user
+from reposcan.execution.context import get_host_user
 from reposcan.scans.base import Scan
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def load_fixture(name: str) -> ModuleType:
     return module
 
 
-def fixture_names() -> set[str]:
+def list_fixture_names() -> set[str]:
     """The name (file stem) of every fixture under fixtures/."""
     return {p.stem for p in _FIXTURES_DIR.glob("*.py") if not p.stem.startswith("_")}
 
@@ -54,7 +54,7 @@ def discover_scans() -> dict[str, type[Scan]]:
 
 def require_docker() -> None:
     """Fail (never skip) when docker is unavailable -- fixtures must run for real."""
-    availability = BACKENDS["docker"].availability()
+    availability = BACKENDS["docker"].check_availability()
     assert availability.ok, f"docker unavailable: {availability.reason}"
 
 
@@ -68,7 +68,7 @@ def planted_session(name: str, plant: Callable[[Path], None]) -> Iterator[Sessio
         with start_session(
             "docker",
             mount_source=str(repo),
-            user=host_user(),
+            user=get_host_user(),
             image="build",
         ) as session:
             assert session.ok, f"session failed for {name} (exit {session.exit_code})"

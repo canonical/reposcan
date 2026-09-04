@@ -1,0 +1,136 @@
+# Wordlist(s) for tests/lint/verb-check.py.
+
+[actions]
+# Base form, i.e. the imperative. The name is an order to the function, so the function
+# itself is the subject and nothing is left implicit: `build_index()`, `parse_stdout()`.
+# Allowed anywhere -- free function, method, classmethod.
+add
+aggregate
+analyze
+apply
+assert
+begin
+bind
+bootstrap
+build
+capture
+check
+checkout
+choose
+classify
+clear
+clip
+close
+coerce
+collect
+compare
+compile
+configure
+confirm
+connect
+convert
+copy
+count
+create
+derive
+describe
+deserialize
+detect
+discover
+drain
+drop
+emit
+ensure
+execute
+exercise
+explain
+fail
+fetch
+filter
+find
+fit
+format
+get
+index
+ingest
+insert
+install
+invoke
+join
+list
+load
+locate
+lock
+make
+merge
+mount
+name
+normalize
+open
+parse
+patch
+pick
+plan
+plant
+probe
+provision
+pull
+push
+query
+read
+rebuild
+record
+relativize
+remember
+remove
+render
+request
+require
+resolve
+round
+run
+save
+scan
+script
+select
+serialize
+set
+show
+skip
+split
+start
+stop
+sync
+test
+update
+use
+verify
+warn
+wrap
+write
+
+[stative-predicates]
+# Third-person forms of stative verbs. The subject is elided, but no action reading is
+# possible -- `is_sqlite(data)` cannot mean "make this sqlite" -- so the argument is
+# unambiguously the subject. Allowed anywhere, including free functions.
+# (`succeeded` is past tense rather than third-person present, but reads the same way:
+# "did this succeed?", never "succeed this".)
+can
+has
+is
+knows
+should
+succeeded
+
+[dynamic-predicates]
+# Third-person forms of dynamic verbs. `run.matches(other)` is a complete sentence
+# because `self` is the subject. As a free function the subject is elided and the name
+# collides with the base form: `returns_a_failure(x)` could just as well mean the
+# function returns one. Instance methods only.
+builds
+converts
+holds
+ignores
+matches
+names
+returns

@@ -36,15 +36,15 @@ class Uv:
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
         """Compile each uv-resolvable input in `workdir` into a pinned lockfile."""
-        for input_name in self._inputs(ctx, workdir, names):
-            self._compile(ctx, workdir, input_name, tool_root, allow_code_execution)
+        for input_name in self._find_inputs(ctx, workdir, names):
+            self._compile(ctx, workdir, input_name, install_dir, allow_code_execution)
 
-    def _inputs(
+    def _find_inputs(
         self, ctx: ExecutionContext, workdir: str, names: set[str]
     ) -> list[str]:
         """Find uv-resolvable manifest files in `workdir`."""
@@ -75,14 +75,14 @@ class Uv:
         ctx: ExecutionContext,
         workdir: str,
         input_name: str,
-        tool_root: str,
+        install_dir: str,
         allow_code_execution: bool,
     ) -> None:
         # A distinct `*requirements*.txt` name so the catalogers pick it up, but one
         # that never clobbers a repo file or another input's lock in the same dir.
         lock = f"reposcan-resolved.{input_name.replace('.', '-')}.requirements.txt"
         base = [
-            UV.installed_path(tool_root),
+            UV.locate_executable(install_dir),
             "pip",
             "compile",
             input_name,
@@ -92,7 +92,7 @@ class Uv:
         ]
         # Point uv at the managed Python baked under the install root; as the scan user
         # it has no Python of its own and would otherwise try to fetch one at scan time.
-        env = {"UV_PYTHON_INSTALL_DIR": f"{tool_root}/{UV_PYTHON_SUBDIR}"}
+        env = {"UV_PYTHON_INSTALL_DIR": f"{install_dir}/{UV_PYTHON_SUBDIR}"}
         wheel_only = [*base, "--only-binary", ":all:"]
         logger.debug("detected python; running: %s", " ".join(wheel_only))
         result = ctx.run(wheel_only, cwd=workdir, env=env)

@@ -38,7 +38,7 @@ class PackageManager(Protocol):
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
@@ -48,7 +48,7 @@ class PackageManager(Protocol):
             ctx: The started context to run the package manager in.
             workdir: The directory's absolute path in the writable repo copy.
             names: The file basenames in `workdir`.
-            tool_root: Where the tools are installed in the context.
+            install_dir: Where the tools are installed in the context.
             allow_code_execution: Permit building source packages
                 (may run untrusted code).
         """
@@ -88,7 +88,7 @@ class Resolver(ABC):
         repo_dir: str,
         directory: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
@@ -99,7 +99,7 @@ class Resolver(ABC):
             repo_dir: The writable repo copy's path in the context.
             directory: The directory to resolve, relative to `repo_dir` ("" for root).
             names: The file basenames in `directory`.
-            tool_root: Where the tools are installed in the context.
+            install_dir: Where the tools are installed in the context.
             allow_code_execution: Permit building source packages (runs untrusted code).
         """
         workdir = repo_dir if not directory else f"{repo_dir}/{directory}"
@@ -109,6 +109,6 @@ class Resolver(ABC):
                     ctx,
                     workdir,
                     names,
-                    tool_root,
+                    install_dir,
                     allow_code_execution=allow_code_execution,
                 )

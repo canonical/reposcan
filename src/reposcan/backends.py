@@ -8,11 +8,12 @@ from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from reposcan import paths
 from reposcan.execution.context import (
     RESOLUTION_WORKDIR,
     ExecutionContext,
     RunUser,
-    mounted_target,
+    locate_mounted_target,
 )
 from reposcan.execution.docker import DockerContext
 from reposcan.execution.local import LocalContext
@@ -25,12 +26,11 @@ from reposcan.image.spec import (
     BASE_IMAGE,
     CANONICAL_REF,
     CANONICAL_SHORTHAND,
-    INSTALL_ROOT,
+    INSTALL_DIR,
     LOCAL_BUILD_SHORTHAND,
     build_spec,
 )
-from reposcan.paths import resolution_workdir, tools_root
-from reposcan.tools.install import current_platform
+from reposcan.tools.install import detect_platform
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class Backend:
     """A backend for reposcan command execution."""
 
     name: str
-    tool_root: str
+    install_dir: str
     resolution_workdir: str
     probe: tuple[str, ...] = ()  # liveness command; empty means always usable
     containerized: bool = False
@@ -56,7 +56,7 @@ class Backend:
     builder: ImageBuilder | None = None
     puller: Callable[[str], str | Failure] | None = None  # None cannot pull
 
-    def availability(self) -> Availability:
+    def check_availability(self) -> Availability:
         """Report whether this backend is usable on this host."""
         if not self.probe:
             return Availability(ok=True, reason="runs on the host")
@@ -72,14 +72,14 @@ class Backend:
         """Build this backend's reposcan image, returning its verified reference."""
         if self.builder is None:
             return Failure(reason=f"the {self.name} backend cannot build images")
-        return ensure_built(self.builder, build_spec(current_platform()), force=force)
+        return ensure_built(self.builder, build_spec(detect_platform()), force=force)
 
 
 # Keyed by name, in selection-precedence order: docker, then lxd, then local.
 BACKENDS = {
     "docker": Backend(
         name="docker",
-        tool_root=INSTALL_ROOT,
+        install_dir=INSTALL_DIR,
         resolution_workdir=RESOLUTION_WORKDIR,
         probe=("docker", "info"),
         containerized=True,
@@ -89,7 +89,7 @@ BACKENDS = {
     ),
     "lxd": Backend(
         name="lxd",
-        tool_root=INSTALL_ROOT,
+        install_dir=INSTALL_DIR,
         resolution_workdir=RESOLUTION_WORKDIR,
         probe=("lxc", "info"),
         containerized=True,
@@ -99,8 +99,8 @@ BACKENDS = {
     ),
     "local": Backend(
         name="local",
-        tool_root=str(tools_root()),
-        resolution_workdir=str(resolution_workdir()),
+        install_dir=str(paths.TOOL_INSTALL_DIR),
+        resolution_workdir=str(paths.LOCAL_RESOLUTION_WORKDIR),
     ),
 }
 
@@ -125,7 +125,7 @@ def select_backend(requested: str | None) -> Backend | Failure:
         return Failure(reason=f"unknown backend {name}")
 
     for candidate in BACKENDS.values() if name == AUTO else [BACKENDS[name]]:
-        availability = candidate.availability()
+        availability = candidate.check_availability()
         if availability.ok:
             return candidate
         if name != AUTO:
@@ -135,7 +135,7 @@ def select_backend(requested: str | None) -> Backend | Failure:
     return Failure(reason="no execution backend is available")
 
 
-def _reposcan_image_for(backend: Backend, image: str | None) -> str | Failure:
+def _provision_image(backend: Backend, image: str | None) -> str | Failure:
     """Build or pull `backend`'s reposcan image, returning the reference to run."""
     puller = backend.puller
     if puller is None or image == LOCAL_BUILD_SHORTHAND:
@@ -170,7 +170,7 @@ class Session:
     """
 
     _context: ExecutionContext | None
-    tool_root: str
+    install_dir: str
     exit_code: int
     target: str | None = None  # where the scanned source is reachable in the context
     resolution_workdir: str = ""  # where dependency resolution copies the repo
@@ -204,8 +204,8 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Failure | 
         return backend
     if not backend.containerized:
         return None
-    resolved = _reposcan_image_for(backend, image)
-    return resolved if isinstance(resolved, Failure) else None
+    provisioned = _provision_image(backend, image)
+    return provisioned if isinstance(provisioned, Failure) else None
 
 
 @contextmanager
@@ -242,7 +242,7 @@ def start_session(
         yield Session(None, "", 2)
         return
     if backend.context is not None:
-        reference = _reposcan_image_for(backend, image)
+        reference = _provision_image(backend, image)
         if isinstance(reference, Failure):
             logger.error(reference.reason)
             yield Session(None, "", 1)
@@ -251,7 +251,9 @@ def start_session(
             reference or BASE_IMAGE, mount_source=mount_source, user=user, env=env
         )
         # A container mounts the source under MOUNT_PARENT.
-        target = mounted_target(mount_source) if mount_source is not None else None
+        target = (
+            locate_mounted_target(mount_source) if mount_source is not None else None
+        )
     else:
         # Local runs on the host: no image, no identity, no mount -- the source path
         # is the target, used directly as a cwd.
@@ -262,7 +264,7 @@ def start_session(
                 backend.name,
                 image,
             )
-        ctx = LocalContext(f"{backend.tool_root}/bin", env)
+        ctx = LocalContext(f"{backend.install_dir}/bin", env)
         target = mount_source
     error = ctx.start()
     if error is not None:
@@ -270,6 +272,6 @@ def start_session(
         yield Session(None, "", 1)
         return
     try:
-        yield Session(ctx, backend.tool_root, 0, target, backend.resolution_workdir)
+        yield Session(ctx, backend.install_dir, 0, target, backend.resolution_workdir)
     finally:
         ctx.stop()

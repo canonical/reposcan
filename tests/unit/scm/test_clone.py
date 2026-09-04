@@ -15,7 +15,7 @@ def _git(*args: str, cwd: str) -> None:
     subprocess.run(["git", "-C", cwd, *args], check=True, capture_output=True)
 
 
-def _mk_repo(directory: str) -> str:
+def _create_repo(directory: str) -> str:
     """Create a one-commit repository to clone, returning its file:// url."""
     path = os.path.join(directory, "origin")
     os.makedirs(path)
@@ -31,7 +31,7 @@ def _mk_repo(directory: str) -> str:
 
 def test_a_repository_is_mirrored_then_updated_in_place() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        local_repo_url = _mk_repo(tmp)
+        local_repo_url = _create_repo(tmp)
         work = os.path.join(tmp, "work")
 
         worktree = clone.sync_repository(local_repo_url, work, "acme/demo")

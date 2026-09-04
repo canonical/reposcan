@@ -9,14 +9,14 @@ Host-only: containers use the reposcan image.
 import logging
 import sys
 
+from reposcan import paths
 from reposcan.actions.base import Action
 from reposcan.backends import AUTO
 from reposcan.cli_kit import flag, positional
-from reposcan.execution.context import ExecutionContext, resolved_env
+from reposcan.execution.context import ExecutionContext, resolve_env
 from reposcan.execution.local import LocalContext
 from reposcan.execution.process import Failure
-from reposcan.paths import tools_root
-from reposcan.tools.install import current_platform, install_plan
+from reposcan.tools.install import detect_platform, plan_installs
 from reposcan.tools.model import Platform, Tool
 from reposcan.tools.registry import TOOLS
 
@@ -43,13 +43,13 @@ class BootstrapAction(Action):
             return 2
         if not self.confirm and not _confirm_host_install():
             return 1
-        root = str(tools_root())
-        ctx = LocalContext(f"{root}/bin", resolved_env(self.env))
-        return bootstrap(ctx, self.tools, current_platform(), root)
+        root = str(paths.TOOL_INSTALL_DIR)
+        ctx = LocalContext(f"{root}/bin", resolve_env(self.env))
+        return bootstrap(ctx, self.tools, detect_platform(), root)
 
 
 def bootstrap(
-    ctx: ExecutionContext, names: list[str], platform: Platform, install_root: str
+    ctx: ExecutionContext, names: list[str], platform: Platform, install_dir: str
 ) -> int:
     """Install `names` (an empty list means every scanning tool).
 
@@ -72,7 +72,7 @@ def bootstrap(
     else:
         requested = list(TOOLS.values())
 
-    plan = install_plan(requested, platform, install_root)
+    plan = plan_installs(requested, platform, install_dir)
     failed = []
     for step in plan:
         logger.info("installing %s %s", step.tool.name, step.tool.version)
@@ -96,7 +96,7 @@ def bootstrap(
             "%d of %d tools failed: %s", len(failed), len(plan), ", ".join(failed)
         )
         return 1
-    logger.info("installed %d tools into %s", len(plan), install_root)
+    logger.info("installed %d tools into %s", len(plan), install_dir)
     return 0
 
 

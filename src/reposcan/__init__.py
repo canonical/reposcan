@@ -5,10 +5,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-
-def reposcan_version() -> str:
-    """Report the running reposcan's version, or "unknown" if it is unavailable."""
-    try:
-        return version(__name__)
-    except PackageNotFoundError:
-        return "unknown"
+try:
+    __version__ = version(__name__)
+except PackageNotFoundError:  # not installed, e.g. imported straight from a checkout
+    __version__ = "unknown"

@@ -44,7 +44,7 @@ def verify(artifact: sarif.SarifDocument) -> None:
     # zizmor flags this workflow's pull_request_target trigger (dangerous-triggers)
     # and the ${{ github.event.pull_request.title }} injection (template-injection),
     # both in the planted workflow file. poutine may contribute further findings.
-    by_rule = {result.rule_id: result for result in artifact.results()}
+    by_rule = {result.rule_id: result for result in artifact.results}
     for rule in ("zizmor/template-injection", "zizmor/dangerous-triggers"):
         assert rule in by_rule, f"expected {rule}, got {sorted(by_rule)}"
         finding = by_rule[rule]

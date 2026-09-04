@@ -15,5 +15,5 @@ def test_digest_is_content_addressed() -> None:
     # Any change to an identity input yields a new digest.
     assert spec.digest != build_spec(Platform("linux", "arm64")).digest  # platform
     assert spec.digest != build_spec(_LINUX, base_image="ubuntu:22.04").digest  # base
-    edited = BuildSpec(spec.base_image, spec.install_root, spec.script + "\n# x")
+    edited = BuildSpec(spec.base_image, spec.install_dir, spec.script + "\n# x")
     assert edited.digest != spec.digest  # script

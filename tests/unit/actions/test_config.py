@@ -3,33 +3,31 @@
 
 """Tests for `reposcan config`.
 
-Each test isolates XDG_CONFIG_HOME to a temp dir so it never touches a real
+Each test points config.CONFIG_FILE at a temp dir so it never touches a real
 ~/.config/reposcan/config.json.
 """
 
 import io
-import os
+import pathlib
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 
+import reposcan.config as config
 from reposcan.app import main
 from reposcan.config import load
 
 
 @contextmanager
 def _isolated_config() -> Iterator[None]:
-    """Point XDG_CONFIG_HOME at a fresh temp dir for the duration of the block."""
-    saved = os.environ.get("XDG_CONFIG_HOME")
+    """Point config.CONFIG_FILE at a fresh temp dir for the duration of the block."""
+    saved = config.CONFIG_FILE
     with tempfile.TemporaryDirectory() as tmp:
-        os.environ["XDG_CONFIG_HOME"] = tmp
+        config.CONFIG_FILE = pathlib.Path(tmp) / "reposcan" / "config.json"
         try:
             yield
         finally:
-            if saved is None:
-                os.environ.pop("XDG_CONFIG_HOME", None)
-            else:
-                os.environ["XDG_CONFIG_HOME"] = saved
+            config.CONFIG_FILE = saved
 
 
 def test_set_validates_the_key_and_value_before_persisting() -> None:

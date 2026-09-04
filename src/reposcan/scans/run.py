@@ -36,7 +36,7 @@ def _run_tools(
     scan: Scan,
     ctx: ExecutionContext,
     target: str,
-    tool_root: str,
+    install_dir: str,
     ignored: GitIgnore,
     *,
     stream: bool,
@@ -52,7 +52,7 @@ def _run_tools(
         scan: The scan whose invocations to run.
         ctx: The started context to run the tools in.
         target: The (already resolved) path to scan, as seen in the context.
-        tool_root: Where the tools are installed in the context.
+        install_dir: Where the tools are installed in the context.
         ignored: The git-ignored paths, whose tool flags are added to each command.
         stream: When True, echo each tool's live progress (its stderr) to the console.
 
@@ -62,14 +62,14 @@ def _run_tools(
     """
     outputs: _ToolOutputs = []
     provenance: list[ToolInvocationRecord] = []
-    for invocation in scan.invocations(ctx, target):
+    for invocation in scan.build_invocations(ctx, target):
         tool = TOOLS.get(invocation.tool)
         if tool is None:
             return Failure(reason=f"unknown tool: {invocation.tool}")
         cmd = [
-            tool.installed_path(tool_root),
+            tool.locate_executable(install_dir),
             *invocation.args,
-            *ignored.tool_flags(invocation.tool),
+            *ignored.build_tool_flags(invocation.tool),
         ]
         logger.debug("Running scan command:\n%s", " ".join(cmd))
         result = ctx.run(
@@ -124,7 +124,7 @@ def run_scan(
     scan: SecurityScan,
     ctx: ExecutionContext,
     target: str,
-    tool_root: str,
+    install_dir: str,
     *,
     resolution_workdir: str = "",
     stream: bool = False,
@@ -138,12 +138,12 @@ def run_scan(
         target = resolve_dependencies(
             ctx,
             target,
-            tool_root,
+            install_dir,
             resolution_workdir,
             allow_code_execution=getattr(scan, "allow_code_execution", False),
         )
     ignored = GitIgnore.from_context(ctx, target)
-    outcome = _run_tools(scan, ctx, target, tool_root, ignored, stream=stream)
+    outcome = _run_tools(scan, ctx, target, install_dir, ignored, stream=stream)
     if isinstance(outcome, Failure):
         return outcome
     outputs, provenance = outcome
@@ -171,7 +171,7 @@ def run_sbom_scan(
     sbom: SbomScan,
     ctx: ExecutionContext,
     target: str,
-    tool_root: str,
+    install_dir: str,
     *,
     resolution_workdir: str = "",
     stream: bool = False,
@@ -184,12 +184,12 @@ def run_sbom_scan(
     target = resolve_dependencies(
         ctx,
         target,
-        tool_root,
+        install_dir,
         resolution_workdir,
         allow_code_execution=sbom.allow_code_execution,
     )
     ignored = GitIgnore.from_context(ctx, target)
-    outcome = _run_tools(sbom, ctx, target, tool_root, ignored, stream=stream)
+    outcome = _run_tools(sbom, ctx, target, install_dir, ignored, stream=stream)
     if isinstance(outcome, Failure):
         return outcome
     outputs, provenance = outcome
@@ -239,7 +239,7 @@ def run_analysis(
                 scan,
                 session.context,
                 session.target,
-                session.tool_root,
+                session.install_dir,
                 resolution_workdir=session.resolution_workdir,
                 stream=stream,
             )

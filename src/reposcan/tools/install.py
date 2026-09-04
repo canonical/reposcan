@@ -4,11 +4,11 @@
 """reposcan tool installation.
 
 `reposcan bootstrap` and image generation consume the same per-tool
-`install_commands`. Bootstrap runs each command through an ExecutionContext, so the
-same commands install onto the host or into a Docker/LXD container. Image generation
-writes them into a build/install script baked into the image. This module is the
-single point that orders and groups them, so there is one definition of how each
-tool installs.
+`script_install`. Bootstrap runs each command through an ExecutionContext, so
+the same commands install onto the host or into a Docker/LXD container. Image
+generation writes them into a build/install script baked into the image. This module
+is the single point that orders and groups them, so there is one definition of how
+each tool installs.
 
 The commands are grouped per tool (`ToolInstall`) rather than flattened, so each
 tool is an independent failure domain: bootstrap runs each group and continues past
@@ -26,7 +26,7 @@ from reposcan.tools.model import Platform, Tool
 _ARCHES = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
 
-def current_platform() -> Platform:
+def detect_platform() -> Platform:
     """Detect the host OS/arch.
 
     An unknown machine is passed through unchanged, so no matching Download is found
@@ -61,10 +61,10 @@ def _add_with_requirements(tool: Tool, ordered: list[Tool], seen: set[str]) -> N
     ordered.append(tool)
 
 
-def install_plan(
-    tools: Iterable[Tool], platform: Platform, install_root: str
+def plan_installs(
+    tools: Iterable[Tool], platform: Platform, install_dir: str
 ) -> list[ToolInstall]:
-    """Per-tool install groups for `tools` and everything they require.
+    """Group the install commands for `tools` and everything they require.
 
     De-duplicated and ordered so each tool is installed after its requirements: uv
     before its PyPI tools, the Go SDK before its Go tools. Requesting `semgrep` alone
@@ -73,7 +73,7 @@ def install_plan(
     Args:
         tools: The tools to install, before their requirements are added.
         platform: The OS/arch the install commands target.
-        install_root: The directory the tools install under.
+        install_dir: The directory the tools install under.
 
     Returns:
         One ToolInstall per tool, de-duplicated and ordered so each tool follows its
@@ -84,6 +84,6 @@ def install_plan(
     for tool in tools:
         _add_with_requirements(tool, ordered, seen)
     return [
-        ToolInstall(tool, tool.install_commands(platform, install_root))
+        ToolInstall(tool, tool.script_install(platform, install_dir))
         for tool in ordered
     ]

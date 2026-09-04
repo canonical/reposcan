@@ -55,9 +55,9 @@ class IgnoreRule:
 
     def __post_init__(self) -> None:
         """Compile the entry's patterns, raising re.error on a malformed one."""
-        self.tool_regex = _field_to_regex(self.tool)
-        self.rule_regex = _field_to_regex(self.rule_id)
-        self.path_regex = _glob_to_regex(self.path_glob)
+        self.tool_regex = _compile_field_regex(self.tool)
+        self.rule_regex = _compile_field_regex(self.rule_id)
+        self.path_regex = _compile_glob_regex(self.path_glob)
         self.content_regex = (
             re.compile(self.content_pattern) if self.content_pattern else None
         )
@@ -151,7 +151,7 @@ def apply(
     removed = 0
     for run in runs:
         kept: list[sarif.SarifResult] = []
-        for finding in run.results():
+        for finding in run.results:
             candidates = [
                 rule
                 for rule in rules
@@ -170,7 +170,7 @@ def apply(
                 continue
             # Every candidate tests the offending line, so read it once for all of
             # them rather than once per rule.
-            line = _offending_line(ctx, target, finding)
+            line = _read_offending_line(ctx, target, finding)
             if line is not None and any(
                 rule.content_regex is not None and rule.content_regex.search(line)
                 for rule in conditional
@@ -182,7 +182,7 @@ def apply(
     return removed
 
 
-def _offending_line(
+def _read_offending_line(
     ctx: ExecutionContext | None, target: str, finding: sarif.SarifResult
 ) -> str | None:
     """Read the finding's offending content.
@@ -202,7 +202,7 @@ def _offending_line(
     return lines[finding.line - 1]
 
 
-def _field_to_regex(field: str) -> re.Pattern[str]:
+def _compile_field_regex(field: str) -> re.Pattern[str]:
     """Compile a tool/ruleId glob (with `|` alternation) to an anchored regex.
 
     `*` matches any run of characters, `?` matches one, and `|` separates alternatives;
@@ -223,7 +223,7 @@ def _field_to_regex(field: str) -> re.Pattern[str]:
     return re.compile("^(?:" + "|".join(alternatives) + ")$")
 
 
-def _glob_to_regex(glob: str) -> re.Pattern[str]:
+def _compile_glob_regex(glob: str) -> re.Pattern[str]:
     """Compile a gitignore-ish path glob to an anchored regex.
 
     `**/` matches zero or more leading directories, `**` matches across directory

@@ -65,7 +65,7 @@ class GitIgnore:
             for directory in self.dirs
         )
 
-    def tool_flags(self, tool: str) -> list[str]:
+    def build_tool_flags(self, tool: str) -> list[str]:
         """tool-specific CLI flags that make `tool` skip the ignored paths.
 
         Args:

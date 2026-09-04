@@ -20,7 +20,7 @@ def _write(directory: str, name: str, content: str) -> str:
     return path
 
 
-def _sarif_doc() -> dict:
+def _build_sarif_doc() -> dict:
     run = sarif.SarifRun.from_results(
         "tool",
         "1.0",
@@ -35,7 +35,7 @@ def _sarif_doc() -> dict:
 
 def test_renders_json_input_as_a_table() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        path = _write(directory, "r.sarif", json.dumps(_sarif_doc()))
+        path = _write(directory, "r.sarif", json.dumps(_build_sarif_doc()))
         out = io.StringIO()
         with redirect_stdout(out):
             assert render(path) == 0

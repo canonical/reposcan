@@ -66,7 +66,7 @@ class CacheClear(Action):
 
 def list_cache() -> int:
     """Print each recorded image cache entry as `reference  identity` to stdout."""
-    entries = cache.entries()
+    entries = cache.load()
     if not entries:
         logger.info("the image cache is empty")
         return 0
@@ -98,7 +98,7 @@ def clear_cache() -> int:
 
     Returns 0 on success, 1 if the cache could not be written.
     """
-    count = len(cache.entries())
+    count = len(cache.load())
     error = cache.clear()
     if error is not None:
         logger.error(error.reason)

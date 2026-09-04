@@ -38,7 +38,7 @@ class FakeGit:
         return ExecResult(0, self.replies[key], "")
 
 
-def _context(replies: dict[str, str]) -> object:
+def _build_context(replies: dict[str, str]) -> object:
     return FakeGit(replies)
 
 
@@ -74,7 +74,7 @@ def test_a_directory_name_only_settles_it_when_nothing_stronger_exists() -> None
 
 
 def test_repository_state_reads_the_commit_branch_and_cleanliness() -> None:
-    ctx = _context(
+    ctx = _build_context(
         {
             "rev-parse HEAD": "c0ffee\n",
             "rev-parse --abbrev-ref": "main\n",
@@ -94,7 +94,7 @@ def test_repository_state_reads_the_commit_branch_and_cleanliness() -> None:
 
 
 def test_a_target_that_is_not_a_repository_yields_only_its_directory_name() -> None:
-    state = read_repository_state(_context({}), "/scan/unpacked/", label="mine")  # type: ignore[arg-type]
+    state = read_repository_state(_build_context({}), "/scan/unpacked/", label="mine")  # type: ignore[arg-type]
     assert state.commit_sha == ""
     assert state.branch == ""
     assert state.identity == ProjectIdentity("unpacked", label="mine")

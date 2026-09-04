@@ -15,7 +15,7 @@ from reposcan.tools.registry import TOOLS, TRUFFLEHOG
 def test_lists_every_scanning_tool_with_its_install_status() -> None:
     with tempfile.TemporaryDirectory() as root:
         # Mark one tool installed by creating the path `tools` checks for.
-        marker = TRUFFLEHOG.installed_path(root)
+        marker = TRUFFLEHOG.locate_executable(root)
         os.makedirs(os.path.dirname(marker), exist_ok=True)
         open(marker, "w").close()
 

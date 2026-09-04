@@ -32,12 +32,12 @@ class Pnpm:
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
         """Write a `pnpm-lock.yaml` for the workspace in `workdir`, best-effort."""
-        pnpm = PNPM.installed_path(tool_root)
+        pnpm = PNPM.locate_executable(install_dir)
         command = [pnpm, "install", "--lockfile-only", "--ignore-scripts"]
         logger.debug("detected pnpm; running: %s", " ".join(command))
         if succeeded(ctx.run(command, cwd=workdir, env=_ENV)):

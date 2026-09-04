@@ -50,35 +50,35 @@ class _FileContext:
         return None
 
 
-def _ctx(
+def _build_ctx(
     files: dict[str, str], committed: dict[str, str] | None = None
 ) -> ExecutionContext:
     return cast(ExecutionContext, _FileContext(files, committed))
 
 
-def _loc(uri: str, line: int = 0) -> dict:
+def _build_loc(uri: str, line: int = 0) -> dict:
     physical: dict = {"artifactLocation": {"uri": uri}}
     if line:
         physical["region"] = {"startLine": line}
     return {"physicalLocation": physical}
 
 
-def _result(
+def _build_result(
     rule_id: str, uri: str, scanners: list[str] | None = None, line: int = 0
 ) -> dict:
-    result = {"ruleId": rule_id, "locations": [_loc(uri, line)]}
+    result = {"ruleId": rule_id, "locations": [_build_loc(uri, line)]}
     if scanners is not None:
         result["properties"] = {"scanners": scanners}
     return result
 
 
-def _finding(
+def _build_finding(
     rule_id: str, uri: str, scanners: list[str] | None = None, line: int = 0
 ) -> sarif.SarifResult:
-    return sarif.SarifResult(_result(rule_id, uri, scanners or ["x"], line))
+    return sarif.SarifResult(_build_result(rule_id, uri, scanners or ["x"], line))
 
 
-def _ignores(
+def _is_ignored(
     rule: ignore.IgnoreRule,
     rule_id: str,
     uri: str,
@@ -86,11 +86,11 @@ def _ignores(
     line: int = 0,
 ) -> bool:
     """Whether `rule` ignores such a finding, driven through the only entry point."""
-    runs = _runs(_result(rule_id, uri, scanners or ["x"], line))
+    runs = _build_runs(_build_result(rule_id, uri, scanners or ["x"], line))
     return ignore.apply(runs, [rule]) == 1
 
 
-def _runs(*results: dict) -> list[sarif.SarifRun]:
+def _build_runs(*results: dict) -> list[sarif.SarifRun]:
     return [
         sarif.SarifRun(
             {"tool": {"driver": {"name": "reposcan"}}, "results": list(results)}
@@ -126,35 +126,35 @@ def test_parse_reads_entries_and_reports_malformed_lines() -> None:
 
 def test_a_single_star_stays_within_a_path_segment() -> None:
     rule = ignore.IgnoreRule("*", "R", "tools/locks/*.txt")
-    assert _ignores(rule, "R", "tools/locks/checkov.txt")  # a direct child
+    assert _is_ignored(rule, "R", "tools/locks/checkov.txt")  # a direct child
     # a single * does not cross a path separator
-    assert not _ignores(rule, "R", "tools/locks/sub/deep.txt")
-    assert not _ignores(rule, "R", "other/checkov.txt")
+    assert not _is_ignored(rule, "R", "tools/locks/sub/deep.txt")
+    assert not _is_ignored(rule, "R", "other/checkov.txt")
 
 
 def test_double_star_crosses_segments_including_none() -> None:
     rule = ignore.IgnoreRule("*", "R", "**/*.tf")
-    assert _ignores(rule, "R", "main.tf")  # zero leading directories
-    assert _ignores(rule, "R", "a/b/c/main.tf")  # any depth
-    assert not _ignores(rule, "R", "main.tfvars")
+    assert _is_ignored(rule, "R", "main.tf")  # zero leading directories
+    assert _is_ignored(rule, "R", "a/b/c/main.tf")  # any depth
+    assert not _is_ignored(rule, "R", "main.tfvars")
 
 
 def test_tool_and_rule_fields_glob_and_alternate() -> None:
     # `*`/`?` wildcards in the rule id, and `|` alternation over the reporting tool.
     rule = ignore.IgnoreRule("poutine|zizmor", "CKV_AWS_*", "**/*.tf")
-    assert _ignores(rule, "CKV_AWS_18", "a/main.tf", ["zizmor"])
-    assert _ignores(rule, "CKV_AWS_20", "main.tf", ["poutine"])
+    assert _is_ignored(rule, "CKV_AWS_18", "a/main.tf", ["zizmor"])
+    assert _is_ignored(rule, "CKV_AWS_20", "main.tf", ["poutine"])
     # the rule id is outside the CKV_AWS_* glob
-    assert not _ignores(rule, "CKV_GCP_1", "main.tf", ["poutine"])
+    assert not _is_ignored(rule, "CKV_GCP_1", "main.tf", ["poutine"])
     # the reporting tool is not among the alternatives
-    assert not _ignores(rule, "CKV_AWS_18", "main.tf", ["checkov"])
+    assert not _is_ignored(rule, "CKV_AWS_18", "main.tf", ["checkov"])
 
 
 def test_field_special_characters_are_literal_not_regex() -> None:
     # a dotted semgrep-style rule id: the dots match literally, not "any character".
     rule = ignore.IgnoreRule("*", "python.lang.foo", "**/*.py")
-    assert _ignores(rule, "python.lang.foo", "a.py", ["semgrep"])
-    assert not _ignores(rule, "pythonXlangXfoo", "a.py", ["semgrep"])
+    assert _is_ignored(rule, "python.lang.foo", "a.py", ["semgrep"])
+    assert not _is_ignored(rule, "pythonXlangXfoo", "a.py", ["semgrep"])
 
 
 def test_apply_drops_only_the_matching_findings() -> None:
@@ -162,23 +162,23 @@ def test_apply_drops_only_the_matching_findings() -> None:
         "trufflehog SentryToken tools/locks/*.txt\n* CKV_AWS_18 **/*.tf\n"
     )
     assert errors == []
-    runs = _runs(
+    runs = _build_runs(
         # dropped: tool, rule, and path all match
-        _result("SentryToken", "tools/locks/checkov.txt", ["trufflehog"]),
+        _build_result("SentryToken", "tools/locks/checkov.txt", ["trufflehog"]),
         # kept: same rule and path, but a different tool
-        _result("SentryToken", "tools/locks/other.txt", ["semgrep"]),
+        _build_result("SentryToken", "tools/locks/other.txt", ["semgrep"]),
         # dropped: the `*` tool rule matches any scanner, at any depth
-        _result("CKV_AWS_18", "infra/deep/main.tf", ["checkov"]),
+        _build_result("CKV_AWS_18", "infra/deep/main.tf", ["checkov"]),
         # kept: a rule that no entry ignores
-        _result("CKV_AWS_20", "infra/main.tf", ["checkov"]),
+        _build_result("CKV_AWS_20", "infra/main.tf", ["checkov"]),
     )
     removed = ignore.apply(runs, rules)
     assert removed == 2
-    assert [r.rule_id for r in runs[0].results()] == ["SentryToken", "CKV_AWS_20"]
+    assert [r.rule_id for r in runs[0].results] == ["SentryToken", "CKV_AWS_20"]
 
 
 def test_content_pattern_drops_a_finding_only_when_the_offending_line_matches() -> None:
-    ctx = _ctx(
+    ctx = _build_ctx(
         {
             ".github/workflows/ci.yml": (
                 "steps:\n"
@@ -191,13 +191,13 @@ def test_content_pattern_drops_a_finding_only_when_the_offending_line_matches() 
         'poutine unverified_creator .github/workflows/*.yml "uses: sketchy/"\n'
     )
     assert errors == []
-    runs = _runs(
-        _result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 2),
-        _result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 3),
+    runs = _build_runs(
+        _build_result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 2),
+        _build_result("unverified_creator", ".github/workflows/ci.yml", ["poutine"], 3),
     )
     removed = ignore.apply(runs, rules, ctx, "/scan/acme")
     assert removed == 1  # only the sketchy/ line; actions/checkout is kept
-    assert [r.line for r in runs[0].results()] == [3]
+    assert [r.line for r in runs[0].results] == [3]
 
 
 def test_content_pattern_keeps_the_finding_when_the_content_cannot_be_read() -> None:
@@ -205,9 +205,9 @@ def test_content_pattern_keeps_the_finding_when_the_content_cannot_be_read() -> 
     # (here, a missing file), the finding is kept rather than silently suppressed.
     rules, errors = ignore.parse("* R *.yml anything\n")
     assert errors == []
-    runs = _runs(_result("R", "missing.yml", ["x"], 3))
-    assert ignore.apply(runs, rules, _ctx({}), "/scan/acme") == 0
-    assert [r.rule_id for r in runs[0].results()] == ["R"]
+    runs = _build_runs(_build_result("R", "missing.yml", ["x"], 3))
+    assert ignore.apply(runs, rules, _build_ctx({}), "/scan/acme") == 0
+    assert [r.rule_id for r in runs[0].results] == ["R"]
 
 
 def test_content_pattern_keeps_the_finding_when_there_is_no_context() -> None:
@@ -215,7 +215,7 @@ def test_content_pattern_keeps_the_finding_when_there_is_no_context() -> None:
     # content rule cannot match and fails closed the same way.
     rules, errors = ignore.parse("* R *.yml anything\n")
     assert errors == []
-    runs = _runs(_result("R", "ci.yml", ["x"], 1))
+    runs = _build_runs(_build_result("R", "ci.yml", ["x"], 1))
     assert ignore.apply(runs, rules) == 0
 
 
@@ -226,18 +226,18 @@ def test_a_content_rule_reads_a_finding_from_its_commit() -> None:
     )
     rules, errors = ignore.parse('trufflehog AWS ci.yml "AKIA"\n')
     assert errors == []
-    result = _result("AWS", "ci.yml", ["trufflehog"], 1)
+    result = _build_result("AWS", "ci.yml", ["trufflehog"], 1)
     sarif.SarifResult(result).set_commit("commithash")
     ctx = cast(ExecutionContext, fake)
-    assert ignore.apply(_runs(result), rules, ctx, "/scan/acme") == 1
+    assert ignore.apply(_build_runs(result), rules, ctx, "/scan/acme") == 1
     # git show resolves its path from the repository root, so it has to run there
     assert fake.cwd == "/scan/acme"
 
 
 def test_a_history_finding_does_not_fall_back_to_the_working_tree() -> None:
-    ctx = _ctx({"ci.yml": "AKIAIOSFODNN7EXAMPLE\n"})
+    ctx = _build_ctx({"ci.yml": "AKIAIOSFODNN7EXAMPLE\n"})
     rules, errors = ignore.parse('trufflehog AWS ci.yml "AKIA"\n')
     assert errors == []
-    result = _result("AWS", "ci.yml", ["trufflehog"], 1)
+    result = _build_result("AWS", "ci.yml", ["trufflehog"], 1)
     sarif.SarifResult(result).set_commit("commithash")
-    assert ignore.apply(_runs(result), rules, ctx, "/scan/acme") == 0
+    assert ignore.apply(_build_runs(result), rules, ctx, "/scan/acme") == 0

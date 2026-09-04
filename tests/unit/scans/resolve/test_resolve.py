@@ -11,12 +11,12 @@ from reposcan.scans.resolve import resolve_dependencies
 
 TARGET = "/scan/acme"
 RESOLUTION_WORKDIR = "/resolved-deps"
-TOOL_ROOT = "/opt/reposcan"
+INSTALL_DIR = "/opt/reposcan"
 _SCRATCH = hashlib.sha256(TARGET.encode()).hexdigest()[:12]
 DEST = f"{RESOLUTION_WORKDIR}/{_SCRATCH}/acme"
 
 
-def _z(*paths: str) -> str:
+def _join_nul(*paths: str) -> str:
     return "\0".join(paths)
 
 
@@ -58,11 +58,13 @@ class _FakeContext:
             return ExecResult(1, "", "no wheel available")
         return ExecResult(0, "", "")  # compile ok, mkdir, rm, cp
 
+    @property
     def compiled(self) -> list[tuple[str, str | None]]:
         """The (input, working-directory) of each `uv pip compile` that ran."""
         index = "compile"
         return [(c[c.index(index) + 1], cwd) for c, cwd in self.runs if index in c]
 
+    @property
     def copied(self) -> bool:
         return any(cmd[0] == "cp" for cmd, _ in self.runs)
 
@@ -72,7 +74,7 @@ def test_compiles_exactly_the_resolvable_python_inputs_at_any_depth() -> None:
     # requirements.txt, static setup.cfg. Skipped: a natively-locked dir, a fully
     # `==`-pinned requirements.txt, a Poetry-only ([tool.poetry]) pyproject.
     ctx = _FakeContext(
-        _z(
+        _join_nul(
             "pyproject.toml",
             "svc/requirements.txt",
             "lib/setup.cfg",
@@ -90,29 +92,29 @@ def test_compiles_exactly_the_resolvable_python_inputs_at_any_depth() -> None:
         },
     )
 
-    result = resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR)
+    result = resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR)
 
     assert result == DEST
-    assert ctx.compiled() == [
+    assert ctx.compiled == [
         ("pyproject.toml", DEST),
         ("setup.cfg", f"{DEST}/lib"),
         ("requirements.txt", f"{DEST}/svc"),
     ]
     # wheel-only by default (no code runs), via the installed uv.
     first = next(cmd for cmd, _ in ctx.runs if "compile" in cmd)
-    assert "--only-binary" in first and first[0] == f"{TOOL_ROOT}/bin/uv"
+    assert "--only-binary" in first and first[0] == f"{INSTALL_DIR}/bin/uv"
 
 
 def test_allow_code_execution_retries_with_source_builds() -> None:
     # Wheel-only unsatisfiable: the default gives up, but the flag retries without it.
     ctx = _FakeContext(
-        _z("requirements.txt"),
+        _join_nul("requirements.txt"),
         files={f"{DEST}/requirements.txt": "source-only-pkg\n"},
         unsatisfiable=["requirements.txt"],
     )
 
     resolve_dependencies(
-        ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR, allow_code_execution=True
+        ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR, allow_code_execution=True
     )
 
     attempts = [cmd for cmd, _ in ctx.runs if "compile" in cmd]
@@ -129,49 +131,52 @@ def test_leaves_target_unchanged_without_resolvable_python() -> None:
                 return Failure(reason="not a git repository")
             return super().run(command, **kwargs)
 
-    for ctx in (_FakeContext(_z("README.md", "src/app.go")), _NoGit(_z())):
+    for ctx in (
+        _FakeContext(_join_nul("README.md", "src/app.go")),
+        _NoGit(_join_nul()),
+    ):
         assert (
-            resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
+            resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == TARGET
         )
-        assert not ctx.copied()
+        assert not ctx.copied
 
 
 def test_resolves_a_legacy_poetry_project() -> None:
     # [tool.poetry] with no [project] (and no poetry.lock): uv skips it; poetry locks
     # and exports a pinned requirements file the catalogers read.
     ctx = _FakeContext(
-        _z("pyproject.toml"),
+        _join_nul("pyproject.toml"),
         files={f"{DEST}/pyproject.toml": "[tool.poetry]\nname = 'acme'\n"},
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
+    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == DEST
     ran = [cmd for cmd, _ in ctx.runs]
-    poetry = f"{TOOL_ROOT}/bin/poetry"
+    poetry = f"{INSTALL_DIR}/bin/poetry"
     assert [poetry, "lock"] in ran and any(cmd[:2] == [poetry, "export"] for cmd in ran)
-    assert ctx.compiled() == []  # uv did not resolve a legacy-Poetry pyproject
+    assert ctx.compiled == []  # uv did not resolve a legacy-Poetry pyproject
 
 
 def test_poetry_defers_to_uv_when_pep621_metadata_is_present() -> None:
     # A Poetry >=2.0 pyproject that also declares [project] is uv's job; poetry stays
     # out.
     ctx = _FakeContext(
-        _z("pyproject.toml"),
+        _join_nul("pyproject.toml"),
         files={f"{DEST}/pyproject.toml": "[project]\nname = 'acme'\n[tool.poetry]\n"},
     )
 
-    resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR)
-    assert ctx.compiled() == [("pyproject.toml", DEST)]
+    resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR)
+    assert ctx.compiled == [("pyproject.toml", DEST)]
     assert not any("poetry" in cmd[0] for cmd, _ in ctx.runs)
 
 
 def test_resolves_a_pipenv_project_writing_the_captured_requirements() -> None:
     # Pipfile with no Pipfile.lock: pipenv locks, then its stdout `requirements` are
     # written to a *requirements*.txt (pipenv has no output flag).
-    ctx = _FakeContext(_z("Pipfile"), files={f"{DEST}/Pipfile": "[packages]\n"})
+    ctx = _FakeContext(_join_nul("Pipfile"), files={f"{DEST}/Pipfile": "[packages]\n"})
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
+    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == DEST
     ran = [cmd for cmd, _ in ctx.runs]
-    pipenv = f"{TOOL_ROOT}/bin/pipenv"
+    pipenv = f"{INSTALL_DIR}/bin/pipenv"
     assert [pipenv, "lock"] in ran and [pipenv, "requirements"] in ran
     # the captured stdout is written to a *requirements*.txt via `cp /dev/stdin`.
     assert any(
@@ -183,23 +188,28 @@ def test_resolves_a_pipenv_project_writing_the_captured_requirements() -> None:
 def test_skips_poetry_and_pipenv_directories_that_are_already_locked() -> None:
     # poetry.lock / Pipfile.lock mean the deps are pinned and the SBOM tools read them.
     ctx = _FakeContext(
-        _z("pyproject.toml", "poetry.lock", "svc/Pipfile", "svc/Pipfile.lock"),
+        _join_nul("pyproject.toml", "poetry.lock", "svc/Pipfile", "svc/Pipfile.lock"),
         files={f"{DEST}/pyproject.toml": "[tool.poetry]\n"},
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
-    assert not ctx.copied()
+    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == TARGET
+    assert not ctx.copied
 
 
 def test_resolves_js_projects_dispatching_npm_and_pnpm() -> None:
     # Root package.json -> npm; a pnpm workspace -> pnpm
     ctx = _FakeContext(
-        _z("package.json", "svc/package.json", "svc/pnpm-workspace.yaml")
+        _join_nul("package.json", "svc/package.json", "svc/pnpm-workspace.yaml")
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == DEST
-    npm = [f"{TOOL_ROOT}/bin/npm", "install", "--package-lock-only", "--ignore-scripts"]
-    pnpm = [f"{TOOL_ROOT}/bin/pnpm", "install", "--lockfile-only", "--ignore-scripts"]
+    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == DEST
+    npm = [
+        f"{INSTALL_DIR}/bin/npm",
+        "install",
+        "--package-lock-only",
+        "--ignore-scripts",
+    ]
+    pnpm = [f"{INSTALL_DIR}/bin/pnpm", "install", "--lockfile-only", "--ignore-scripts"]
     assert (npm, DEST) in ctx.runs
     assert (pnpm, f"{DEST}/svc") in ctx.runs
     assert (npm, f"{DEST}/svc") not in ctx.runs  # npm defers in the pnpm workspace
@@ -208,7 +218,7 @@ def test_resolves_js_projects_dispatching_npm_and_pnpm() -> None:
 def test_skips_js_directories_that_are_already_locked() -> None:
     # A committed package-lock.json / pnpm-lock.yaml is read by the SBOM tools directly.
     ctx = _FakeContext(
-        _z(
+        _join_nul(
             "package.json",
             "package-lock.json",
             "ws/pnpm-workspace.yaml",
@@ -216,5 +226,5 @@ def test_skips_js_directories_that_are_already_locked() -> None:
         )
     )
 
-    assert resolve_dependencies(ctx, TARGET, TOOL_ROOT, RESOLUTION_WORKDIR) == TARGET
-    assert not ctx.copied()
+    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == TARGET
+    assert not ctx.copied

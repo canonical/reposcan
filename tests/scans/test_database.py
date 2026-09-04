@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 import reposcan.actions.scan as scan_cmd
-from reposcan import reposcan_version
+from reposcan import __version__
 from reposcan.actions.scan import FINDINGS_EXIT_CODE
 from reposcan.db import read
 from tests.scans.shared import load_fixture, require_docker
@@ -81,18 +81,18 @@ def test_a_real_scan_is_recorded_and_reads_back() -> None:
             emitted = json.load(handle)
 
         # --- verify the git state read by the scan matches the planted git state
-        (project,) = read.projects(database)
+        (project,) = read.list_projects(database)
         assert project.name == "planted"
         assert project.origin == _NORMALIZED_ORIGIN
         assert project.root_commit  # a real commit, whatever its sha
-        (analysis,) = read.analyses(database)
+        (analysis,) = read.list_analyses(database)
         assert analysis.branch == "main"
         assert analysis.commit_sha == project.root_commit  # the only commit planted
         assert analysis.categories == (fixture.SCAN.name,)
         assert analysis.dirty is False
 
         # --- verify semgrep findings were added to db
-        issues = read.issues(database, project.project_id)
+        issues = read.list_issues(database, project.project_id)
         found = {issue.rule.split(".")[-1] for issue in issues}
         assert {"subprocess-shell-true", "eval-detected"} <= found, sorted(found)
         for issue in issues:
@@ -104,7 +104,7 @@ def test_a_real_scan_is_recorded_and_reads_back() -> None:
         assert emitted_run["automationDetails"]["correlationGuid"] == analysis.uuid
         driver = emitted_run["tool"]["driver"]
         assert driver["name"] == "reposcan"
-        assert driver["version"] == reposcan_version()
+        assert driver["version"] == __version__
         assert driver["rules"]
         assert emitted_run["versionControlProvenance"] == [
             {
@@ -118,7 +118,7 @@ def test_a_real_scan_is_recorded_and_reads_back() -> None:
             assert result["partialFingerprints"]["primaryLocationLineHash"]
 
         # --- verify database round-trip
-        (restored,) = read.artifacts(database)
+        (restored,) = read.list_artifacts(database)
         assert restored.to_dict() == emitted
 
 

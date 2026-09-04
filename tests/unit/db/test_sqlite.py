@@ -106,7 +106,7 @@ def test_the_schema_version_round_trips_and_is_absent_for_a_non_database() -> No
         session, _ = connect(path)
         assert session is not None
         with session:
-            assert session.version() == 0  # a new database starts at zero
+            assert session.read_version() == 0  # a new database starts at zero
             session.set_version(3)
         assert read_version(path) == 3
 

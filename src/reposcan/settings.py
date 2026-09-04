@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from reposcan.actions.base import Action
-from reposcan.cli_kit import Param, coerce, params_of
+from reposcan.cli_kit import Param, coerce, collect_params
 from reposcan.config import load
 from reposcan.logging import configure_logging
 
@@ -27,7 +27,7 @@ ENV_PREFIX = "REPOSCAN_"
 _UNSET: Any = object()
 
 # parameters persisted in config
-_CONFIG_KEYS = frozenset(p.name for p in params_of(Action))
+_CONFIG_KEYS = frozenset(p.name for p in collect_params(Action))
 
 # Parameters that cannot be set by an environment variable.
 _NO_ENV_KEYS = frozenset({"env"})
@@ -40,7 +40,7 @@ def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]
     or injects additional parameters from other sources.
     """
     config = load()
-    configure_logging(_verbosity(scope, cli_values, config))
+    configure_logging(_select_verbosity(scope, cli_values, config))
     values: dict[str, Any] = {}
     for param in scope:
         value = _resolve_one(param, cli_values, os.environ, config)
@@ -49,7 +49,7 @@ def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]
     return values
 
 
-def _verbosity(
+def _select_verbosity(
     scope: list[Param], cli_values: Mapping[str, Any], config: Mapping[str, Any]
 ) -> str:
     """Identify the selected (or default) logging verbosity level."""
@@ -75,7 +75,7 @@ def _resolve_one(
         present.append(("cli", cli_values[param.name]))
     ambient: list[tuple[str, Any]] = []
     if not (param.positional or param.remainder or param.name in _NO_ENV_KEYS):
-        ambient.append(("env", env.get(param.env_var or _env_var(param.name))))
+        ambient.append(("env", env.get(param.env_var or _derive_env_name(param.name))))
     if param.name in _CONFIG_KEYS:
         ambient.append(("config", config.get(param.name)))
     for source, raw in ambient:
@@ -95,6 +95,6 @@ def _resolve_one(
     return winner
 
 
-def _env_var(name: str) -> str:
-    """Convert a parameter name to its corresponding environment name."""
+def _derive_env_name(name: str) -> str:
+    """Derive the environment variable name a parameter reads from."""
     return ENV_PREFIX + name.upper().replace("-", "_").replace(" ", "_")

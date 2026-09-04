@@ -8,7 +8,12 @@ Uses the docker CLI (no SDK).
 
 from collections.abc import Mapping, Sequence
 
-from reposcan.execution.context import RunUser, as_user, home_for, mounted_target
+from reposcan.execution.context import (
+    RunUser,
+    locate_mounted_target,
+    select_home,
+    wrap_with_setpriv,
+)
 from reposcan.execution.process import ExecResult, Failure, run_process
 
 
@@ -16,7 +21,7 @@ class DockerContext:
     """Runs commands in an ephemeral container via `docker`, started from `image`.
 
     When `mount_source` is given, that host directory is bind-mounted read-only at
-    `mounted_target(mount_source)` so a scan can reach the repository.
+    `locate_mounted_target(mount_source)` so a scan can reach the repository.
     """
 
     name = "docker"
@@ -38,7 +43,7 @@ class DockerContext:
         argv = ["docker", "run", "-d", "--rm"]
         if self._mount_source is not None:
             src = self._mount_source
-            argv += ["-v", f"{src}:{mounted_target(src)}:ro"]
+            argv += ["-v", f"{src}:{locate_mounted_target(src)}:ro"]
         argv += [self._image, "sleep", "infinity"]
         result = run_process(argv)
         if isinstance(result, Failure):
@@ -71,8 +76,8 @@ class DockerContext:
         command = list(command)
         effective = self._user if user is None else user
         if effective is not None:
-            run_env.setdefault("HOME", home_for(effective.uid))
-            command = as_user(command, effective)
+            run_env.setdefault("HOME", select_home(effective.uid))
+            command = wrap_with_setpriv(command, effective)
         for key, value in sorted(run_env.items()):
             argv += ["-e", f"{key}={value}"]
         argv += [self._instance_name, *command]

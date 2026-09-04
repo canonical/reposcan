@@ -51,7 +51,9 @@ class SecretsScan(SecurityScan):
         help="For secrets history mode: scan only the most recent N commits.",
     )
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:
@@ -89,7 +91,7 @@ class SecretsScan(SecurityScan):
             One SARIF run listing the findings.
         """
         findings = [
-            _to_result(finding, tool, target)
+            _build_sarif_result(finding, tool, target)
             for finding in _parse_findings(output.stdout)
         ]
         return sarif.SarifRun.from_results(tool, TRUFFLEHOG.version, findings)
@@ -111,11 +113,13 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
     return findings
 
 
-def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.SarifResult:
+def _build_sarif_result(
+    finding: dict[str, Any], scanner: str, target: str
+) -> sarif.SarifResult:
     """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
-    uri, line, commit = _finding_location(finding)
+    uri, line, commit = _read_finding_location(finding)
     message = f"{detector} secret detected" + (" (verified)" if verified else "")
     level = "error" if verified else "warning"
     result = sarif.SarifResult.build(
@@ -132,7 +136,7 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
     return result
 
 
-def _finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
+def _read_finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
     """Read the (file, line, commit) of a finding.
 
     'commit' is only produced by truffelhog's history mode. trufflehog dedups its

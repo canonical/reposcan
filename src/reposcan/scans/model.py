@@ -70,6 +70,6 @@ class Artifact(Protocol):
         """Count the artifact entries (findings or components)."""
         ...
 
-    def rows(self) -> tuple[list[str], list[list[str]]]:
-        """Serialize the artifact for rendering table output."""
+    def to_table(self) -> tuple[list[str], list[list[str]]]:
+        """Tabulate the artifact for table output: its headers and its rows."""
         ...

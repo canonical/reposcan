@@ -51,7 +51,7 @@ def render(
     artifact = _load(input_path)
     if artifact is None:
         return 2
-    output.write_table(*artifact.rows(), limit=limit, wrap=wrap)
+    output.write_table(*artifact.to_table(), limit=limit, wrap=wrap)
     return 0
 
 

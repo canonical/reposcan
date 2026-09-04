@@ -12,7 +12,7 @@ SCHEMA_VERSIONS = {
 }
 
 
-def _digest() -> str:
+def _build_digest() -> str:
     """A digest over every statement that defines the database."""
     material = "\n".join(
         [*(table.create for table in schema.TABLES), *schema.INDEXES, *schema.VIEWS]
@@ -21,6 +21,6 @@ def _digest() -> str:
 
 
 def test_the_schema_matches_the_version_that_describes_it() -> None:
-    assert _digest() == SCHEMA_VERSIONS[schema.SCHEMA_VERSION], (
+    assert _build_digest() == SCHEMA_VERSIONS[schema.SCHEMA_VERSION], (
         "The schema has changed without an update to schema version"
     )

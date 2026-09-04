@@ -25,7 +25,9 @@ class IacScan(SecurityScan):
     name = "iac"
     help = "Infrastructure-as-code checks with checkov."
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:
@@ -53,14 +55,14 @@ class IacScan(SecurityScan):
         Returns:
             One SARIF run, or a Failure if the output was not JSON.
         """
-        run = _checkov_run(output.stdout, target)
+        run = _parse_checkov_stdout(output.stdout, target)
         if run is None:
             return Failure(reason=f"{tool} did not produce JSON output")
         return run
 
 
-def _checkov_run(stdout: str, target: str) -> sarif.SarifRun | None:
-    """Convert checkov's JSON report into a SARIF run.
+def _parse_checkov_stdout(stdout: str, target: str) -> sarif.SarifRun | None:
+    """Parse checkov's JSON report into a SARIF run.
 
     checkov emits either one report object or, across several frameworks, a list
     of them; each carries `results.failed_checks`. Every failed check becomes a

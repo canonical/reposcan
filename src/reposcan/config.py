@@ -13,15 +13,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def config_path() -> Path:
-    """Locate reposcan's config file ($XDG_CONFIG_HOME/reposcan/config.json)."""
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return Path(base) / "reposcan" / "config.json"
+_CONFIG_HOME = Path(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+)
+
+# Resolved once, at import
+CONFIG_FILE = _CONFIG_HOME / "reposcan" / "config.json"
 
 
 def load() -> dict[str, Any]:
     """Load reposcan's saved config or return a null one {}."""
-    path = config_path()
+    path = CONFIG_FILE
     try:
         text = path.read_text()
     except FileNotFoundError:
@@ -39,7 +41,7 @@ def load() -> dict[str, Any]:
 
 def save(settings: Mapping[str, Any]) -> str | None:
     """Write `settings` as JSON; return an error message, or None on success."""
-    path = config_path()
+    path = CONFIG_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(dict(settings), indent=2, sort_keys=True) + "\n")

@@ -26,7 +26,7 @@ def test_create_run_converts_checkov_failed_checks_to_sarif() -> None:
         "checkov", ExecResult(0, json.dumps(report), ""), "/scan/acme"
     )
     assert not isinstance(run, Failure)
-    finding = run.results()[0]
+    finding = run.results[0]
     assert finding.rule_id == "CKV_DOCKER_3"
     assert finding.uri == "Dockerfile"  # the leading slash is stripped
 

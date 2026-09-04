@@ -36,7 +36,7 @@ RESOLUTION_WORKDIR = "/resolved-deps"
 
 # default unprivileged user for in-container processes. Kept as the image's
 # fallback user (created at build time) and as the model-layer default identity;
-# the CLI overrides it with the invoking host user (see host_user).
+# the CLI overrides it with the invoking host user (see get_host_user).
 SCAN_USER = "reposcan"
 SCAN_UID = 10000
 SCAN_GID = 10000
@@ -62,7 +62,7 @@ class RunUser:
     groups: tuple[int, ...]
 
 
-def host_user() -> RunUser:
+def get_host_user() -> RunUser:
     """Return the invoking host user as a RunUser.
 
     Uses the real uid/gid and supplementary groups (capped at _MAX_GROUPS, with a
@@ -84,8 +84,8 @@ def host_user() -> RunUser:
     return RunUser(uid, gid, tuple(groups))
 
 
-def as_user(command: Sequence[str], user: RunUser) -> list[str]:
-    """`command` wrapped to run as `user` via setpriv.
+def wrap_with_setpriv(command: Sequence[str], user: RunUser) -> list[str]:
+    """Wrap `command` with setpriv so it runs as `user`.
 
     Drops the (root) caller to the user's uid and primary gid and sets its
     supplementary groups by raw gid (setpriv --groups takes numeric gids, so no
@@ -103,7 +103,7 @@ def as_user(command: Sequence[str], user: RunUser) -> list[str]:
     return [*argv, *command]
 
 
-def home_for(uid: int) -> str:
+def select_home(uid: int) -> str:
     """Select the HOME env var for a command running as `uid`.
 
     The built-in scan user has a real home; any other uid gets `/tmp`, which is
@@ -113,7 +113,7 @@ def home_for(uid: int) -> str:
     return homes.get(uid) or "/tmp"
 
 
-def resolved_env(specs: Sequence[str]) -> dict[str, str]:
+def resolve_env(specs: Sequence[str]) -> dict[str, str]:
     """Resolve `NAME[=VALUE]` specs to variables."""
     resolved: dict[str, str] = {}
     for spec in specs:
@@ -127,7 +127,7 @@ def resolved_env(specs: Sequence[str]) -> dict[str, str]:
     return resolved
 
 
-def mounted_target(mount_source: str) -> str:
+def locate_mounted_target(mount_source: str) -> str:
     """Where a mounted source directory appears inside a container.
 
     The source keeps its own directory name under `MOUNT_PARENT`, so tools that

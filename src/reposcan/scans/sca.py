@@ -30,7 +30,9 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
     name = "sca"
     help = "Dependency vulnerabilities (trivy, grype, govulncheck)."
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:
@@ -82,14 +84,14 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
             The tool's normalized SARIF run, or a Failure if not usable.
         """
         if tool == "govulncheck":
-            return _govulncheck_run(output.stdout, target)
+            return _parse_govulncheck_stdout(output.stdout, target)
         run = sarif.parse_run(output.stdout, tool, target)
         if run is None:
             return Failure(reason=f"{tool} did not produce usable output")
         return run
 
 
-def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
+def _find_govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
     """Find the first source position in a govulncheck finding's trace, or None."""
     for frame in finding.get("trace") or []:
         position = frame.get("position")
@@ -98,8 +100,8 @@ def _govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
     return None
 
 
-def _govulncheck_run(stdout: str, target: str) -> sarif.SarifRun:
-    """Convert govulncheck's JSON message stream into a SARIF run.
+def _parse_govulncheck_stdout(stdout: str, target: str) -> sarif.SarifRun:
+    """Parse govulncheck's JSON message stream into a SARIF run.
 
     The stream carries OSV vulnerability records and findings. A finding that
     reaches a source position is reported once per OSV id.
@@ -133,7 +135,7 @@ def _govulncheck_run(stdout: str, target: str) -> sarif.SarifRun:
     seen: set[str] = set()
     for finding in findings:
         osv_id = str(finding.get("osv", ""))
-        position = _govulncheck_position(finding)
+        position = _find_govulncheck_position(finding)
         if position is None or osv_id in seen:
             continue  # report only source-reaching findings, once per vulnerability
         seen.add(osv_id)

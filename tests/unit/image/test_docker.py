@@ -55,7 +55,7 @@ def test_build_runs_docker_build_for_the_tag_and_propagates_failure() -> None:
 
 def test_identity_is_the_image_id_or_none_when_absent() -> None:
     with _patched(ExecResult(0, "sha256:abc\n", "")) as calls:
-        assert _BUILDER.identity("reposcan:x") == "sha256:abc"
+        assert _BUILDER.read_identity("reposcan:x") == "sha256:abc"
     assert calls[0][:3] == ["docker", "image", "inspect"]
     with _patched(ExecResult(1, "", "No such image")):
-        assert _BUILDER.identity("reposcan:x") is None
+        assert _BUILDER.read_identity("reposcan:x") is None

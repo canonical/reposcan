@@ -107,12 +107,12 @@ class SarifResult:
     @property
     def uri(self) -> str:
         """The repo-relative file uri of the finding's primary location, or ''."""
-        return str(self._physical_location().get("artifactLocation", {}).get("uri", ""))
+        return str(self._physical_location.get("artifactLocation", {}).get("uri", ""))
 
     @property
     def line(self) -> int:
         """The 1-indexed start line of the finding's primary location, or 0."""
-        line = self._physical_location().get("region", {}).get("startLine")
+        line = self._physical_location.get("region", {}).get("startLine")
         return line if isinstance(line, int) else 0
 
     @property
@@ -149,8 +149,9 @@ class SarifResult:
         """
         self.result.setdefault("fingerprints", {})[name] = value
 
+    @property
     def _physical_location(self) -> dict[str, Any]:
-        """Get the primary location's physicalLocation dict."""
+        """The primary location's physicalLocation dict, or {} when it has none."""
         locations = self.result.get("locations") or []
         return locations[0].get("physicalLocation", {}) if locations else {}
 
@@ -211,8 +212,9 @@ class SarifRun:
             return self.run
         return {**self.run, "invocations": invocations}
 
+    @property
     def results(self) -> list[SarifResult]:
-        """Read the run's findings."""
+        """The run's findings, each as a SarifResult."""
         return [SarifResult(result) for result in self.run.get("results", [])]
 
     @property
@@ -296,19 +298,21 @@ class SarifDocument:
         """Render the artifact as a SARIF 2.1.0 document object."""
         return self.content
 
+    @property
     def runs(self) -> list[SarifRun]:
-        """Read the document's runs, each as a SarifRun."""
+        """The document's runs, each as a SarifRun."""
         return [SarifRun(run) for run in self.content.get("runs", [])]
 
+    @property
     def results(self) -> list[SarifResult]:
         """Every finding as a SarifResult, flattened across all runs."""
-        return [result for run in self.runs() for result in run.results()]
+        return [result for run in self.runs for result in run.results]
 
     def count(self) -> int:
         """Count the findings across every run."""
-        return len(self.results())
+        return len(self.results)
 
-    def rows(self) -> tuple[list[str], list[list[str]]]:
+    def to_table(self) -> tuple[list[str], list[list[str]]]:
         """Tabulate the findings for presentation, most severe first."""
         headers = ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
         rows = [
@@ -319,7 +323,7 @@ class SarifDocument:
                 finding.location,
                 finding.message,
             ]
-            for finding in self.results()
+            for finding in self.results
         ]
         rows.sort(key=lambda row: _LEVEL_RANK.get(row[0], len(_LEVEL_RANK)))
         return headers, rows
@@ -356,7 +360,7 @@ def parse_run(text: str, scanner: str, target: str) -> SarifRun | None:
     document = parse(text, scanner, target)
     if document is None:
         return None
-    runs = document.runs()
+    runs = document.runs
     if len(runs) > 1:
         logger.warning("%s produced more than one SARIF run; data may be lost", scanner)
     run = runs[0]
@@ -377,7 +381,7 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
             rule_id = str(rule.get("id", ""))
             if rule_id and rule_id not in rules_by_id:
                 rules_by_id[rule_id] = rule
-        for finding in run.results():
+        for finding in run.results:
             key = finding.key
             if key in by_key:
                 for scanner in finding.scanners:
@@ -408,7 +412,7 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
 def _normalize(document: dict[str, Any], scanner: str, target: str) -> None:
     """Normalize every result in a raw SARIF document, in place (used by `parse`)."""
     for run in document.get("runs", []):
-        rule_levels = _rule_levels(run)
+        rule_levels = _index_rule_levels(run)
         for result in run.get("results", []):
             _normalize_result(result, scanner, target, rule_levels)
 
@@ -432,7 +436,7 @@ def _normalize_result(
     for location in result.get("locations") or []:
         artifact = location.get("physicalLocation", {}).get("artifactLocation")
         if isinstance(artifact, dict) and artifact.get("uri"):
-            artifact["uri"] = _relative_uri(str(artifact["uri"]), target)
+            artifact["uri"] = _relativize_uri(str(artifact["uri"]), target)
 
 
 # --- fingerprinting: give each finding a stable partial fingerprint ---
@@ -472,7 +476,7 @@ def add_primarylocationlinehash(
     """
     # Counted per file, so a line repeated in two files still hashes to ":1" in each.
     occurrences: dict[tuple[str, str], int] = {}
-    for finding in run.results():
+    for finding in run.results:
         if "primaryLocationLineHash" in finding.result.get("partialFingerprints", {}):
             continue
         content = read_source(ctx, target, finding) if finding.line > 0 else None
@@ -493,8 +497,8 @@ def add_primarylocationlinehash(
         fingerprints["primaryLocationLineHash"] = f"{digest}:{occurrence}"
 
 
-def _rule_levels(run: dict[str, Any]) -> dict[str, str]:
-    """Each rule id mapped to its configured level, from a run's tool driver rules."""
+def _index_rule_levels(run: dict[str, Any]) -> dict[str, str]:
+    """Index each rule id to its configured level, from a run's tool driver rules."""
     levels: dict[str, str] = {}
     for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
         rule_id = str(rule.get("id", ""))
@@ -511,8 +515,8 @@ def _record_scanner(result: dict[str, Any], scanner: str) -> None:
         scanners.append(scanner)
 
 
-def _relative_uri(uri: str, target: str) -> str:
-    """`uri` made relative to the scan root `target`, matching how git reports paths.
+def _relativize_uri(uri: str, target: str) -> str:
+    """Relativize `uri` against the scan root `target`, as git reports paths.
 
     Drops a `file://` scheme and the `target` prefix; a uri already relative (not
     under `target`) is returned unchanged apart from a leading `./`.

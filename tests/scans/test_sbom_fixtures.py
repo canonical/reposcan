@@ -40,7 +40,7 @@ def _run() -> None:
             fixture.SCAN,
             session.context,
             session.target,
-            session.tool_root,
+            session.install_dir,
             stream=True,
         )
         assert not isinstance(sbom, Failure), f"sbom: {sbom}"

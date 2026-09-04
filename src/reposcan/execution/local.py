@@ -42,16 +42,16 @@ _ALLOWED_ENV_VARS = (
 class LocalContext:
     """Runs commands on the host.
 
-    Nothing to start or stop. Runs as the invoking user. Always prepends `tool_root`
+    Nothing to start or stop. Runs as the invoking user. Always prepends `bin_dir`
     to PATH. Host env vars are masked by reposcan's allow-list.
     """
 
     name = "local"
 
     def __init__(
-        self, tool_root: str | None = None, env: Mapping[str, str] | None = None
+        self, bin_dir: str | None = None, env: Mapping[str, str] | None = None
     ) -> None:
-        self._tool_root = tool_root
+        self._bin_dir = bin_dir
         self._env = dict(env or {})
 
     def start(self) -> Failure | None:
@@ -81,11 +81,11 @@ class LocalContext:
         }
         environment.update(self._env)
         environment.update(env or {})
-        if self._tool_root is not None:
+        if self._bin_dir is not None:
             # An empty trailing element would put the scanned repository on PATH
             rest = environment.get("PATH", "")
             environment["PATH"] = (
-                f"{self._tool_root}{os.pathsep}{rest}" if rest else self._tool_root
+                f"{self._bin_dir}{os.pathsep}{rest}" if rest else self._bin_dir
             )
         return run_process(
             command,

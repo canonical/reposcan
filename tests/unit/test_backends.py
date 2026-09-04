@@ -13,17 +13,17 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 import reposcan.backends as backends
+from reposcan import paths
 from reposcan.backends import (
     BACKENDS,
     Backend,
-    _reposcan_image_for,
+    _provision_image,
     select_backend,
     start_session,
 )
 from reposcan.execution.local import LocalContext
 from reposcan.execution.process import ExecResult, Failure
 from reposcan.image.spec import CANONICAL_REF
-from reposcan.paths import tools_root
 
 
 @contextmanager
@@ -52,7 +52,7 @@ def _availability(*, lxd_ok: bool, docker_ok: bool) -> Iterator[None]:
         backends.run_process = saved
 
 
-def _backend(requested: str | None) -> Backend:
+def _pick_backend(requested: str | None) -> Backend:
     chosen = select_backend(requested)
     assert not isinstance(chosen, Failure), chosen
     return chosen
@@ -60,21 +60,23 @@ def _backend(requested: str | None) -> Backend:
 
 def test_auto_selects_the_first_available_in_precedence_order() -> None:
     with _availability(lxd_ok=True, docker_ok=True):
-        assert _backend("auto").name == "docker"
+        assert _pick_backend("auto").name == "docker"
     with _availability(lxd_ok=True, docker_ok=False):
-        assert _backend("auto").name == "lxd"
+        assert _pick_backend("auto").name == "lxd"
     with _availability(lxd_ok=False, docker_ok=False):
-        assert _backend("auto").name == "local"  # always available, the last resort
+        assert (
+            _pick_backend("auto").name == "local"
+        )  # always available, the last resort
 
 
 def test_select_backend_honours_the_resolved_name_and_treats_none_as_auto() -> None:
     # An explicit resolved name selects exactly that backend.
     with _availability(lxd_ok=True, docker_ok=True):
-        assert _backend("local").name == "local"
-        assert _backend("docker").name == "docker"
+        assert _pick_backend("local").name == "local"
+        assert _pick_backend("docker").name == "docker"
     # None means auto: the first available in precedence order.
     with _availability(lxd_ok=False, docker_ok=True):
-        assert _backend(None).name == "docker"
+        assert _pick_backend(None).name == "docker"
 
 
 def test_invalid_selections_are_failures() -> None:
@@ -94,11 +96,11 @@ def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> 
     saved = backends.ensure_built
     try:
         backends.ensure_built = build_ok
-        assert _reposcan_image_for(BACKENDS["docker"], "build") == "reposcan:tools"
+        assert _provision_image(BACKENDS["docker"], "build") == "reposcan:tools"
         # LXD cannot pull yet, so a configured image still builds locally.
-        assert _reposcan_image_for(BACKENDS["lxd"], "canonical") == "reposcan:tools"
+        assert _provision_image(BACKENDS["lxd"], "canonical") == "reposcan:tools"
         backends.ensure_built = build_fail
-        assert isinstance(_reposcan_image_for(BACKENDS["docker"], "build"), Failure)
+        assert isinstance(_provision_image(BACKENDS["docker"], "build"), Failure)
     finally:
         backends.ensure_built = saved
 
@@ -113,10 +115,10 @@ def test_the_configured_or_canonical_image_is_pulled_when_the_backend_can() -> N
     docker = replace(BACKENDS["docker"], puller=pull_ok)
     pinned = f"pulled:{CANONICAL_REF}"
     # Unset and the `canonical` shorthand both resolve to the pinned image.
-    assert _reposcan_image_for(docker, None) == pinned
-    assert _reposcan_image_for(docker, "canonical") == pinned
+    assert _provision_image(docker, None) == pinned
+    assert _provision_image(docker, "canonical") == pinned
 
-    result = _reposcan_image_for(replace(docker, puller=pull_fail), None)
+    result = _provision_image(replace(docker, puller=pull_fail), None)
     assert isinstance(result, Failure)
     assert "--image build" in result.reason  # names the alternative
 
@@ -133,7 +135,7 @@ def test_start_session_runs_on_the_started_context_or_reports_a_bad_backend() ->
     with start_session("local") as session:
         assert session.ok and session.exit_code == 0
         assert isinstance(session.context, LocalContext)
-        assert session.tool_root == str(tools_root())
+        assert session.install_dir == str(paths.TOOL_INSTALL_DIR)
     # An unusable backend yields a not-ok session carrying the exit code.
     with start_session("bogus") as session:
         assert not session.ok and session.exit_code == 2

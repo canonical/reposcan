@@ -5,12 +5,12 @@
 
 import os
 
-from reposcan.execution.context import RunUser, as_user, resolved_env
+from reposcan.execution.context import RunUser, resolve_env, wrap_with_setpriv
 
 
-def test_as_user_with_groups_sets_them_and_drops_init_groups() -> None:
+def test_setpriv_with_groups_sets_them_and_drops_init_groups() -> None:
     user = RunUser(1000, 1000, (1000, 42, 100))
-    argv = as_user(["trivy", "fs", "."], user)
+    argv = wrap_with_setpriv(["trivy", "fs", "."], user)
     assert argv[0] == "setpriv"
     assert "--reuid=1000" in argv and "--regid=1000" in argv
     assert "--groups=1000,42,100" in argv  # supplementary gids, raw and ordered
@@ -19,19 +19,19 @@ def test_as_user_with_groups_sets_them_and_drops_init_groups() -> None:
     assert argv[-4:] == ["--", "trivy", "fs", "."]
 
 
-def test_as_user_without_groups_clears_them() -> None:
+def test_setpriv_without_groups_clears_them() -> None:
     # setpriv keeps the caller's groups by default, which would leak root's groups
     # to the dropped user; with no supplementary groups they are cleared instead.
-    argv = as_user(["ls"], RunUser(10000, 10000, ()))
+    argv = wrap_with_setpriv(["ls"], RunUser(10000, 10000, ()))
     assert "--clear-groups" in argv
     assert "--groups" not in "".join(argv)
     assert argv[-2:] == ["--", "ls"]
 
 
-def test_resolved_env_takes_a_value_inline_or_from_the_host() -> None:
+def test_resolve_env_takes_a_value_inline_or_from_the_host() -> None:
     os.environ["REPOSCAN_TEST_FORWARDED"] = "from-host"
     try:
-        resolved = resolved_env(
+        resolved = resolve_env(
             ["NAME=inline", "REPOSCAN_TEST_FORWARDED", "REPOSCAN_TEST_MISSING"]
         )
     finally:
@@ -41,5 +41,5 @@ def test_resolved_env_takes_a_value_inline_or_from_the_host() -> None:
     assert resolved == {"NAME": "inline", "REPOSCAN_TEST_FORWARDED": "from-host"}
 
 
-def test_resolved_env_keeps_a_value_containing_an_equals_sign() -> None:
-    assert resolved_env(["URL=https://h/?a=1"]) == {"URL": "https://h/?a=1"}
+def test_resolve_env_keeps_a_value_containing_an_equals_sign() -> None:
+    assert resolve_env(["URL=https://h/?a=1"]) == {"URL": "https://h/?a=1"}

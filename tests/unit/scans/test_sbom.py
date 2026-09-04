@@ -17,7 +17,7 @@ from reposcan.scans.sbom import SbomScan
 _NO_CTX = cast(ExecutionContext, None)
 
 
-def _cyclonedx(components: list[dict]) -> str:
+def _build_cyclonedx(components: list[dict]) -> str:
     return json.dumps(
         {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": components}
     )
@@ -25,14 +25,14 @@ def _cyclonedx(components: list[dict]) -> str:
 
 def test_merge_dedups_by_purl_and_annotates_scanners() -> None:
     shared = {"type": "library", "name": "left-pad", "purl": "pkg:npm/left-pad@1.0.0"}
-    trivy = _cyclonedx([shared, {"name": "a", "purl": "pkg:npm/a@1"}])
-    syft = _cyclonedx([shared, {"name": "b", "purl": "pkg:npm/b@1"}])
+    trivy = _build_cyclonedx([shared, {"name": "a", "purl": "pkg:npm/a@1"}])
+    syft = _build_cyclonedx([shared, {"name": "b", "purl": "pkg:npm/b@1"}])
 
     trivy_doc = cyclonedx.parse(trivy, "trivy")
     syft_doc = cyclonedx.parse(syft, "syft")
     assert trivy_doc is not None and syft_doc is not None
     result = cyclonedx.merge([trivy_doc, syft_doc])
-    by_purl = {c["purl"]: c for c in result.components()}
+    by_purl = {c["purl"]: c for c in result.components}
     assert len(by_purl) == 3  # the shared component is deduped by purl
     scanners = [
         p["value"]
@@ -45,7 +45,9 @@ def test_merge_dedups_by_purl_and_annotates_scanners() -> None:
 def test_include_dev_dependencies_steers_each_tool() -> None:
     by_tool = {
         i.tool: i
-        for i in SbomScan(include_dev_dependencies=True).invocations(_NO_CTX, "/x")
+        for i in SbomScan(include_dev_dependencies=True).build_invocations(
+            _NO_CTX, "/x"
+        )
     }
     assert "--include-dev-deps" in by_tool["trivy"].args  # trivy: CLI flag
     syft_env = by_tool["syft"].env or {}
@@ -56,7 +58,7 @@ def test_include_dev_dependencies_steers_each_tool() -> None:
 
 
 def test_dev_dependencies_are_excluded_by_default() -> None:
-    by_tool = {i.tool: i for i in SbomScan().invocations(_NO_CTX, "/x")}
+    by_tool = {i.tool: i for i in SbomScan().build_invocations(_NO_CTX, "/x")}
     assert "--include-dev-deps" not in by_tool["trivy"].args
     assert "SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES" not in (by_tool["syft"].env or {})
     assert "--required-only" in by_tool["cdxgen"].args  # cdxgen otherwise includes dev
@@ -65,7 +67,7 @@ def test_dev_dependencies_are_excluded_by_default() -> None:
 def test_parse_drops_the_scanned_root_component() -> None:
     # Directory scans list a component named "." (or "./") for the scanned root; it is
     # the source, not a dependency, so parse drops it while keeping real packages.
-    output = _cyclonedx(
+    output = _build_cyclonedx(
         [
             {"type": "file", "name": "."},
             {"type": "library", "name": "flask", "purl": "pkg:pypi/flask@3.0.0"},
@@ -73,7 +75,7 @@ def test_parse_drops_the_scanned_root_component() -> None:
     )
     result = cyclonedx.parse(output, "syft")
     assert result is not None
-    assert [c["name"] for c in result.components()] == ["flask"]
+    assert [c["name"] for c in result.components] == ["flask"]
 
 
 def test_parse_returns_none_on_non_cyclonedx_output() -> None:

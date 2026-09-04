@@ -33,16 +33,16 @@ def warn_if_lxd_bridge_blocked(bridge: str = _LXD_BRIDGE) -> None:
     Advisory only. Call before every `lxc launch` -- both running a container and
     building an image launch on the bridge and fail the same way when it is blocked.
     """
-    warning = firewall_warning(bridge)
+    warning = check_firewall(bridge)
     if warning is not None:
         logger.warning(warning)
 
 
-def lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
+def build_lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
     """Firewall guidance to log when an LXD container has no outbound network.
 
     Reading nft/iptables needs root privileges that we may not have, and a blocked
-    FORWARD chain is the usual culprit. Unlike `firewall_warning`, this never returns
+    FORWARD chain is the usual culprit. Unlike `check_firewall`, this never returns
     None: the caller already knows there is a problem and always wants something
     actionable to show.
 
@@ -50,7 +50,7 @@ def lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
         str: The specific cause and fix if the host firewall can be read and shows
         `bridge` blocked; otherwise, generic remediation.
     """
-    detected = firewall_warning(bridge)
+    detected = check_firewall(bridge)
     if detected is not None:
         return detected
     return (
@@ -60,11 +60,15 @@ def lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
     )
 
 
-def firewall_warning(bridge: str) -> str | None:
-    """Return warning text if the FORWARD policy drops `bridge`, else None.
+def check_firewall(bridge: str) -> str | None:
+    """Check whether the host firewall blocks forwarding on `bridge`.
 
-    Uses nftables when present, else iptables-legacy; None when neither reports a
-    filter FORWARD chain.
+    Uses nftables when present, else iptables-legacy.
+
+    Returns:
+        Warning text naming the cause and its fix when the FORWARD policy drops
+        `bridge`, or None when it does not, or when neither tool reports a filter
+        FORWARD chain. (The text belongs in a Result's error half; see PLAN.md.)
     """
     nft = run_process(["nft", "-j", "list", "table", "ip", "filter"])
     if succeeded(nft):
@@ -82,16 +86,16 @@ def _analyze_nft(nft_json: str, bridge: str) -> str | None:
     except json.JSONDecodeError:
         return None
     ruleset: list[Any] = parsed.get("nftables", []) if isinstance(parsed, dict) else []
-    if not _nft_forward_is_drop(ruleset):
+    if not _has_drop_policy(ruleset):
         return None
-    if _nft_bridge_accepts(ruleset, bridge):
+    if _has_accept_rule(ruleset, bridge):
         return None
     docker_fix = (
         f"sudo nft insert rule ip filter DOCKER-USER iifname {bridge} accept \\; "
         f"sudo nft insert rule ip filter DOCKER-USER oifname {bridge} "
         "ct state related,established accept"
     )
-    return _blocked_warning(bridge, _nft_cause(ruleset), docker_fix)
+    return _explain_block(bridge, _classify_cause(ruleset), docker_fix)
 
 
 def _analyze_iptables(rules: str, bridge: str) -> str | None:
@@ -115,11 +119,11 @@ def _analyze_iptables(rules: str, bridge: str) -> str | None:
         f"sudo iptables -I DOCKER-USER -o {bridge} "
         "-m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
     )
-    return _blocked_warning(bridge, cause, docker_fix)
+    return _explain_block(bridge, cause, docker_fix)
 
 
-def _nft_forward_is_drop(ruleset: list[Any]) -> bool:
-    """Check whether the nft FORWARD chain has a drop policy."""
+def _has_drop_policy(ruleset: list[Any]) -> bool:
+    """Whether the ruleset's FORWARD chain has a drop policy."""
     for obj in ruleset:
         chain = obj.get("chain") if isinstance(obj, dict) else None
         if chain and chain.get("name") == "FORWARD":
@@ -127,8 +131,8 @@ def _nft_forward_is_drop(ruleset: list[Any]) -> bool:
     return False
 
 
-def _nft_bridge_accepts(ruleset: list[Any], bridge: str) -> bool:
-    """Check whether an nft rule accepts traffic for the bridge interface."""
+def _has_accept_rule(ruleset: list[Any], bridge: str) -> bool:
+    """Whether the ruleset has a rule accepting traffic for the bridge."""
     for obj in ruleset:
         rule = obj.get("rule") if isinstance(obj, dict) else None
         if rule is None:
@@ -139,7 +143,7 @@ def _nft_bridge_accepts(ruleset: list[Any], bridge: str) -> bool:
     return False
 
 
-def _nft_cause(ruleset: list[Any]) -> str:
+def _classify_cause(ruleset: list[Any]) -> str:
     """Classify the drop policy's likely cause: docker, ufw, or unknown."""
     for obj in ruleset:
         if not isinstance(obj, dict):
@@ -157,8 +161,8 @@ def _nft_cause(ruleset: list[Any]) -> str:
     return "unknown"
 
 
-def _blocked_warning(bridge: str, cause: str, docker_fix: str) -> str:
-    """Build the cause-specific warning and remediation for a blocked bridge."""
+def _explain_block(bridge: str, cause: str, docker_fix: str) -> str:
+    """Explain a blocked bridge and how to unblock it, given its likely cause."""
     base = (
         f"firewall rules may be blocking network traffic on the {bridge} bridge: "
         "the FORWARD chain policy is set to DROP with no rules allowing traffic "

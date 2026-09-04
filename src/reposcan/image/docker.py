@@ -14,7 +14,7 @@ from reposcan.execution.process import Failure, run_process, succeeded
 from reposcan.image.spec import NAME, BuildSpec
 
 
-def image_identity(reference: str) -> str | None:
+def read_image_identity(reference: str) -> str | None:
     """Read the Docker image ID (content hash) of `reference`."""
     argv = ["docker", "image", "inspect", "--format", "{{.Id}}", reference]
     result = run_process(argv, timeout=30)
@@ -36,21 +36,21 @@ class DockerImageBuilder:
 
     name = "docker"
 
-    def reference(self, spec: BuildSpec) -> str:
+    def derive_reference(self, spec: BuildSpec) -> str:
         return f"{NAME}:{spec.short_digest}"
 
-    def identity(self, reference: str) -> str | None:
-        return image_identity(reference)
+    def read_identity(self, reference: str) -> str | None:
+        return read_image_identity(reference)
 
     def build(self, spec: BuildSpec) -> str | Failure:
         # Build context: a temp dir with the install script and a Dockerfile that
         # runs it, then puts the tools' bin dir on PATH.
-        tag = self.reference(spec)
+        tag = self.derive_reference(spec)
         dockerfile = (
             f"FROM {spec.base_image}\n"
             "COPY install.sh /tmp/install.sh\n"
             "RUN sh /tmp/install.sh && rm -f /tmp/install.sh\n"
-            f'ENV PATH="{spec.install_root}/bin:$PATH"\n'
+            f'ENV PATH="{spec.install_dir}/bin:$PATH"\n'
         )
         with tempfile.TemporaryDirectory() as context:
             Path(context, "install.sh").write_text(spec.script)

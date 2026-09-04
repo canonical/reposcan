@@ -117,7 +117,7 @@ class Param(Generic[T]):
         return f"Param({self.name!r})"
 
 
-def _as_flags(extra_flags: str | Iterable[str] | None) -> tuple[str, ...]:
+def _normalize_flags(extra_flags: str | Iterable[str] | None) -> tuple[str, ...]:
     """Normalize `extra_flags` (a single flag, an iterable, or None) to a tuple."""
     if extra_flags is None:
         return ()
@@ -153,7 +153,7 @@ def option(
     """
     return Param(
         name=name,
-        flags=_as_flags(extra_flags),
+        flags=_normalize_flags(extra_flags),
         default=default,
         choices=choices,
         convert=convert,
@@ -182,7 +182,7 @@ def flag(
     """
     return Param(
         name=name,
-        flags=_as_flags(extra_flags),
+        flags=_normalize_flags(extra_flags),
         default=False,
         is_flag=True,
         help=help,
@@ -226,7 +226,7 @@ def remainder(help: str = "") -> Any:
     return Param(remainder=True, default=[], help=help)
 
 
-def params_of(cls: type) -> list[Param]:
+def collect_params(cls: type) -> list[Param]:
     """Collect the parameters declared on `cls` and its bases, in declaration order.
 
     Base classes come first (so the flow-down globals lead), then the class's own
@@ -276,13 +276,13 @@ def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | 
                 satisfied = target in allowed
             if satisfied:
                 continue
-            return _requirement_error(
+            return _describe_requirement_error(
                 param, by_name.get(required_name), required, target
             )
     return None
 
 
-def _requirement_error(
+def _describe_requirement_error(
     param: Param,
     required_param: Param | None,
     required: str | tuple[str, ...],
@@ -315,7 +315,7 @@ class Action:
     kwargs). Unspecified parameters/attributes fall back to their defaults.
 
     In addition to typed class attribute parameters, a command may contribute
-    parameters as data via `extra_options`. `params_of` folds them in, so
+    parameters as data via `extra_options`. `collect_params` folds them in, so
     they parse, resolve, and populate `self.<name>` like attribute-based parameters.
     This lets a command aggregate options dynamically.
     """
@@ -325,7 +325,7 @@ class Action:
     extra_options: ClassVar[tuple[Param, ...]] = ()
 
     def __init__(self, **values: Any) -> None:
-        params = params_of(type(self))
+        params = collect_params(type(self))
         unknown = set(values) - {param.name for param in params}
         if unknown:
             raise TypeError(f"unexpected arguments: {', '.join(sorted(unknown))}")

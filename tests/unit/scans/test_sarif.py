@@ -41,7 +41,7 @@ def test_from_runs_wraps_a_run_built_from_results() -> None:
     )
     run = sarif.SarifRun.from_results("trufflehog", "1.0", [finding])
     doc = sarif.SarifDocument.from_runs([run])
-    (assembled,) = doc.results()
+    (assembled,) = doc.results
     assert assembled.uri == "src/app.py"  # already relative from build
     assert assembled.scanners == ["trufflehog"]
     assert doc.to_dict()["runs"][0]["tool"]["driver"]["name"] == "trufflehog"
@@ -80,7 +80,7 @@ def test_parse_normalizes_each_result_at_ingestion() -> None:
     )
     doc = sarif.parse(text, "semgrep", "/scan/repo")
     assert doc is not None
-    (finding,) = doc.results()
+    (finding,) = doc.results
     assert finding.uri == "x.py"  # file:// scheme and target prefix stripped
     assert finding.scanners == ["semgrep"]  # scanner annotated on ingest
     assert finding.level == "error"  # inherited from the rule's configuration
@@ -110,7 +110,7 @@ def test_parse_relativizes_every_location_not_just_the_primary() -> None:
     )
     doc = sarif.parse(text, "semgrep", "/scan/repo")
     assert doc is not None
-    (result,) = doc.results()
+    (result,) = doc.results
     uris = [
         location["physicalLocation"]["artifactLocation"]["uri"]
         for location in result.result["locations"]  # raw dict: all locations, not [0]
@@ -132,9 +132,9 @@ def test_add_primarylocationlinehash() -> None:
     }
     doc = sarif.parse(json.dumps({"runs": [{"results": [result]}]}), "semgrep", "/r")
     assert doc is not None
-    (run,) = doc.runs()
+    (run,) = doc.runs
     sarif.add_primarylocationlinehash(run, cast(ExecutionContext, _Ctx()), "/r")
-    (finding,) = run.results()
+    (finding,) = run.results
     digest = hashlib.sha256(b"SECRET = 'abc'").hexdigest()[:16]
     # The first occurrence of that line's content in that file.
     expected = f"{digest}:1"
@@ -154,7 +154,7 @@ def test_identical_lines_in_one_file_get_distinct_fingerprints() -> None:
     sarif.add_primarylocationlinehash(run, cast(ExecutionContext, _Ctx()), "/r")
     hashes = [
         stored.result["partialFingerprints"]["primaryLocationLineHash"]
-        for stored in run.results()
+        for stored in run.results
     ]
     digest = hashlib.sha256(b"password = get()").hexdigest()[:16]
     # Same content, so the same hash; the occurrence index is what tells them apart.
@@ -169,7 +169,7 @@ def test_add_primarylocationlinehash_skips_when_the_source_is_unreadable() -> No
     finding = sarif.SarifResult.build("AWS", "k", "app.py", 12, "trufflehog", "/r")
     run = sarif.SarifRun.from_results("trufflehog", "1.0", [finding])
     sarif.add_primarylocationlinehash(run, cast(ExecutionContext, _Ctx()), "/r")
-    (stored,) = run.results()
+    (stored,) = run.results
     assert "partialFingerprints" not in stored.result
 
 
@@ -195,7 +195,7 @@ def test_merge_runs_dedups_unions_scanners_and_carries_invocations() -> None:
 
     merged = sarif.merge_runs([first, second])
 
-    results = merged.results()
+    results = merged.results
     assert len(results) == 2  # the shared finding is deduped
     (shared,) = [result for result in results if result.rule_id == "AWS"]
     assert sorted(shared.scanners) == ["grype", "trivy"]  # scanner lists unioned

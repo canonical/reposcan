@@ -16,7 +16,7 @@ from reposcan.output import write_json, write_table
 from reposcan.scans import cyclonedx, sarif
 
 
-def _sarif(*levels: str) -> sarif.SarifDocument:
+def _build_sarif(*levels: str) -> sarif.SarifDocument:
     findings = [
         sarif.SarifResult.build(
             f"R{i}", f"message {i}", "app.py", i + 1, "tool", "", level=level
@@ -29,10 +29,10 @@ def _sarif(*levels: str) -> sarif.SarifDocument:
 
 
 def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> None:
-    doc = _sarif("note", "error")  # deliberately out of severity order
+    doc = _build_sarif("note", "error")  # deliberately out of severity order
     out = io.StringIO()
     with redirect_stdout(out):
-        assert write_table(*doc.rows()) is None  # stdout default is a table
+        assert write_table(*doc.to_table()) is None  # stdout default is a table
     text = out.getvalue()
     assert "LEVEL" in text and "app.py:1" in text  # its columns and finding data
     rows = [line.split()[0] for line in text.splitlines() if ".py:" in line]
@@ -54,7 +54,7 @@ def test_stdout_gets_a_sorted_table_a_file_gets_json_and_format_overrides() -> N
 
 def test_the_table_names_the_tool_that_reported_each_finding() -> None:
     # A single-tool scan names the tool on the run driver.
-    headers, rows = _sarif("error").rows()
+    headers, rows = _build_sarif("error").to_table()
     assert headers == ["LEVEL", "TOOL", "RULE", "LOCATION", "MESSAGE"]
     assert rows[0][1] == "tool"  # the scanner annotated on the finding
 
@@ -83,11 +83,11 @@ def test_the_table_names_the_tool_that_reported_each_finding() -> None:
             ],
         }
     )
-    _, merged_rows = merged.rows()
+    _, merged_rows = merged.to_table()
     assert merged_rows[0][1] == "trivy, grype"
 
 
-def _cyclonedx(*names: str) -> cyclonedx.CycloneDxDocument:
+def _build_cyclonedx(*names: str) -> cyclonedx.CycloneDxDocument:
     components = [{"name": name, "version": "1.0", "type": "library"} for name in names]
     return cyclonedx.CycloneDxDocument({"components": components})
 
@@ -98,15 +98,15 @@ def test_sbom_renders_a_component_table() -> None:
     )
     out = io.StringIO()
     with redirect_stdout(out):
-        write_table(*doc.rows())
+        write_table(*doc.to_table())
     assert "COMPONENT" in out.getvalue() and "flask" in out.getvalue()
 
 
 def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None:
     out = io.StringIO()
     with redirect_stdout(out):
-        doc = _sarif(*["warning"] * 5)
-        write_table(*doc.rows(), limit=2)
+        doc = _build_sarif(*["warning"] * 5)
+        write_table(*doc.to_table(), limit=2)
     assert len([line for line in out.getvalue().splitlines() if "app.py:" in line]) == 2
 
     long = " ".join(f"word{i}" for i in range(300))
@@ -121,9 +121,9 @@ def test_limit_truncates_wrap_expands_and_neither_exceeds_the_terminal() -> None
     )
     single, wrapped = io.StringIO(), io.StringIO()
     with redirect_stdout(single):
-        write_table(*doc.rows(), wrap=1)
+        write_table(*doc.to_table(), wrap=1)
     with redirect_stdout(wrapped):
-        write_table(*doc.rows())  # wrapping is on by default
+        write_table(*doc.to_table())  # wrapping is on by default
     columns = shutil.get_terminal_size(fallback=(80, 24)).columns
     single_rows, wrapped_rows = (
         single.getvalue().splitlines(),
@@ -141,7 +141,7 @@ def test_writing_refuses_to_overwrite_an_existing_file() -> None:
         path = os.path.join(directory, "report.sarif")
         with open(path, "w") as handle:
             handle.write("existing")
-        doc = _sarif("warning")
+        doc = _build_sarif("warning")
         result = write_json(doc.to_dict(), path)
         assert isinstance(result, Failure) and "already exists" in result.reason
         with open(path) as handle:

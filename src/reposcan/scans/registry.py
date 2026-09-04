@@ -19,7 +19,7 @@ SCANS: dict[str, type[SecurityScan]] = {
 }
 
 
-def scan_names(name_string: str) -> list[str]:
+def parse_scan_names(name_string: str) -> list[str]:
     """Split comma-separated `name_string` into scan-type names.
 
     The meta-name `all` expands to every scan type.

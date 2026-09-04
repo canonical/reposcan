@@ -25,7 +25,7 @@ class _FakeContext:
         return ExecResult(self.git_dir_exit, "", "")
 
 
-def _ctx(git_dir_exit: int = 0) -> ExecutionContext:
+def _build_ctx(git_dir_exit: int = 0) -> ExecutionContext:
     return cast(ExecutionContext, _FakeContext(git_dir_exit))
 
 
@@ -62,37 +62,47 @@ _TRUFFLEHOG_OUTPUT = (
 
 
 def test_invocations_choose_git_or_filesystem_by_mode() -> None:
-    history = SecretsScan(mode="history").invocations(_ctx(), "/scan/acme")[0]
+    history = SecretsScan(mode="history").build_invocations(_build_ctx(), "/scan/acme")[
+        0
+    ]
     assert history.tool == "trufflehog"
     assert history.args == ["git", "file:///scan/acme", "--json", "--no-update"]
-    filesystem = SecretsScan(mode="filesystem").invocations(_ctx(), "/scan/acme")[0]
+    filesystem = SecretsScan(mode="filesystem").build_invocations(
+        _build_ctx(), "/scan/acme"
+    )[0]
     assert filesystem.args == ["filesystem", "/scan/acme", "--json", "--no-update"]
 
 
 def test_auto_mode_uses_history_for_a_git_repo_else_filesystem() -> None:
     git = SecretsScan()  # mode defaults to auto (not chosen)
     fake = _FakeContext(git_dir_exit=0)  # git rev-parse succeeds -> a git repo
-    invocation = git.invocations(cast(ExecutionContext, fake), "/scan/acme")[0]
+    invocation = git.build_invocations(cast(ExecutionContext, fake), "/scan/acme")[0]
     assert invocation.args[0] == "git"
     assert fake.commands[0][:2] == ["git", "-C"]  # probed the target
 
-    non_git = SecretsScan().invocations(_ctx(git_dir_exit=128), "/scan/x")[0]
+    non_git = SecretsScan().build_invocations(_build_ctx(git_dir_exit=128), "/scan/x")[
+        0
+    ]
     assert non_git.args[0] == "filesystem"
 
 
 def test_explicit_mode_is_not_overridden_by_auto_detection() -> None:
     # mode was chosen, so a non-git target does not switch it to filesystem
-    invocation = SecretsScan(mode="history").invocations(_ctx(git_dir_exit=128), "/x")[
-        0
-    ]
+    invocation = SecretsScan(mode="history").build_invocations(
+        _build_ctx(git_dir_exit=128), "/x"
+    )[0]
     assert invocation.args[0] == "git"
 
 
 def test_history_depth_limits_the_commit_scan_and_filesystem_ignores_it() -> None:
-    history = SecretsScan(mode="history", depth=50).invocations(_ctx(), "/scan/acme")[0]
+    history = SecretsScan(mode="history", depth=50).build_invocations(
+        _build_ctx(), "/scan/acme"
+    )[0]
     assert history.args[-2:] == ["--max-depth", "50"]
     # depth is a history-only option; a filesystem scan does not carry it.
-    filesystem = SecretsScan(mode="filesystem", depth=50).invocations(_ctx(), "/x")[0]
+    filesystem = SecretsScan(mode="filesystem", depth=50).build_invocations(
+        _build_ctx(), "/x"
+    )[0]
     assert "--max-depth" not in filesystem.args
 
 
@@ -100,7 +110,7 @@ def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
     run = SecretsScan().create_run(
         "trufflehog", ExecResult(0, _TRUFFLEHOG_OUTPUT, ""), "/scan/x"
     )
-    findings = run.results()
+    findings = run.results
     assert len(findings) == 2  # the log line was skipped
 
     aws, github = findings
@@ -133,7 +143,7 @@ def test_create_run_fingerprints_each_finding_by_its_secret() -> None:
         + "\n"
     )
     run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
-    aws, github = run.results()
+    aws, github = run.results
     aws_hash = hashlib.sha256(b"AKIAEXAMPLE:secretpart").hexdigest()
     assert aws.result["fingerprints"] == {"secretHash/v1": aws_hash}
     assert github.result["fingerprints"]["secretHash/v1"] == (
@@ -156,4 +166,4 @@ def test_merge_runs_combines_findings_across_tool_runs() -> None:
         ),
     ]
     merged = sarif.merge_runs(runs)
-    assert len(merged.results()) == 2  # one from each run
+    assert len(merged.results) == 2  # one from each run

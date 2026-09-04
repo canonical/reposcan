@@ -159,7 +159,7 @@ class Session:
         """Every row `statement` selects, binding `params` as its `?` placeholders."""
         return self._connection.execute(statement, tuple(params)).fetchall()
 
-    def version(self) -> int:
+    def read_version(self) -> int:
         """Read the database's `PRAGMA user_version` (0 on a new database)."""
         (version,) = self._connection.execute("PRAGMA user_version").fetchone()
         return int(version)

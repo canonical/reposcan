@@ -50,13 +50,13 @@ class Npm:
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
         """Write a `package-lock.json` for the project in `workdir`, best-effort."""
         # npm ships with the Node install (registry.NODE, also_link), at bin/npm.
-        npm = f"{tool_root}/bin/npm"
+        npm = f"{install_dir}/bin/npm"
         command = [npm, "install", "--package-lock-only", "--ignore-scripts"]
         logger.debug("detected npm; running: %s", " ".join(command))
         if succeeded(ctx.run(command, cwd=workdir, env=_ENV)):

@@ -20,7 +20,7 @@ def verify(artifact: cyclonedx.CycloneDxDocument) -> None:
     # components. The temp dir is not a git repo, so resolve_dependencies leaves
     # it unchanged (no lockfile) and the tools read requirements.txt directly --
     # the two pinned packages appear with their exact versions.
-    by_name = {str(c.get("name", "")): c for c in artifact.components()}
+    by_name = {str(c.get("name", "")): c for c in artifact.components}
     for name, version in (("requests", "2.31.0"), ("flask", "3.0.0")):
         assert name in by_name, f"expected {name} in components, got {sorted(by_name)}"
         actual = by_name[name].get("version", "")

@@ -36,12 +36,12 @@ class Pipenv:
         ctx: ExecutionContext,
         workdir: str,
         names: set[str],
-        tool_root: str,
+        install_dir: str,
         *,
         allow_code_execution: bool,
     ) -> None:
         """Lock and export a Pipenv project's dependencies, best-effort."""
-        pipenv = PIPENV.installed_path(tool_root)
+        pipenv = PIPENV.locate_executable(install_dir)
         logger.debug("detected pipenv; running: %s lock", pipenv)
         if not succeeded(ctx.run([pipenv, "lock"], cwd=workdir, env=_ENV)):
             logger.warning("pipenv resolution skipped for %s: lock failed", workdir)

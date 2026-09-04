@@ -25,7 +25,9 @@ class WorkflowScan(SecurityScan):
     name = "workflow"
     help = "Audit CI/CD workflows with zizmor and poutine."
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:

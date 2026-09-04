@@ -35,7 +35,7 @@ def test_govulncheck_stream_becomes_sarif() -> None:
     )
     run = ScaScan().create_run("govulncheck", ExecResult(3, stream, ""), "/scan/acme")
     assert not isinstance(run, Failure)
-    findings = run.results()
+    findings = run.results
     assert len(findings) == 1  # only the source-reaching finding
     finding = findings[0]
     assert finding.rule_id == "GO-2024-1"
@@ -47,10 +47,10 @@ def test_include_dev_dependencies_adds_the_trivy_flag_only() -> None:
     # Only trivy honors it; grype and govulncheck have no dev/production toggle.
     with_dev = {
         i.tool: i
-        for i in ScaScan(include_dev_dependencies=True).invocations(_NO_CTX, "/x")
+        for i in ScaScan(include_dev_dependencies=True).build_invocations(_NO_CTX, "/x")
     }
     assert "--include-dev-deps" in with_dev["trivy"].args
-    default = {i.tool: i for i in ScaScan().invocations(_NO_CTX, "/x")}
+    default = {i.tool: i for i in ScaScan().build_invocations(_NO_CTX, "/x")}
     assert "--include-dev-deps" not in default["trivy"].args
 
 
@@ -87,7 +87,7 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
     assert not isinstance(trivy_run, Failure)
     assert not isinstance(govulncheck_run, Failure)
     merged = sarif.merge_runs([trivy_run, govulncheck_run])
-    rules = {finding.rule_id for finding in merged.results()}
+    rules = {finding.rule_id for finding in merged.results}
     assert rules == {"CVE-1", "GO-1"}
 
 

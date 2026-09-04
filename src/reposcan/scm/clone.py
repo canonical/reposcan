@@ -40,7 +40,7 @@ def sync_repository(
     """
     mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
     worktree = os.path.join(workspace, WORKTREE_DIR, name)
-    env = _git_environment(url, token)
+    env = _build_git_environment(url, token)
 
     if os.path.isdir(mirror):
         logger.info("updating %s", name)
@@ -101,7 +101,7 @@ def _git(
     return None
 
 
-def _git_environment(url: str, token: str) -> dict[str, str]:
+def _build_git_environment(url: str, token: str) -> dict[str, str]:
     """Build environment vars for a git command.
 
     Tokens are passed to git via env vars, not via urls, which git writes into

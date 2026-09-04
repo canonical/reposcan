@@ -251,7 +251,7 @@ def get_org_repositories(
             repository = Repository.from_dict(payload)
             if repository is not None:
                 repositories.append(repository)
-        next_url = _next_page(response.headers.get("Link", ""))
+        next_url = _find_next_page(response.headers.get("Link", ""))
         if next_url is None:
             break
         logger.info(
@@ -358,18 +358,19 @@ def _check_refusal(response: "requests.Response", name: str) -> Failure | None:
         retry_after = response.headers.get("Retry-After")
         wait = f"; retry after {retry_after}s" if retry_after else ""
         # SAML/SSO enforcement answers 403, and its message is the whole remedy.
-        return Failure(reason=f"github refused the request{wait}: {_message(response)}")
+        return Failure(
+            reason=f"github refused the request{wait}: {_parse_error_message(response)}"
+        )
     if response.status_code == HTTPStatus.UNAUTHORIZED:
         return Failure(reason="github rejected the token")
     if not response.ok:
-        return Failure(
-            reason=f"github returned {response.status_code}: {_message(response)}"
-        )
+        message = _parse_error_message(response)
+        return Failure(reason=f"github returned {response.status_code}: {message}")
     return None
 
 
-def _message(response: "requests.Response") -> str:
-    """Parse the GitHub error message from a response."""
+def _parse_error_message(response: "requests.Response") -> str:
+    """Parse the error message GitHub returned, else a stand-in for the reader."""
     try:
         body = response.json()
     except ValueError:
@@ -379,7 +380,7 @@ def _message(response: "requests.Response") -> str:
     return response.reason or "no message"
 
 
-def _next_page(link_header: str) -> str | None:
+def _find_next_page(link_header: str) -> str | None:
     """Parse the `rel="next"` url from GitHub's Link header.
 
     Matched on the bracketed url rather than split on commas, which a url may contain.

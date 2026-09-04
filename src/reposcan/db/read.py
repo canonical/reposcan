@@ -22,7 +22,7 @@ from reposcan.scans.model import Artifact, ArtifactKind
 logger = logging.getLogger(__name__)
 
 
-def artifacts(
+def list_artifacts(
     path: str, analysis_id: int | None = None, *, project_id: int | None = None
 ) -> list[Artifact]:
     """Retrieve the artifacts from one analysis.
@@ -38,7 +38,7 @@ def artifacts(
         its SBOM as a CycloneDX document, in the order they ran. Empty when `path` is
         not a reposcan database of this version, or holds no such analysis.
     """
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     runs: list[sarif.SarifRun] = []
@@ -62,9 +62,9 @@ def artifacts(
     return findings + inventories
 
 
-def projects(path: str) -> list[ProjectSummary]:
+def list_projects(path: str) -> list[ProjectSummary]:
     """Every repository the database holds, oldest first."""
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     statement = schema.PROJECT.select
@@ -82,9 +82,9 @@ def projects(path: str) -> list[ProjectSummary]:
         ]
 
 
-def issues(path: str, project_id: int) -> list[Issue]:
+def list_issues(path: str, project_id: int) -> list[Issue]:
     """Every issue ever identified in a repository, oldest first."""
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     with session:
@@ -103,9 +103,9 @@ def issues(path: str, project_id: int) -> list[Issue]:
         ]
 
 
-def components(path: str, project_id: int) -> list[Component]:
+def list_components(path: str, project_id: int) -> list[Component]:
     """Every component ever identified in a repository, oldest first."""
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     with session:
@@ -123,13 +123,13 @@ def components(path: str, project_id: int) -> list[Component]:
         ]
 
 
-def versions(path: str, component_id: int) -> list[ComponentVersion]:
+def list_versions(path: str, component_id: int) -> list[ComponentVersion]:
     """Every version a component has been reported at, oldest first.
 
     A span runs from the earliest analysis that saw the version to the latest, so a
     version used, dropped, and later rolled back to is one span covering the gap.
     """
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     with session:
@@ -146,9 +146,9 @@ def versions(path: str, component_id: int) -> list[ComponentVersion]:
         ]
 
 
-def analyses(path: str) -> list[AnalysisSummary]:
+def list_analyses(path: str) -> list[AnalysisSummary]:
     """Every analysis the database holds, in the order it was ingested."""
-    session = _session(path)
+    session = _open_session(path)
     if session is None:
         return []
     with session:
@@ -179,7 +179,7 @@ def analyses(path: str) -> list[AnalysisSummary]:
         return summaries
 
 
-def _session(path: str) -> sqlite.Session | None:
+def _open_session(path: str) -> sqlite.Session | None:
     """Open a session on `path`.
 
     Returns None the database cannot be read.

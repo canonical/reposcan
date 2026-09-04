@@ -86,15 +86,16 @@ class CycloneDxDocument:
             ],
         }
 
+    @property
     def components(self) -> list[dict[str, Any]]:
         """Every component object the SBOM lists."""
         return self.content.get("components", [])
 
     def count(self) -> int:
         """Count the components in the SBOM."""
-        return len(self.components())
+        return len(self.components)
 
-    def rows(self) -> tuple[list[str], list[list[str]]]:
+    def to_table(self) -> tuple[list[str], list[list[str]]]:
         """Tabulate the SBOM components: name, version, and type."""
         headers = ["COMPONENT", "VERSION", "TYPE"]
         rows = [
@@ -103,7 +104,7 @@ class CycloneDxDocument:
                 str(component.get("version", "")),
                 str(component.get("type", "")),
             ]
-            for component in self.components()
+            for component in self.components
         ]
         return headers, rows
 
@@ -187,12 +188,12 @@ def parse(text: str, scanner: str | None = None) -> CycloneDxDocument | None:
         ]
     sbom = CycloneDxDocument(document)
     if scanner is not None:
-        for component in sbom.components():
+        for component in sbom.components:
             _record_scanner(component, scanner)
     return sbom
 
 
-def _component_key(component: dict[str, Any]) -> str:
+def _derive_dedup_key(component: dict[str, Any]) -> str:
     """Derive a dedup key for a component: its package URL, else type/name/version."""
     purl = component.get("purl")
     if purl:
@@ -315,7 +316,7 @@ def merge(documents: Sequence[CycloneDxDocument]) -> CycloneDxDocument:
     order: list[str] = []
     for document in documents:
         for component in document.to_dict().get("components", []):
-            key = _component_key(component)
+            key = _derive_dedup_key(component)
             if key in by_key:
                 _merge_scanners(by_key[key], component)
                 continue

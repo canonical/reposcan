@@ -95,7 +95,7 @@ def _scan_one(
     options: Mapping[str, Any],
 ) -> Analysis | Failure:
     """Scan one repository and record it in the database."""
-    scans = [SCANS[name](**_options_for(name, options)) for name in scan_names]
+    scans = [SCANS[name](**_filter_options(name, options)) for name in scan_names]
     rules: list[ignore.IgnoreRule] = []
     ignore_path = os.path.join(path, ignore.DEFAULT_IGNORE_FILE)
     if os.path.isfile(ignore_path):
@@ -112,16 +112,16 @@ def _scan_one(
         if not session.ok:
             return Failure(reason="could not start a session")
         analysis = run_analysis(session, scans, ignore_rules=rules, stream=False)
-    written = db_write.analysis(db, analysis)
+    written = db_write.write_analysis(db, analysis)
     return written if isinstance(written, Failure) else analysis
 
 
-def _options_for(name: str, options: Mapping[str, Any]) -> dict[str, Any]:
+def _filter_options(name: str, options: Mapping[str, Any]) -> dict[str, Any]:
     """Pick the options `name`'s scan class declares from those given."""
-    from reposcan.cli_kit import params_of
+    from reposcan.cli_kit import collect_params
 
     return {
         param.name: options[param.name]
-        for param in params_of(SCANS[name])
+        for param in collect_params(SCANS[name])
         if param.name in options
     }

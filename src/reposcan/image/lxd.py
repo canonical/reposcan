@@ -13,7 +13,7 @@ import logging
 import os
 import tempfile
 
-from reposcan.execution.firewall import lxd_bridge_hint
+from reposcan.execution.firewall import build_lxd_bridge_hint
 from reposcan.execution.lxd import LXC, ensure_project
 from reposcan.execution.process import ExecResult, Failure, run_process, succeeded
 from reposcan.image.spec import NAME, BuildSpec
@@ -30,10 +30,10 @@ class LxdImageBuilder:
 
     name = "lxd"
 
-    def reference(self, spec: BuildSpec) -> str:
+    def derive_reference(self, spec: BuildSpec) -> str:
         return f"{NAME}-{spec.short_digest}"
 
-    def identity(self, reference: str) -> str | None:
+    def read_identity(self, reference: str) -> str | None:
         # The image fingerprint (a sha256) is LXD's content hash of the image.
         result = run_process([*LXC, "image", "info", reference], timeout=30)
         if not (isinstance(result, ExecResult) and result.exit_code == 0):
@@ -48,7 +48,7 @@ class LxdImageBuilder:
         if project_error is not None:
             return project_error
         # A build container is always deleted afterwards, success or not.
-        alias = self.reference(spec)
+        alias = self.derive_reference(spec)
         # Remove any preexisting container with the same alias
         run_process([*LXC, "image", "delete", alias])
         handle = f"{NAME}-build-{os.getpid()}"
@@ -79,7 +79,7 @@ class LxdImageBuilder:
         )
         if isinstance(ready, Failure):
             return ready
-        offline = _offline_reason(handle)
+        offline = _verify_online(handle)
         if offline is not None:
             logger.error(offline.reason)
             return offline
@@ -101,7 +101,7 @@ class LxdImageBuilder:
         return None
 
 
-def _offline_reason(handle: str) -> Failure | None:
+def _verify_online(handle: str) -> Failure | None:
     """Verify the build container can reach the internet, else return a Failure.
 
     Probes by opening a TCP connection to github.com:443 from inside the container via
@@ -129,7 +129,7 @@ def _offline_reason(handle: str) -> Failure | None:
         return None
     # Confirmed offline: surface the likely firewall cause and its fix as a warning
     # (this is the diagnostic that would otherwise never appear), then abort.
-    logger.warning(lxd_bridge_hint())
+    logger.warning(build_lxd_bridge_hint())
     return Failure(
         reason="build container has no outbound network access; the tool install must "
         "reach github.com, PyPI, and the apt mirrors. Check the container's network, "

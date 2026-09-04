@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from reposcan.cli_kit.coerce import coerce
-from reposcan.cli_kit.spec import Action, Group, Param, params_of
+from reposcan.cli_kit.spec import Action, Group, Param, collect_params
 
 
 @dataclass
@@ -42,7 +42,7 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
     root: type[Group], base: type[Action], argv: list[str], prog_name: str
 ) -> Parsed:
     """Scan `argv` against the tree; `base`'s parameters are the flow-down globals."""
-    scope: dict[str, Param] = {p.name: p for p in params_of(base)}
+    scope: dict[str, Param] = {p.name: p for p in collect_params(base)}
     node: type[Action | Group] = root
     prog = [prog_name]
     command: type[Action] | None = None
@@ -93,16 +93,16 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
 
         # a positional token (or any token once options have ended)
         if command is None:
-            child = _child(node, tok)
+            child = _find_child(node, tok)
             if child is None:
                 return result(error=f"unknown command: {tok}")
             prog.append(tok)
-            scope.update({p.name: p for p in params_of(child)})
+            scope.update({p.name: p for p in collect_params(child)})
             if isinstance(child, type) and issubclass(child, Group):
                 node = child
             else:
                 command = child
-                own = params_of(child)
+                own = collect_params(child)
                 singles = [p for p in own if p.positional and not p.many]
                 many = next((p for p in own if p.positional and p.many), None)
                 remainder = next((p for p in own if p.remainder), None)
@@ -138,7 +138,7 @@ def _find_option(scope: dict[str, Param], flag: str) -> Param | None:
     return None
 
 
-def _child(node: type[Action | Group], name: str) -> type[Action | Group] | None:
+def _find_child(node: type[Action | Group], name: str) -> type[Action | Group] | None:
     subcommands = getattr(node, "subcommands", ())
     for child in subcommands:
         if child.name == name:

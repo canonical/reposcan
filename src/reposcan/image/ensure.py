@@ -45,10 +45,10 @@ def ensure_built(
         The verified image reference, or a Failure if the build failed or the image
         vanished after building.
     """
-    reference = builder.reference(spec)
+    reference = builder.derive_reference(spec)
     if not force:
-        present = builder.identity(reference)
-        if present is not None and present == cache.recorded(reference):
+        present = builder.read_identity(reference)
+        if present is not None and present == cache.find_recorded_identity(reference):
             logger.info("%s image %s verified; reusing", builder.name, reference)
             return reference
         if present is not None:
@@ -61,7 +61,7 @@ def ensure_built(
     result = builder.build(spec)
     if isinstance(result, Failure):
         return result
-    identity = builder.identity(reference)
+    identity = builder.read_identity(reference)
     if identity is None:
         return Failure(reason=f"{builder.name} image {reference} vanished after build")
     cache.record(reference, identity)
@@ -86,7 +86,7 @@ def ensure_pulled(ref: str) -> str | Failure:
         The reference to run, or a Failure if the pull failed, the image is absent
         after pulling, or a tag-only ref's content id no longer matches its record.
     """
-    if is_digest_pinned(ref) and docker.image_identity(ref) is not None:
+    if is_digest_pinned(ref) and docker.read_image_identity(ref) is not None:
         # fast path: digest-pinned image is already present locally
         # The digest/manifest hash to local-hash association is created by a pull that
         # verified the manifest's hash, so a present 'inspect' means the content was
@@ -97,14 +97,14 @@ def ensure_pulled(ref: str) -> str | Failure:
     error = docker.pull(ref)
     if error is not None:
         return error
-    identity = docker.image_identity(ref)
+    identity = docker.read_image_identity(ref)
     if identity is None:
         return Failure(reason=f"{ref} is not present after pull")
 
     if is_digest_pinned(ref):
         return ref
 
-    recorded = cache.recorded(ref)
+    recorded = cache.find_recorded_identity(ref)
     if recorded is None:
         cache.record(ref, identity)
         logger.info("pinned remote image %s to %s on first use", ref, identity)

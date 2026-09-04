@@ -14,9 +14,9 @@ from reposcan.actions.base import Action as Globals
 from reposcan.cli_kit import (
     Action,
     check_requires,
+    collect_params,
     flag,
     option,
-    params_of,
     positional,
     remainder,
 )
@@ -31,12 +31,12 @@ class _Sample:
     rest: list[str] = remainder()
 
 
-def _flags(cls: type) -> dict[str, tuple[str, ...]]:
-    return {p.name: p.flags for p in params_of(cls)}
+def _collect_flags(cls: type) -> dict[str, tuple[str, ...]]:
+    return {p.name: p.flags for p in collect_params(cls)}
 
 
 def test_the_long_flag_is_inferred_and_extra_flags_are_kept() -> None:
-    flags = _flags(_Sample)
+    flags = _collect_flags(_Sample)
     assert flags["plain"] == ("--plain",)  # inferred from the name
     assert flags["short"] == ("-s", "--short")  # extra short kept, long inferred
     assert flags["multi_word"] == ("--multi-word",)  # a flag, name kebab-cased
@@ -46,7 +46,7 @@ def test_the_long_flag_is_inferred_and_extra_flags_are_kept() -> None:
 
 
 def test_the_real_globals_infer_their_flags() -> None:
-    flags = _flags(Globals)
+    flags = _collect_flags(Globals)
     assert flags["backend"] == ("--backend",)
     assert flags["verbosity"] == ("-v", "--verbosity")
     assert flags["uid"] == ("--uid",)
@@ -75,7 +75,7 @@ def test_a_command_rejects_unknown_arguments() -> None:
 
 
 def test_check_requires_enforces_a_dependency_only_when_the_option_is_set() -> None:
-    params = params_of(_Fields)
+    params = collect_params(_Fields)
     assert check_requires(params, {"mode": "a", "depth": None}) is None  # depth unset
     assert check_requires(params, {"mode": "b", "depth": 5}) is None  # satisfied
     assert (
@@ -91,7 +91,7 @@ class _WithExtra(Action):
 
 
 def test_extra_options_are_folded_in_beside_own_parameters() -> None:
-    aggregated = {p.name: p for p in params_of(_WithExtra)}
+    aggregated = {p.name: p for p in collect_params(_WithExtra)}
     assert {"depth", "flavor"} <= set(aggregated)  # own attribute plus the extra
     assert aggregated["flavor"].flags == ("--flavor",)  # data name infers the long flag
     assert vars(_WithExtra(flavor="rich"))["flavor"] == "rich"  # populates self.<name>
@@ -105,7 +105,7 @@ class _AnyOf(Action):
 
 
 def test_check_requires_supports_any_of_and_list_membership() -> None:
-    params = params_of(_AnyOf)
+    params = collect_params(_AnyOf)
     # `detail` requires that `picks` (a list) contain "a" or "b".
     assert check_requires(params, {"picks": ["a", "c"], "detail": 1}) is None
     error = check_requires(params, {"picks": ["c"], "detail": 1})

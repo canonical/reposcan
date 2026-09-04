@@ -8,17 +8,17 @@ and that every tool -- including the prerequisites pulled in behind it -- carrie
 supply-chain pins and is wired to the right dependency.
 """
 
-from reposcan.tools.install import install_plan
+from reposcan.tools.install import plan_installs
 from reposcan.tools.model import GoTool, NativeBinary, Platform, PypiTool
 from reposcan.tools.registry import GO_SDK, RESOLVER_TOOLS, TOOLS, UV
 
 
 def test_every_tool_is_fully_pinned_and_wired_to_its_prerequisite() -> None:
-    # install_plan pulls in the prerequisites, so iterating it covers uv and the Go SDK
-    # too. Each tool must carry a real pin, and the dependents must name the concrete
-    # prerequisite instance.
+    # plan_installs pulls in the prerequisites, so iterating it covers uv and the
+    # Go SDK too. Each tool must carry a real pin, and the dependents must name the
+    # concrete prerequisite instance.
     everything = [*TOOLS.values(), *RESOLVER_TOOLS]
-    for step in install_plan(everything, Platform("linux", "amd64"), "/opt/tools"):
+    for step in plan_installs(everything, Platform("linux", "amd64"), "/opt/tools"):
         tool = step.tool
         if isinstance(tool, PypiTool):
             assert "--hash=sha256:" in tool.requirements

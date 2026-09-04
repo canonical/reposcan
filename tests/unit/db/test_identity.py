@@ -6,8 +6,8 @@
 from reposcan.db.identity import (
     IssueAttributes,
     derive_component_key,
+    is_same_issue,
     normalize_purl,
-    same_issue,
 )
 
 
@@ -45,43 +45,49 @@ def test_normalize_purl_agrees_where_tools_differ_for_no_reason() -> None:
     assert normalize_purl("not-a-purl") == ""
 
 
-def _attributes(**kwargs: object) -> IssueAttributes:
+def _build_attributes(**kwargs: object) -> IssueAttributes:
     fields: dict = {"rule": "R1", "uri": "a.py", "line": "10"}
     fields.update(kwargs)
     return IssueAttributes(**fields)  # type: ignore[arg-type]
 
 
 def test_a_report_that_gains_a_fingerprint_is_still_the_same_issue() -> None:
-    known = _attributes()
+    known = _build_attributes()
     # The line hash was unreadable last analysis and is available now
-    gained = _attributes(partial_fingerprints={"primaryLocationLineHash": "abc:1"})
-    assert same_issue(known, gained)
+    gained = _build_attributes(
+        partial_fingerprints={"primaryLocationLineHash": "abc:1"}
+    )
+    assert is_same_issue(known, gained)
     # And the reverse, when a tool stops emitting one.
-    assert same_issue(gained, known)
+    assert is_same_issue(gained, known)
 
 
 def test_a_complete_fingerprint_always_wins() -> None:
-    here = _attributes(uri="a.py", fingerprints={"secretHash/v1": "s"})
-    moved = _attributes(uri="b.py", line="99", fingerprints={"secretHash/v1": "s"})
-    assert same_issue(here, moved)
+    here = _build_attributes(uri="a.py", fingerprints={"secretHash/v1": "s"})
+    moved = _build_attributes(
+        uri="b.py", line="99", fingerprints={"secretHash/v1": "s"}
+    )
+    assert is_same_issue(here, moved)
 
-    other = _attributes(uri="a.py", fingerprints={"secretHash/v1": "different"})
+    other = _build_attributes(uri="a.py", fingerprints={"secretHash/v1": "different"})
     # A shared name with a different fingerprint is a different issue
-    assert not same_issue(here, other)
+    assert not is_same_issue(here, other)
 
 
 def test_a_disagreeing_line_hash_beats_matching_position() -> None:
-    before = _attributes(partial_fingerprints={"primaryLocationLineHash": "abc:1"})
-    after = _attributes(partial_fingerprints={"primaryLocationLineHash": "xyz:1"})
+    before = _build_attributes(
+        partial_fingerprints={"primaryLocationLineHash": "abc:1"}
+    )
+    after = _build_attributes(partial_fingerprints={"primaryLocationLineHash": "xyz:1"})
     # Same rule and same place, but the line's content changed.
-    assert not same_issue(before, after)
+    assert not is_same_issue(before, after)
 
 
 def test_position_matches_only_when_nothing_stronger_is_available() -> None:
-    assert same_issue(_attributes(), _attributes())
-    assert not same_issue(_attributes(), _attributes(line="11"))
-    assert not same_issue(_attributes(), _attributes(uri="b.py"))
-    assert not same_issue(_attributes(), _attributes(rule="R2"))
+    assert is_same_issue(_build_attributes(), _build_attributes())
+    assert not is_same_issue(_build_attributes(), _build_attributes(line="11"))
+    assert not is_same_issue(_build_attributes(), _build_attributes(uri="b.py"))
+    assert not is_same_issue(_build_attributes(), _build_attributes(rule="R2"))
 
 
 def test_a_scan_types_own_comparison_is_one_more_rule_in_the_list() -> None:
@@ -89,22 +95,22 @@ def test_a_scan_types_own_comparison_is_one_more_rule_in_the_list() -> None:
     advisory = IssueAttributes("CVE-2026-1", "poetry.lock", "12")
     moved = IssueAttributes("CVE-2026-1", "pyproject.toml", "3")
     # one SAST rule firing in two places is different
-    assert same_issue(advisory, moved, "sca")
-    assert not same_issue(advisory, moved, "sast")
+    assert is_same_issue(advisory, moved, "sca")
+    assert not is_same_issue(advisory, moved, "sast")
 
 
 def test_a_complete_fingerprint_is_not_vetoed_by_a_partial_one() -> None:
-    known = _attributes(fingerprints={"secretHash/v1": "s"})
+    known = _build_attributes(fingerprints={"secretHash/v1": "s"})
     known.partial_fingerprints["primaryLocationLineHash"] = "abc:1"
-    incoming = _attributes(line="90", fingerprints={"secretHash/v1": "s"})
+    incoming = _build_attributes(line="90", fingerprints={"secretHash/v1": "s"})
     incoming.partial_fingerprints["primaryLocationLineHash"] = "xyz:1"
-    assert same_issue(known, incoming)
+    assert is_same_issue(known, incoming)
 
 
 def test_position_alone_loses_to_a_fingerprint_that_disagrees() -> None:
-    known = _attributes(uri="a.py", line="10")
+    known = _build_attributes(uri="a.py", line="10")
     known.partial_fingerprints["primaryLocationLineHash"] = "abc:1"
-    incoming = _attributes(uri="a.py", line="10")
+    incoming = _build_attributes(uri="a.py", line="10")
     incoming.partial_fingerprints["primaryLocationLineHash"] = "xyz:1"
     # Same rule, file, and line, but the line's content changed.
-    assert not same_issue(known, incoming)
+    assert not is_same_issue(known, incoming)

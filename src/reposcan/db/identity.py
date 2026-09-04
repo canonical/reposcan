@@ -119,7 +119,7 @@ EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
 )
 
 
-def same_issue(
+def is_same_issue(
     known: IssueAttributes, incoming: IssueAttributes, category: str = ""
 ) -> bool:
     """Whether `incoming` is another report of `known`.
@@ -151,13 +151,13 @@ def derive_component_key(component: Mapping[str, Any]) -> str:
     """
     purl = normalize_purl(str(component.get("purl", "")))
     if purl:
-        return _digest("purl", purl)
+        return _build_digest("purl", purl)
     type_ = str(component.get("type", ""))
     group = str(component.get("group", ""))
     name = str(component.get("name", ""))
     if type_ or group:
-        return _digest("coords", type_, group, name)
-    return _digest("name", name)
+        return _build_digest("coords", type_, group, name)
+    return _build_digest("name", name)
 
 
 def normalize_purl(purl: str) -> str:
@@ -195,7 +195,7 @@ def normalize_purl(purl: str) -> str:
     return f"{type_}/{encoded}"
 
 
-def _digest(scheme: str, *parts: str) -> str:
+def _build_digest(scheme: str, *parts: str) -> str:
     """Create a digest from `parts`.
 
     The parts are delimited, so no rearrangement of one field's content can imitate

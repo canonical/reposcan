@@ -16,7 +16,7 @@ from reposcan.scm import github
 from reposcan.scm.github import Repository
 
 
-def _repo(name: str) -> Repository:
+def _build_repo(name: str) -> Repository:
     return Repository(f"acme/{name}", f"https://h/acme/{name}.git", "main")
 
 
@@ -69,7 +69,7 @@ def test_an_entity_is_required() -> None:
         assert _run(gh.ListGhRepos())[0] == 2
     assert seen == {}  # nothing was requested
 
-    with _client([_repo("one")], seen):
+    with _client([_build_repo("one")], seen):
         assert _run(gh.ListGhRepos(enterprise="acme-inc"))[0] == 0
     assert seen["enterprise"] == "acme-inc" and seen["org"] is None
 
@@ -128,7 +128,9 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
     saved = gh.clone.sync_repository
     gh.clone.sync_repository = fake_sync
     try:
-        with _client([_repo("one"), _repo("two"), _repo("three")], {}):
+        with _client(
+            [_build_repo("one"), _build_repo("two"), _build_repo("three")], {}
+        ):
             code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x"))
     finally:
         gh.clone.sync_repository = saved
@@ -146,13 +148,13 @@ def test_naming_repositories_replaces_discovery() -> None:
         f"{workspace}/{name}"
     )
     try:
-        with _client([_repo("discovered")], seen):
+        with _client([_build_repo("discovered")], seen):
             code, _ = _run(gh.CloneGhRepos(repo=["acme/one"], workspace="/tmp/x"))
         assert code == 0  # --repo alone satisfies the entity requirement
         assert seen["repos"] == ["acme/one"]
         assert "org" not in seen
 
-        with _client([_repo("discovered")], seen):
+        with _client([_build_repo("discovered")], seen):
             _run(gh.CloneGhRepos(org="acme", repo=["acme/one"], workspace="/tmp/x"))
         assert seen["repos"] == ["acme/one"]
         assert "org" not in seen  # --org still not resolved

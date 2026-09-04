@@ -24,7 +24,7 @@ FAKE_REPOSITORY = RepositoryState(
 )
 
 
-def sarif_run(num_results: int) -> sarif.SarifRun:
+def build_sarif_run(num_results: int) -> sarif.SarifRun:
     """A SARIF run of `num_results` identical trufflehog results (run_scan's output)."""
     results = [
         sarif.SarifResult.build("AWS", "secret", "f.py", 1, "trufflehog", "/scan/x")
@@ -33,7 +33,7 @@ def sarif_run(num_results: int) -> sarif.SarifRun:
     return sarif.SarifRun.from_results("trufflehog", "3.95.8", results)
 
 
-def sbom_artifact(components: int) -> cyclonedx.CycloneDxDocument:
+def build_sbom_artifact(components: int) -> cyclonedx.CycloneDxDocument:
     """A CycloneDX artifact listing `components` named components."""
     listed = [{"name": f"c{i}"} for i in range(components)]
     return cyclonedx.CycloneDxDocument({"bomFormat": "CycloneDX", "components": listed})
@@ -46,7 +46,7 @@ class FakeSession:
     exit_code = 0
     context = cast(ExecutionContext, None)
     target = "/scan/x"
-    tool_root = "/opt/reposcan"
+    install_dir = "/opt/reposcan"
     resolution_workdir = ""
 
     def __enter__(self) -> "FakeSession":

@@ -6,8 +6,8 @@
 import os
 import sys
 
+from reposcan import paths
 from reposcan.actions.base import Action
-from reposcan.paths import tools_root
 from reposcan.table import render_table
 from reposcan.tools.registry import TOOLS
 
@@ -17,17 +17,17 @@ class ToolsAction(Action):
     help = "List the scanning tools and whether each is installed."
 
     def run(self) -> int:
-        return list_tools(str(tools_root()))
+        return list_tools(str(paths.TOOL_INSTALL_DIR))
 
 
-def list_tools(install_root: str) -> int:
+def list_tools(install_dir: str) -> int:
     """List every scanning tool with its version, kind, and install status.
 
-    Shows whether each tool is installed under `install_root`. Always returns 0.
+    Shows whether each tool is installed under `install_dir`. Always returns 0.
     """
     rows = []
     for tool in TOOLS.values():
-        installed = os.path.exists(tool.installed_path(install_root))
+        installed = os.path.exists(tool.locate_executable(install_dir))
         on_localhost = "yes" if installed else "no"
         rows.append((tool.name, tool.version, tool.kind.value, on_localhost))
 

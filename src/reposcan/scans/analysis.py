@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from reposcan import reposcan_version
+from reposcan import __version__
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.model import ArtifactKind
 from reposcan.scans.repo import RepositoryState
@@ -93,7 +93,7 @@ class Analysis:
         return cls(
             uuid=str(uuid4()),
             started_at=utc_now(),
-            reposcan_version=reposcan_version(),
+            reposcan_version=__version__,
             repository=repository,
         )
 

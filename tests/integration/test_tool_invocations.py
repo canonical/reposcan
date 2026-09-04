@@ -29,7 +29,7 @@ instead of sitting silent; the tox integration envs set both.
 
 import io
 import logging
-import os
+import pathlib
 import tempfile
 from collections.abc import Iterator
 from contextlib import (
@@ -41,13 +41,14 @@ from contextlib import (
 
 import pytest
 
+from reposcan import paths
 from reposcan.actions.exec import execute
 from reposcan.backends import BACKENDS, Backend
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import Failure
 from reposcan.image.ensure import ensure_built
 from reposcan.image.spec import build_spec
-from reposcan.tools.install import current_platform
+from reposcan.tools.install import detect_platform
 from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
@@ -72,16 +73,13 @@ _VERSION_PROBE = {
 @contextmanager
 def _isolated_cache() -> Iterator[None]:
     """Keep the image-identity cache out of the developer's ~/.local/share."""
-    saved = os.environ.get("XDG_DATA_HOME")
+    saved = paths.IMAGE_CACHE
     with tempfile.TemporaryDirectory() as tmp:
-        os.environ["XDG_DATA_HOME"] = tmp
+        paths.IMAGE_CACHE = pathlib.Path(tmp) / "reposcan" / "images.json"
         try:
             yield
         finally:
-            if saved is None:
-                os.environ.pop("XDG_DATA_HOME", None)
-            else:
-                os.environ["XDG_DATA_HOME"] = saved
+            paths.IMAGE_CACHE = saved
 
 
 def _invoke(ctx: ExecutionContext, name: str, args: list[str]) -> tuple[int, str]:
@@ -92,7 +90,7 @@ def _invoke(ctx: ExecutionContext, name: str, args: list[str]) -> tuple[int, str
 
 
 def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> None:
-    availability = backend.availability()
+    availability = backend.check_availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"{backend.name} unavailable: {availability.reason}")
@@ -104,7 +102,7 @@ def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> No
         action = "reusing" if force_rebuild else "building"
         logger.info("[%s] %s reposcan image; output follows", backend.name, action)
         reference = ensure_built(
-            builder, build_spec(current_platform()), force=force_rebuild
+            builder, build_spec(detect_platform()), force=force_rebuild
         )
         assert not isinstance(reference, Failure), reference
         logger.info("[%s] starting container from %s", backend.name, reference)

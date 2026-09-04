@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 from reposcan.backends import BACKENDS
-from reposcan.execution.context import ExecutionContext, mounted_target
+from reposcan.execution.context import ExecutionContext, locate_mounted_target
 from reposcan.execution.docker import DockerContext
 from reposcan.execution.lxd import LxdContext
 from reposcan.execution.process import ExecResult, Failure
@@ -63,7 +63,7 @@ def _exercise_lifecycle(ctx: ExecutionContext) -> None:
 
 def test_docker_context_lifecycle() -> None:
     backend = BACKENDS["docker"]
-    availability = backend.availability()
+    availability = backend.check_availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"docker unavailable: {availability.reason}")
@@ -83,14 +83,14 @@ def test_docker_context_lifecycle() -> None:
 
 def test_docker_context_mounts_a_source_read_only() -> None:
     backend = BACKENDS["docker"]
-    availability = backend.availability()
+    availability = backend.check_availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"docker unavailable: {availability.reason}")
 
     with tempfile.TemporaryDirectory() as source:
         Path(source, "marker.txt").write_text("hello")
-        target = mounted_target(source)
+        target = locate_mounted_target(source)
         logger.info("[docker] mounting %s at %s", source, target)
         ctx = DockerContext(BASE_IMAGE, mount_source=source)
         assert ctx.start() is None
@@ -108,7 +108,7 @@ def test_docker_context_mounts_a_source_read_only() -> None:
 
 def test_lxd_context_lifecycle() -> None:
     backend = BACKENDS["lxd"]
-    availability = backend.availability()
+    availability = backend.check_availability()
     if not availability.ok:
         logger.warning(availability.reason)
         pytest.skip(f"lxd unavailable: {availability.reason}")

@@ -26,7 +26,9 @@ class SbomScan(DependencyResolvingScan):
     name = "sbom"
     help = "Software bill of materials."
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build command invocations for `target`.
 
         Args:

@@ -12,7 +12,7 @@ from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import flag, option, positional
 from reposcan.db import write as db_write
-from reposcan.execution.context import RunUser, host_user, resolved_env
+from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
@@ -76,13 +76,13 @@ class SbomCommand(Action):
             )
             return 2
 
-        user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
+        user = get_host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
         with start_session(
             self.backend,
             mount_source=path,
             image=self.image,
             user=user,
-            env=resolved_env(self.env),
+            env=resolve_env(self.env),
         ) as session:
             if not session.ok:
                 return session.exit_code
@@ -100,7 +100,7 @@ class SbomCommand(Action):
                     scan,
                     session.context,
                     session.target,
-                    session.tool_root,
+                    session.install_dir,
                     resolution_workdir=session.resolution_workdir,
                     stream=True,
                 )
@@ -112,7 +112,7 @@ class SbomCommand(Action):
                     ScanRecord.from_artifact(scan.name, artifact, started_at=started_at)
                 )
             if self.db is not None:
-                failed = db_write.analysis(self.db, analysis)
+                failed = db_write.write_analysis(self.db, analysis)
                 if failed is not None:
                     logger.error(failed.reason)
                     return 1
@@ -124,6 +124,8 @@ class SbomCommand(Action):
                     logger.error(failure.reason)
                     return 1
             else:
-                output.write_table(*artifact.rows(), limit=self.limit, wrap=self.wrap)
+                output.write_table(
+                    *artifact.to_table(), limit=self.limit, wrap=self.wrap
+                )
             logger.info("sbom complete: %d component(s)", artifact.count())
             return 0

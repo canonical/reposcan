@@ -64,7 +64,7 @@ def test_ignores_matches_ignored_files_and_directory_subtrees() -> None:
     assert not ignored.ignores(".toxic/x")  # a prefix that is not the .tox directory
 
 
-def _sarif(*uris: str) -> sarif.SarifRun:
+def _build_sarif(*uris: str) -> sarif.SarifRun:
     """A SARIF run with one result per uri (all reported by poutine)."""
     results = [
         {
@@ -79,23 +79,19 @@ def _sarif(*uris: str) -> sarif.SarifRun:
     )
 
 
-def _uris(run: sarif.SarifRun) -> list[str]:
-    return [finding.uri for finding in run.results()]
-
-
 def test_drop_ignored_removes_findings_under_ignored_paths() -> None:
     # Uris are already repo-relative here: the run is relativized before this runs.
     ignored = GitIgnore(dirs=(".tox",), files=())
-    run = _sarif(
+    run = _build_sarif(
         ".tox/x/src/action.yml",  # under the ignored .tox tree
         ".tox/y/action.yml",  # also under it
         ".github/workflows/ci.yml",  # kept
     )
     assert ignored.drop_ignored(run) == 2
-    assert _uris(run) == [".github/workflows/ci.yml"]
+    assert [finding.uri for finding in run.results] == [".github/workflows/ci.yml"]
 
 
 def test_drop_ignored_is_a_noop_without_ignores() -> None:
-    run = _sarif(".tox/x/a.yml")
+    run = _build_sarif(".tox/x/a.yml")
     assert GitIgnore().drop_ignored(run) == 0  # nothing is ignored
-    assert len(run.results()) == 1
+    assert len(run.results) == 1

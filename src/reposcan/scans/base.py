@@ -5,7 +5,7 @@
 
 from typing import Any, ClassVar
 
-from reposcan.cli_kit import flag, params_of
+from reposcan.cli_kit import collect_params, flag
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult, Failure
 from reposcan.scans import sarif
@@ -24,14 +24,16 @@ class Scan:
     resolves_dependencies: ClassVar[bool] = False
 
     def __init__(self, **values: Any) -> None:
-        params = params_of(type(self))
+        params = collect_params(type(self))
         unknown = set(values) - {param.name for param in params}
         if unknown:
             raise TypeError(f"unexpected arguments: {', '.join(sorted(unknown))}")
         for param in params:
             setattr(self, param.name, values.get(param.name, param.default))
 
-    def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
+    def build_invocations(
+        self, ctx: ExecutionContext, target: str
+    ) -> list[ToolInvocation]:
         """Build the tool invocations to run against `target`, in run order.
 
         `ctx` is the started execution context, so a scan whose commands depend on the

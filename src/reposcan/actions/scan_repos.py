@@ -8,10 +8,10 @@ import os
 
 from reposcan.actions.base import Action
 from reposcan.cli_kit import option
-from reposcan.execution.context import RunUser, host_user, resolved_env
+from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.scans import bulk
 from reposcan.scans.analysis import Analysis
-from reposcan.scans.registry import SCANS, scan_names
+from reposcan.scans.registry import SCANS, parse_scan_names
 from reposcan.scm.clone import WORKTREE_DIR
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class ScanRepos(Action):
     help = "Scan every repository in a workspace."
 
     scans: list[str] = option(
-        convert=scan_names,
+        convert=parse_scan_names,
         default=tuple(SCANS),
         help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
@@ -62,7 +62,7 @@ class ScanRepos(Action):
             return 2
         logger.info("scanning %d repositories", len(repositories))
 
-        user = host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
+        user = get_host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
         results = bulk.scan_repositories(
             repositories,
             self.scans,
@@ -70,12 +70,12 @@ class ScanRepos(Action):
             backend=self.backend,
             image=self.image,
             user=user,
-            env=resolved_env(self.env),
+            env=resolve_env(self.env),
             threads=self.threads,
         )
         analyses = [r for r in results.values() if isinstance(r, Analysis)]
         complete = [a for a in analyses if not a.failed_scans]
-        findings = sum(len(run.results()) for a in analyses for run in a.sarif_runs)
+        findings = sum(len(run.results) for a in analyses for run in a.sarif_runs)
         logger.info(
             "scanned %d of %d repositories; %d finding(s) recorded in %s",
             len(complete),

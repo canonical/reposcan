@@ -37,20 +37,21 @@ def _patched(respond: Callable[[list[str]], ExecResult | Failure]):
         calls.append(list(command))
         return respond(list(command))
 
-    # ensure_project and lxd_bridge_hint shell out to lxc/nft through other modules, so
-    # stub them here; their own behavior is covered in test_lxd_context / test_firewall.
+    # ensure_project and build_lxd_bridge_hint shell out to lxc/nft through other
+    # modules, so stub them here; their own behavior is covered in test_lxd_context
+    # / test_firewall.
     saved_run = lxd.run_process
     saved_ensure = lxd.ensure_project
-    saved_hint = lxd.lxd_bridge_hint
+    saved_hint = lxd.build_lxd_bridge_hint
     lxd.run_process = fake
     lxd.ensure_project = lambda: None
-    lxd.lxd_bridge_hint = lambda: "check the lxdbr0 bridge firewall"
+    lxd.build_lxd_bridge_hint = lambda: "check the lxdbr0 bridge firewall"
     try:
         yield calls
     finally:
         lxd.run_process = saved_run
         lxd.ensure_project = saved_ensure
-        lxd.lxd_bridge_hint = saved_hint
+        lxd.build_lxd_bridge_hint = saved_hint
 
 
 # Every lxc command is pinned to reposcan's own project, not `default`.
@@ -123,7 +124,7 @@ def test_build_aborts_early_and_warns_when_the_container_has_no_network() -> Non
 def test_identity_parses_the_fingerprint_or_none_when_absent() -> None:
     info = ExecResult(0, "Architecture: x86_64\nFingerprint: deadbeef\n", "")
     with _patched(lambda argv: info) as calls:
-        assert _BUILDER.identity("reposcan-x") == "deadbeef"
+        assert _BUILDER.read_identity("reposcan-x") == "deadbeef"
     assert calls[0][:5] == [*_LXC, "image", "info"]
     with _patched(lambda argv: ExecResult(1, "", "not found")):
-        assert _BUILDER.identity("reposcan-x") is None
+        assert _BUILDER.read_identity("reposcan-x") is None
