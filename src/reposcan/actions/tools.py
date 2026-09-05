@@ -23,7 +23,7 @@ class ToolsAction(Action):
 def list_tools(install_dir: str) -> int:
     """List every scanning tool with its version, kind, and install status.
 
-    Shows whether each tool is installed under `install_dir`. Always returns 0.
+    Installed means present under `install_dir`.
     """
     rows = []
     for tool in TOOLS.values():

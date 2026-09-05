@@ -12,7 +12,8 @@ real error rather than findings.
 import json
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.model import ToolInvocation
@@ -44,7 +45,7 @@ class IacScan(SecurityScan):
 
     def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifRun | Failure:
+    ) -> Result[sarif.SarifRun]:
         """Create a SarifRun from command execution output.
 
         Args:
@@ -53,11 +54,11 @@ class IacScan(SecurityScan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            One SARIF run, or a Failure if the output was not JSON.
+            One SARIF run, or an Err if the output was not JSON.
         """
         run = _parse_checkov_stdout(output.stdout, target)
         if run is None:
-            return Failure(reason=f"{tool} did not produce JSON output")
+            return Err(f"{tool} did not produce JSON output")
         return run
 
 

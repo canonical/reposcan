@@ -5,7 +5,7 @@
 
 trivy and grype emit SARIF directly; govulncheck emits a JSON message stream, which
 is converted to SARIF here. The three are merged into one document, deduped and
-annotated with which scanner reported each finding (see scans/sarif.py `merge`).
+annotated with which scanner reported each finding (see scans/sarif.py `merge_runs`).
 
 NOTE: the exact tool flags/output are not verified at build time. govulncheck runs
 inside the module (cwd=target) and is optional, so a non-Go repo skips it rather
@@ -17,7 +17,8 @@ import json
 from typing import Any
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.base import DependencyResolvingScan, SecurityScan
 from reposcan.scans.model import ToolInvocation
@@ -72,7 +73,7 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
 
     def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifRun | Failure:
+    ) -> Result[sarif.SarifRun]:
         """Create a SarifRun from command execution output.
 
         Args:
@@ -81,18 +82,18 @@ class ScaScan(SecurityScan, DependencyResolvingScan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            The tool's normalized SARIF run, or a Failure if not usable.
+            The tool's normalized SARIF run, or an error if not usable.
         """
         if tool == "govulncheck":
             return _parse_govulncheck_stdout(output.stdout, target)
         run = sarif.parse_run(output.stdout, tool, target)
         if run is None:
-            return Failure(reason=f"{tool} did not produce usable output")
+            return Err(f"{tool} did not produce usable output")
         return run
 
 
 def _find_govulncheck_position(finding: dict[str, Any]) -> tuple[str, int] | None:
-    """Find the first source position in a govulncheck finding's trace, or None."""
+    """Find the first source position in a govulncheck finding's trace."""
     for frame in finding.get("trace") or []:
         position = frame.get("position")
         if isinstance(position, dict) and position.get("filename"):

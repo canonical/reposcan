@@ -18,7 +18,7 @@ from reposcan.execution.context import (
 from reposcan.execution.docker import DockerContext
 from reposcan.execution.local import LocalContext
 from reposcan.execution.lxd import LxdContext
-from reposcan.execution.process import Failure, run_process
+from reposcan.execution.process import run_process
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.ensure import ImageBuilder, ensure_built, ensure_pulled
 from reposcan.image.lxd import LxdImageBuilder
@@ -30,17 +30,10 @@ from reposcan.image.spec import (
     LOCAL_BUILD_SHORTHAND,
     build_spec,
 )
+from reposcan.result import Err, Result, get_err, is_err
 from reposcan.tools.install import detect_platform
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Availability:
-    """Whether a backend is usable on this host, with a reason to show the user."""
-
-    ok: bool
-    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,24 +47,20 @@ class Backend:
     containerized: bool = False
     context: Callable[..., ExecutionContext] | None = None  # None runs on the host
     builder: ImageBuilder | None = None
-    puller: Callable[[str], str | Failure] | None = None  # None cannot pull
+    puller: Callable[[str], Result[str]] | None = None  # None cannot pull
 
-    def check_availability(self) -> Availability:
-        """Report whether this backend is usable on this host."""
+    def check_availability(self) -> Result[None]:
+        """Check this backend is usable on this host."""
         if not self.probe:
-            return Availability(ok=True, reason="runs on the host")
-        result = run_process(list(self.probe), timeout=10)
-        if isinstance(result, Failure):
-            return Availability(ok=False, reason=result.reason)
-        if result.exit_code != 0:
-            reason = result.stderr.strip() or f"{self.probe[0]} is not available"
-            return Availability(ok=False, reason=reason)
-        return Availability(ok=True)
+            return None  # runs on the host
+        if is_err(err := run_process(list(self.probe), timeout=10, check=True)):
+            return err
+        return None
 
-    def build_image(self, *, force: bool = False) -> str | Failure:
-        """Build this backend's reposcan image, returning its verified reference."""
+    def build_image(self, *, force: bool = False) -> Result[str]:
+        """Build this backend's reposcan image."""
         if self.builder is None:
-            return Failure(reason=f"the {self.name} backend cannot build images")
+            return Err(f"the {self.name} backend cannot build images")
         return ensure_built(self.builder, build_spec(detect_platform()), force=force)
 
 
@@ -108,7 +97,7 @@ BACKENDS = {
 AUTO = "auto"
 
 
-def select_backend(requested: str | None) -> Backend | Failure:
+def select_backend(requested: str | None) -> Result[Backend]:
     """Choose a backend.
 
     Args:
@@ -117,26 +106,23 @@ def select_backend(requested: str | None) -> Backend | Failure:
 
     Returns:
         The selected backend; 'auto' picks the first available of docker, lxd,
-        then local. A Failure if the requested backend is unknown or
+        then local. An error if the requested backend is unknown or
         unavailable, or if none is available.
     """
     name = requested or AUTO
     if name != AUTO and name not in BACKENDS:
-        return Failure(reason=f"unknown backend {name}")
+        return Err(f"unknown backend {name}")
 
     for candidate in BACKENDS.values() if name == AUTO else [BACKENDS[name]]:
-        availability = candidate.check_availability()
-        if availability.ok:
+        if not is_err(err := candidate.check_availability()):
             return candidate
         if name != AUTO:
-            return Failure(
-                f"selected backend ({name}) not available: {availability.reason}"
-            )
-    return Failure(reason="no execution backend is available")
+            return Err(f"selected backend ({name}) not available: {err.msg}")
+    return Err("no execution backend is available")
 
 
-def _provision_image(backend: Backend, image: str | None) -> str | Failure:
-    """Build or pull `backend`'s reposcan image, returning the reference to run."""
+def _provision_image(backend: Backend, image: str | None) -> Result[str]:
+    """Build or pull `backend`'s reposcan image."""
     puller = backend.puller
     if puller is None or image == LOCAL_BUILD_SHORTHAND:
         if image and image != LOCAL_BUILD_SHORTHAND and puller is None:
@@ -149,15 +135,13 @@ def _provision_image(backend: Backend, image: str | None) -> str | Failure:
         return backend.build_image()
     # Unset and the `canonical` shorthand both mean the pinned published image.
     ref = CANONICAL_REF if not image or image == CANONICAL_SHORTHAND else image
-    reference = puller(ref)
-    if isinstance(reference, Failure) and image is None:
-        return Failure(
-            reason=(
-                f"could not pull the image {ref}: {reference.reason}. "
-                f"Pass --image build to build the reposcan image locally."
-            )
+    pulled = puller(ref)
+    if isinstance(pulled, Err) and image is None:
+        return Err(
+            f"could not pull the image {ref}: {pulled.msg}. "
+            f"Pass --image build to build the reposcan image locally."
         )
-    return reference
+    return pulled
 
 
 @dataclass(frozen=True)
@@ -185,7 +169,7 @@ class Session:
         return self._context
 
 
-def ensure_image(requested_backend: str | None, image: str | None) -> Failure | None:
+def ensure_image(requested_backend: str | None, image: str | None) -> Result[None]:
     """Build or pull the reposcan image once, before many sessions ask for it.
 
     Each session still resolves `image` itself and finds the result already present.
@@ -197,15 +181,14 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Failure | 
 
     Returns:
         None when the image is ready, or when the backend runs no image; else the
-        Failure that prevented it.
+        error that prevented it.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Failure):
+    if isinstance(backend, Err):
         return backend
     if not backend.containerized:
         return None
-    provisioned = _provision_image(backend, image)
-    return provisioned if isinstance(provisioned, Failure) else None
+    return get_err(_provision_image(backend, image))
 
 
 @contextmanager
@@ -237,18 +220,21 @@ def start_session(
         env: Variables to add to every command.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Failure):
-        logger.error(backend.reason)
+    if isinstance(backend, Err):
+        logger.error(backend.msg)
         yield Session(None, "", 2)
         return
     if backend.context is not None:
-        reference = _provision_image(backend, image)
-        if isinstance(reference, Failure):
-            logger.error(reference.reason)
+        provisioned = _provision_image(backend, image)
+        if isinstance(provisioned, Err):
+            logger.error(provisioned.msg)
             yield Session(None, "", 1)
             return
         ctx = backend.context(
-            reference or BASE_IMAGE, mount_source=mount_source, user=user, env=env
+            provisioned or BASE_IMAGE,
+            mount_source=mount_source,
+            user=user,
+            env=env,
         )
         # A container mounts the source under MOUNT_PARENT.
         target = (
@@ -266,9 +252,8 @@ def start_session(
             )
         ctx = LocalContext(f"{backend.install_dir}/bin", env)
         target = mount_source
-    error = ctx.start()
-    if error is not None:
-        logger.error(error.reason)
+    if is_err(err := ctx.start()):
+        logger.error(err.msg)
         yield Session(None, "", 1)
         return
     try:

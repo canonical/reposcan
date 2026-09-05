@@ -3,16 +3,13 @@
 
 """Schema(s) for every table and statement.
 
-The statements are literals, so no SQL is assembled from strings. Each CREATE includes
-`IF NOT EXISTS` for idempotency.
-
-`SCHEMA_VERSION` is used to check if the database was written by a different version of
-reposcan.
+Each CREATE includes `IF NOT EXISTS` for idempotency.
 """
 
 from pathlib import Path
 
 from reposcan.db.sqlite import Session, TableSchema, read_version
+from reposcan.result import Err, Result
 
 SCHEMA_VERSION = 1
 
@@ -446,8 +443,8 @@ def is_current(path: str) -> bool:
     return read_version(path) == SCHEMA_VERSION
 
 
-def explain_unusable(path: str) -> str | None:
-    """Why `path` cannot be written to as a reposcan database, or None if it can.
+def confirm_usable(path: str) -> Result[None]:
+    """Verify `path` can be written to as a reposcan database.
 
     A path that does not exist, or an empty file a caller has reserved, is usable: it
     becomes a new database. Anything else has to already be a database of this
@@ -455,10 +452,10 @@ def explain_unusable(path: str) -> str | None:
     """
     version = read_version(path)
     if version is None:
-        return f"{path} is not a sqlite database" if Path(path).exists() else None
+        return Err(f"{path} is not a sqlite database") if Path(path).exists() else None
     if version in (0, SCHEMA_VERSION):
         return None
-    return (
+    return Err(
         f"{path} is a version {version} reposcan database; "
         f"this reposcan writes version {SCHEMA_VERSION}"
     )

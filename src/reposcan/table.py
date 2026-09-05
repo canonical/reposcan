@@ -82,7 +82,7 @@ def _wrap_cell(cell: str, width: int, wrap: int) -> list[str]:
 
 
 def _clip(text: str, width: int) -> str:
-    """`text` truncated to `width`, with an ellipsis if it was too long."""
+    """Truncate `text` to `width`, ending with an ellipsis if it was too long."""
     if len(text) <= width:
         return text
     if width <= len(_ELLIPSIS):

@@ -4,13 +4,7 @@
 """Warn when the host firewall blocks bridge forwarding, with a cause-aware fix.
 
 Ported from canonical/workshop's CheckBridgeFirewall, extended with an
-iptables-legacy fallback.
-
-Detection is cause-agnostic: is the FORWARD chain policy drop, with no rule that
-accepts traffic for the bridge? The remediation is cause-aware: it suggests
-Docker-specific, UFW-specific, or generic commands depending on what is found.
-nftables (`nft -j`, structured JSON) is authoritative when present; iptables-legacy
-(`iptables -S`, text) is a fallback for hosts without nft. Advisory only.
+iptables-legacy fallback. Advisory/logging only.
 
 See: https://documentation.ubuntu.com/lxd/latest/howto/network_bridge_firewalld/
 """
@@ -19,7 +13,8 @@ import json
 import logging
 from typing import Any
 
-from reposcan.execution.process import run_process, succeeded
+from reposcan.execution.process import run_process
+from reposcan.result import Err, Result, get_value, is_err
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +28,18 @@ def warn_if_lxd_bridge_blocked(bridge: str = _LXD_BRIDGE) -> None:
     Advisory only. Call before every `lxc launch` -- both running a container and
     building an image launch on the bridge and fail the same way when it is blocked.
     """
-    warning = check_firewall(bridge)
-    if warning is not None:
-        logger.warning(warning)
+    if is_err(err := check_firewall(bridge)):
+        logger.warning(err.msg)
 
 
 def build_lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
-    """Firewall guidance to log when an LXD container has no outbound network.
+    """Explain how to fix an LXD container with no outbound network.
 
-    Reading nft/iptables needs root privileges that we may not have, and a blocked
-    FORWARD chain is the usual culprit. Unlike `check_firewall`, this never returns
-    None: the caller already knows there is a problem and always wants something
-    actionable to show.
-
-    Returns:
-        str: The specific cause and fix if the host firewall can be read and shows
-        `bridge` blocked; otherwise, generic remediation.
+    This always returns a str; it is only called when an issue has been detected and
+    the caller needs to generate a message.
     """
-    detected = check_firewall(bridge)
-    if detected is not None:
-        return detected
+    if is_err(err := check_firewall(bridge)):
+        return err.msg
     return (
         f"a blocked {bridge} bridge is the usual cause; allow forwarding with: "
         f"sudo nft insert rule ip filter FORWARD iifname {bridge} accept && "
@@ -60,27 +47,31 @@ def build_lxd_bridge_hint(bridge: str = _LXD_BRIDGE) -> str:
     )
 
 
-def check_firewall(bridge: str) -> str | None:
-    """Check whether the host firewall blocks forwarding on `bridge`.
+def check_firewall(bridge: str) -> Result[None]:
+    """Check that the host firewall is forwarding traffic for `bridge`.
 
-    Uses nftables when present, else iptables-legacy.
+    Detection is cause-agnostic: does the FORWARD chain drop by policy, with no rule
+    accepting the bridge's traffic? nftables (`nft -j`, structured JSON) is
+    authoritative when present; iptables-legacy (`iptables -S`, text) is the fallback
+    for hosts without nft.
 
     Returns:
-        Warning text naming the cause and its fix when the FORWARD policy drops
-        `bridge`, or None when it does not, or when neither tool reports a filter
-        FORWARD chain. (The text belongs in a Result's error half; see PLAN.md.)
+        None when the bridge is not blocked, and when neither tool's output can be
+        read; else an Err naming the cause and the command that fixes it.
     """
-    nft = run_process(["nft", "-j", "list", "table", "ip", "filter"])
-    if succeeded(nft):
+    nft = get_value(
+        run_process(["nft", "-j", "list", "table", "ip", "filter"], check=True)
+    )
+    if nft is not None:
         return _analyze_nft(nft.stdout, bridge)
-    legacy = run_process(["iptables", "-S"])
-    if succeeded(legacy):
+    legacy = get_value(run_process(["iptables", "-S"], check=True))
+    if legacy is not None:
         return _analyze_iptables(legacy.stdout, bridge)
     return None
 
 
-def _analyze_nft(nft_json: str, bridge: str) -> str | None:
-    """Warn from `nft -j` JSON if the bridge is blocked, else None."""
+def _analyze_nft(nft_json: str, bridge: str) -> Result[None]:
+    """Check `nft -j` JSON for a blocked bridge."""
     try:
         parsed = json.loads(nft_json)
     except json.JSONDecodeError:
@@ -95,11 +86,11 @@ def _analyze_nft(nft_json: str, bridge: str) -> str | None:
         f"sudo nft insert rule ip filter DOCKER-USER oifname {bridge} "
         "ct state related,established accept"
     )
-    return _explain_block(bridge, _classify_cause(ruleset), docker_fix)
+    return Err(_explain_block(bridge, _classify_cause(ruleset), docker_fix))
 
 
-def _analyze_iptables(rules: str, bridge: str) -> str | None:
-    """Warn from `iptables -S` text if the bridge is blocked, else None."""
+def _analyze_iptables(rules: str, bridge: str) -> Result[None]:
+    """Check `iptables -S` text for a blocked bridge."""
     lines = [line.strip() for line in rules.splitlines()]
     if "-P FORWARD DROP" not in lines:
         return None
@@ -119,7 +110,7 @@ def _analyze_iptables(rules: str, bridge: str) -> str | None:
         f"sudo iptables -I DOCKER-USER -o {bridge} "
         "-m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
     )
-    return _explain_block(bridge, cause, docker_fix)
+    return Err(_explain_block(bridge, cause, docker_fix))
 
 
 def _has_drop_policy(ruleset: list[Any]) -> bool:

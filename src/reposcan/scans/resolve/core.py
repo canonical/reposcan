@@ -5,13 +5,8 @@
 
 The SBOM/SCA tools report a full transitive dependency tree only from a committed
 lockfile. When the scan has network access, this pre-step runs a package resolver to
-generate one. The repo is mounted read-only, so the resolvers run against a writable
-copy of it, which becomes the scan target. It is best-effort: any failure (no
-network, an unsatisfiable resolve, a missing resolver) leaves that manifest, or the
-whole target, unchanged.
-
-Discovery uses one `git ls-files` on the target. Each ecosystem has its own
-`Resolver`.
+generate one. It is best-effort: any failure (no network, an unsatisfiable resolve, a
+missing resolver) leaves that manifest, or the whole target, unchanged.
 """
 
 import hashlib
@@ -19,7 +14,7 @@ import logging
 import os
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, succeeded
+from reposcan.result import get_value, is_err
 from reposcan.scans.resolve.interfaces import Resolver
 from reposcan.scans.resolve.js import JsResolver
 from reposcan.scans.resolve.python import PythonResolver
@@ -40,10 +35,9 @@ def resolve_dependencies(
 ) -> str:
     """Generate lockfiles for `target` so scanners catalog transitive deps.
 
-    Discovers every tracked manifest, copies `target` into a writable working
-    directory, resolves each ecosystem into the copy, and returns that directory as
-    the new scan target. Returns `target` unchanged when there is nothing to resolve
-    or the copy fails.
+    Discovers every tracked manifest, copies `target` (which is mounted read-only)
+    into a writable working directory, resolves each ecosystem into the copy, and
+    returns that directory as the new scan target.
 
     Args:
         ctx: The started context to run the resolvers in.
@@ -54,7 +48,8 @@ def resolve_dependencies(
             source-only dependencies (runs untrusted code).
 
     Returns:
-        The directory the scan should target.
+        The directory the scan should target: the copy, or `target` itself when there
+        is nothing to resolve or the copy fails.
     """
     logger.info("Attempting to resolve dependencies and create lockfiles")
     tracked = _list_tracked_files(ctx, target)
@@ -85,17 +80,20 @@ def resolve_dependencies(
 
 
 def _list_tracked_files(ctx: ExecutionContext, target: str) -> dict[str, set[str]]:
-    """Every tracked file under `target`, grouped by directory.
+    """List every tracked file under `target`, grouped by directory.
 
     Uses `git ls-files` so the listing is confined to tracked files and skips
-    git-ignored paths. Returns each directory (relative to `target`, "" for its root)
-    mapped to the set of file basenames in it; empty for a non-git target.
+    git-ignored paths.
+
+    Returns:
+        Each directory (relative to `target`, "" for its root) mapped to the set of
+        file basenames in it; empty for a non-git target.
     """
-    result = ctx.run(["git", "-C", target, "ls-files", "-z"])
-    if not isinstance(result, ExecResult) or result.exit_code != 0:
+    run = get_value(ctx.run(["git", "-C", target, "ls-files", "-z"], check=True))
+    if run is None:
         return {}
     grouped: dict[str, set[str]] = {}
-    for path in result.stdout.split("\0"):
+    for path in run.stdout.split("\0"):
         if path:
             grouped.setdefault(os.path.dirname(path), set()).add(os.path.basename(path))
     return grouped
@@ -106,7 +104,7 @@ def _copy_repo(ctx: ExecutionContext, target: str, dest: str) -> bool:
     # copy (that cache persists across runs, unlike an ephemeral container).
     ctx.run(["mkdir", "-p", os.path.dirname(dest)])
     ctx.run(["rm", "-rf", dest])
-    if succeeded(ctx.run(["cp", "-a", target, dest])):
+    if not is_err(ctx.run(["cp", "-a", target, dest], check=True)):
         return True
     logger.warning("dependency resolution skipped: could not copy the repository")
     return False

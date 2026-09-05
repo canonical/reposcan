@@ -6,7 +6,7 @@
 import logging
 
 from reposcan.execution.context import ExecutionContext, read_file
-from reposcan.execution.process import succeeded
+from reposcan.result import is_err
 from reposcan.tools.registry import POETRY
 
 logger = logging.getLogger(__name__)
@@ -43,13 +43,13 @@ class Poetry:
         *,
         allow_code_execution: bool,
     ) -> None:
-        """Lock and export a legacy Poetry project's dependencies, best-effort."""
+        """Lock and export a legacy Poetry project's dependencies."""
         content = read_file(ctx, f"{workdir}/pyproject.toml")
         if content is None or not _is_legacy_poetry(content):
             return  # PEP 621 or not Poetry at all: the uv package manager handles it
         poetry = POETRY.locate_executable(install_dir)
         logger.debug("detected poetry; running: %s lock", poetry)
-        if not succeeded(ctx.run([poetry, "lock"], cwd=workdir, env=_ENV)):
+        if is_err(ctx.run([poetry, "lock"], cwd=workdir, env=_ENV, check=True)):
             logger.warning("poetry resolution skipped for %s: lock failed", workdir)
             return
         export = [
@@ -61,10 +61,10 @@ class Poetry:
             "-o",
             _LOCK,
         ]
-        if succeeded(ctx.run(export, cwd=workdir, env=_ENV)):
-            logger.debug("resolved poetry project in %s", workdir)
-        else:
+        if is_err(ctx.run(export, cwd=workdir, env=_ENV, check=True)):
             logger.warning("poetry resolution skipped for %s: export failed", workdir)
+        else:
+            logger.debug("resolved poetry project in %s", workdir)
 
 
 def _is_legacy_poetry(content: str) -> bool:

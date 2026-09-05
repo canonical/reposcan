@@ -33,7 +33,7 @@ class ScanStatus(str, Enum):
 
 
 def scan_status(produced: ScanOutput) -> ScanStatus:
-    """Determine scan status (complete, partial, failed) based on invocation success."""
+    """Determine a scan's status from its tool invocations."""
     if any(not invocation.successful for invocation in produced.tool_invocations):
         return ScanStatus.PARTIAL
     return ScanStatus.COMPLETE
@@ -69,12 +69,9 @@ class ScanRecord:
 class Analysis:
     """One reposcan session with one or more scans.
 
-    The Analysis object is built as the scans run rather than assembled afterwards.
-    `begin` sets the start timestamp and reads the repository metadata; `add` takes
-    each finished scan's record; `close` sets the end timestamp and writes the
-    analysis metadata into each associated artifact.
-
-    Use it as a context manager so `close` cannot be forgotten.
+    The Analysis object is built as the scans run rather than assembled afterwards:
+    `begin`, then an `add` or `fail` per scan, then `close`. Use it as a context
+    manager so `close` cannot be forgotten.
     """
 
     uuid: str
@@ -125,7 +122,12 @@ class Analysis:
         ]
 
     def close(self) -> None:
-        """Finalize the analysis."""
+        """Finish the analysis.
+
+        The finish timestamp and the analysis metadata are written into every artifact
+        a scan produced. The status is COMPLETE when no scan failed, FAILED when none
+        succeeded, and PARTIAL otherwise.
+        """
         self.finished_at = utc_now()
         for scan in self.successful_scans:
             scan.produced.record_provenance(

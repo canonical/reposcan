@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reposcan.execution.context import ExecutionContext
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 
 # The ignorefile reposcan looks for in a scanned repository by default.
@@ -54,7 +55,7 @@ class IgnoreRule:
     content_regex: re.Pattern[str] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Compile the entry's patterns, raising re.error on a malformed one."""
+        """Compile the entry's patterns."""
         self.tool_regex = _compile_field_regex(self.tool)
         self.rule_regex = _compile_field_regex(self.rule_id)
         self.path_regex = _compile_glob_regex(self.path_glob)
@@ -68,10 +69,9 @@ def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
     rules: list[IgnoreRule] = []
     errors: list[str] = []
     for number, raw in enumerate(text.splitlines(), start=1):
-        try:
-            fields = _split_fields(raw)
-        except ValueError as exc:
-            errors.append(f"ignorefile line {number}: {exc}")
+        fields = _split_fields(raw)
+        if isinstance(fields, Err):
+            errors.append(f"ignorefile line {number}: {fields.msg}")
             continue
         if not fields:  # blank or comment-only line
             continue
@@ -87,12 +87,14 @@ def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
     return rules, errors
 
 
-def _split_fields(line: str) -> list[str]:
+def _split_fields(line: str) -> Result[list[str]]:
     """Split `line` into whitespace-separated fields, honouring quotes and comments.
 
     A single- or double-quoted span keeps its whitespace and `#` and drops the quotes;
     an unquoted `#` starts a comment. Backslashes are literal (regexes keep them).
-    Raises ValueError on an unterminated quote.
+
+    Returns:
+        The fields, or an Err when a quote is unterminated.
     """
     fields: list[str] = []
     current: list[str] = []
@@ -118,14 +120,14 @@ def _split_fields(line: str) -> list[str]:
             current.append(ch)
             in_field = True
     if quote:
-        raise ValueError("unterminated quote")
+        return Err("unterminated quote")
     if in_field:
         fields.append("".join(current))
     return fields
 
 
 def load(path: str) -> tuple[list[IgnoreRule], list[str]]:
-    """Load the rules in the ignorefile at `path`, plus any error messages."""
+    """Load the rules in the ignorefile at `path`."""
     try:
         text = Path(path).read_text()
     except OSError as exc:
@@ -139,12 +141,15 @@ def apply(
     ctx: ExecutionContext | None = None,
     target: str = "",
 ) -> int:
-    """Drop ignored findings from each run in place; return the number removed.
+    """Drop ignored findings from each run, in place.
 
     A rule ignores a finding when its tool, rule id, and path all match. A rule
     carrying a content regex additionally requires the offending line to match it;
     that line is read from `target` through `ctx`. Content that cannot be read fails
     the match, so the finding is kept.
+
+    Returns:
+        The number of findings dropped.
     """
     if not rules:
         return 0
@@ -187,7 +192,9 @@ def _read_offending_line(
 ) -> str | None:
     """Read the finding's offending content.
 
-    The line the finding points to, or the whole file when it has no line.
+    Returns:
+        The line the finding points to, or the whole file when it has no line;
+        None when the content cannot be read, or holds no such line.
     """
     if ctx is None:
         return None

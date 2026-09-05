@@ -6,7 +6,8 @@
 import hashlib
 from collections.abc import Mapping, Sequence
 
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans.resolve import resolve_dependencies
 
 TARGET = "/scan/acme"
@@ -24,7 +25,7 @@ class _FakeContext:
     """Serves canned `git ls-files`/`cat` output and records every run.
 
     `tracked` is the NUL-joined `git ls-files -z`; `files` maps a path to its `cat`
-    text; a `uv pip compile` whose input is in `unsatisfiable` exits non-zero.
+    text.
     """
 
     name = "fake"
@@ -33,19 +34,24 @@ class _FakeContext:
         self,
         tracked: str,
         files: Mapping[str, str] | None = None,
-        unsatisfiable: Sequence[str] = (),
     ) -> None:
         self._tracked = tracked
         self._files = dict(files or {})
-        self._unsatisfiable = set(unsatisfiable)
         self.runs: list[tuple[list[str], str | None]] = []
 
-    def start(self) -> None: ...
+    def start(self) -> Result[None]:
+        return None
+
     def stop(self) -> None: ...
 
     def run(
-        self, command: Sequence[str], *, cwd: str | None = None, **_: object
-    ) -> ExecResult | Failure:
+        self,
+        command: Sequence[str],
+        *,
+        cwd: str | None = None,
+        check: bool = False,
+        **_: object,
+    ) -> Result[ExecResult]:
         cmd = list(command)
         self.runs.append((cmd, cwd))
         if cmd[0] == "git":
@@ -53,9 +59,7 @@ class _FakeContext:
         if cmd[0] == "cat":
             if cmd[1] in self._files:
                 return ExecResult(0, self._files[cmd[1]], "")
-            return ExecResult(1, "", "")
-        if "compile" in cmd and cmd[cmd.index("compile") + 1] in self._unsatisfiable:
-            return ExecResult(1, "", "no wheel available")
+            return Err(f"no such file: {cmd[1]}")
         return ExecResult(0, "", "")  # compile ok, mkdir, rm, cp
 
     @property
@@ -105,12 +109,10 @@ def test_compiles_exactly_the_resolvable_python_inputs_at_any_depth() -> None:
     assert "--only-binary" in first and first[0] == f"{INSTALL_DIR}/bin/uv"
 
 
-def test_allow_code_execution_retries_with_source_builds() -> None:
-    # Wheel-only unsatisfiable: the default gives up, but the flag retries without it.
+def test_allow_code_execution_resolves_with_source_builds() -> None:
     ctx = _FakeContext(
         _join_nul("requirements.txt"),
         files={f"{DEST}/requirements.txt": "source-only-pkg\n"},
-        unsatisfiable=["requirements.txt"],
     )
 
     resolve_dependencies(
@@ -118,8 +120,8 @@ def test_allow_code_execution_retries_with_source_builds() -> None:
     )
 
     attempts = [cmd for cmd, _ in ctx.runs if "compile" in cmd]
-    assert len(attempts) == 2
-    assert "--only-binary" in attempts[0] and "--only-binary" not in attempts[1]
+    assert len(attempts) == 1
+    assert "--only-binary" not in attempts[0]
 
 
 def test_leaves_target_unchanged_without_resolvable_python() -> None:
@@ -128,7 +130,7 @@ def test_leaves_target_unchanged_without_resolvable_python() -> None:
     class _NoGit(_FakeContext):
         def run(self, command, **kwargs):  # type: ignore[no-untyped-def]
             if list(command)[0] == "git":
-                return Failure(reason="not a git repository")
+                return Err("not a git repository")
             return super().run(command, **kwargs)
 
     for ctx in (

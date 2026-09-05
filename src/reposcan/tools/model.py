@@ -13,12 +13,7 @@ separate manifest:
   - Go tools pin the module by its go.sum h1 hashes, verified at build;
   - PyPI tools install from a hash-pinned requirements lock (--require-hashes).
 
-Each tool also knows how to install itself:
-`script_install(platform, install_dir)` returns the shell lines that install
-it, for a platform, under an install dir. Those
-lines are the single definition that both `reposcan bootstrap` (run through an
-execution context) and image generation (a build script) consume; see
-tools/install.py.
+Every tool provides its own install commands via `script_install`.
 """
 
 from dataclasses import dataclass
@@ -67,9 +62,9 @@ class Tool(Protocol):
 
     @property
     def requires(self) -> "tuple[Tool, ...]":
-        """The tools that must be installed before this one (its dependencies).
+        """The tools that must be installed before this one.
 
-        PyPI tools require uv, Go tools require the Go SDK; empty when there is none.
+        PyPI tools require uv, Go tools require the Go SDK.
         """
         ...
 
@@ -80,7 +75,7 @@ class Tool(Protocol):
     def version(self) -> str: ...
 
     def script_install(self, platform: Platform, install_dir: str) -> list[str]:
-        """Shell lines that install this tool, for `platform`, under `install_dir`.
+        """Build the shell lines that install this tool for `platform` in `install_dir`.
 
         Each line is run via the execution context (bootstrap) or concatenated into
         an image build script (image generation).

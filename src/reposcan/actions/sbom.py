@@ -13,8 +13,8 @@ from reposcan.backends import start_session
 from reposcan.cli_kit import flag, option, positional
 from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser, get_host_user, resolve_env
-from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
+from reposcan.result import Err, is_err
 from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.repo import read_repository_state
 from reposcan.scans.run import run_sbom_scan
@@ -63,8 +63,8 @@ class SbomCommand(Action):
 
         Exit codes:
             0 on success (an inventory is not pass/fail)
-            2 for a usage error
-            1 on a tool error or a write failure
+            2 for a usage error, or when no backend could be selected
+            1 on a backend, tool, database, or write failure
         """
         path = os.path.abspath(self.path)
         if not os.path.isdir(path):
@@ -104,24 +104,23 @@ class SbomCommand(Action):
                     resolution_workdir=session.resolution_workdir,
                     stream=True,
                 )
-                if isinstance(artifact, Failure):
-                    logger.error("sbom failed: %s", artifact.reason)
+                if isinstance(artifact, Err):
+                    logger.error("sbom failed: %s", artifact.msg)
                     return 1
 
                 analysis.add(
                     ScanRecord.from_artifact(scan.name, artifact, started_at=started_at)
                 )
             if self.db is not None:
-                failed = db_write.write_analysis(self.db, analysis)
-                if failed is not None:
-                    logger.error(failed.reason)
+                if is_err(err := db_write.write_analysis(self.db, analysis)):
+                    logger.error(err.msg)
                     return 1
                 logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
 
             if self.output is not None or self.format == Format.JSON:
-                failure = output.write_json(artifact.to_dict(), self.output)
-                if isinstance(failure, Failure):
-                    logger.error(failure.reason)
+                document = artifact.to_dict()
+                if is_err(err := output.write_json(document, self.output)):
+                    logger.error(err.msg)
                     return 1
             else:
                 output.write_table(

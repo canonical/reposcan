@@ -11,7 +11,8 @@ import logging
 import os
 from urllib.parse import urlsplit
 
-from reposcan.execution.process import Failure, run_process
+from reposcan.execution.process import run_process
+from reposcan.result import Err, Result, get_value, is_err
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,17 @@ _LOW_SPEED_SECONDS = "60"
 
 def sync_repository(
     url: str, workspace: str, name: str, token: str = ""
-) -> str | Failure:
-    """Sync a local copy of `url` and return its local worktree path.
+) -> Result[str]:
+    """Sync (clone or update) a local copy of `url`.
 
     Args:
         url: The repository's clone url.
         workspace: The local storage directory.
         name: The repository's `owner/name`.
-        token: An authentication token.
+        token: An authentication token, or empty to clone anonymously.
 
     Returns:
-        The path to scan (or a Failure).
+        The worktree path to scan, or an Err naming the git step that failed.
     """
     mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
     worktree = os.path.join(workspace, WORKTREE_DIR, name)
@@ -46,58 +47,60 @@ def sync_repository(
         logger.info("updating %s", name)
         # A mirror's refspec is already forced, so this follows a rewritten history
         # instead of failing on it, and --prune drops branches deleted upstream.
-        failed = _git(
+        err = _git(
             ["fetch", "--all", "--prune", "--update-head-ok", "--quiet"],
             env,
             cwd=mirror,
         )
     else:
         logger.info("mirroring %s", name)
-        failed = _make_parent(mirror) or _git(
-            ["clone", "--mirror", "--quiet", url, mirror], env
-        )
-    if failed is not None:
-        return failed
-    return _checkout(mirror, worktree)
+        err = _make_parent(mirror)
+        if not is_err(err):
+            err = _git(["clone", "--mirror", "--quiet", url, mirror], env)
+    return err if is_err(err) else _checkout(mirror, worktree)
 
 
-def _checkout(mirror: str, worktree: str) -> str | Failure:
-    """Check out `mirror`'s worktree, resetting one that already exists."""
+def _checkout(mirror: str, worktree: str) -> Result[str]:
+    """Check out `mirror`'s worktree, or reset and clean the existing checkout."""
     if os.path.isdir(worktree):
         # HEAD already points at the updated ref, since the worktree shares the
         # mirror's refs; this is what moves the files to match it.
-        failed = _git(["reset", "--hard", "--quiet"], cwd=worktree) or _git(
-            ["clean", "-ffdxq"], cwd=worktree
-        )
-        return failed if failed is not None else worktree
+        if is_err(err := _git(["reset", "--hard", "--quiet"], cwd=worktree)):
+            return err
+        err = _git(["clean", "-ffdxq"], cwd=worktree)
+        return err if is_err(err) else worktree
 
-    head = run_process(["git", "symbolic-ref", "--short", "HEAD"], cwd=mirror)
-    if isinstance(head, Failure) or head.exit_code != 0:
-        return Failure(reason=f"could not read the default branch of {mirror}")
-    failed = _make_parent(worktree) or _git(
+    head = get_value(
+        run_process(["git", "symbolic-ref", "--short", "HEAD"], cwd=mirror)
+    )
+    if head is None or head.exit_code != 0:
+        return Err(f"could not read the default branch of {mirror}")
+    if is_err(err := _make_parent(worktree)):
+        return err
+    err = _git(
         ["worktree", "add", "--quiet", worktree, head.stdout.strip()], cwd=mirror
     )
-    return failed if failed is not None else worktree
+    return err if is_err(err) else worktree
 
 
-def _make_parent(path: str) -> Failure | None:
+def _make_parent(path: str) -> Result[None]:
     """Create the directory `path` will sit in."""
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
     except OSError as exc:
-        return Failure(reason=f"could not create {os.path.dirname(path)}: {exc}")
+        return Err(f"could not create {os.path.dirname(path)}: {exc}")
     return None
 
 
 def _git(
     args: list[str], env: dict[str, str] | None = None, *, cwd: str | None = None
-) -> Failure | None:
+) -> Result[None]:
     """Run a git command."""
     result = run_process(["git", *args], cwd=cwd, env=env)
-    if isinstance(result, Failure):
+    if isinstance(result, Err):
         return result
     if result.exit_code != 0:
-        return Failure(reason=f"git {args[0]} failed: {result.stderr.strip()}")
+        return Err(f"git {args[0]} failed: {result.stderr.strip()}")
     return None
 
 

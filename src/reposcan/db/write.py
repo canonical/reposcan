@@ -16,7 +16,7 @@ from reposcan.db.identity import (
     is_same_issue,
 )
 from reposcan.db.sqlite import Session, Table
-from reposcan.execution.process import Failure
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanOutput, ScanRecord
 from reposcan.scans.model import ToolInvocationRecord
@@ -25,7 +25,7 @@ from reposcan.scans.repo import ProjectIdentity
 logger = logging.getLogger(__name__)
 
 
-def write_analysis(path: str, record: Analysis) -> Failure | None:
+def write_analysis(path: str, record: Analysis) -> Result[None]:
     """Write one analysis into the database at `path`, creating it when absent.
 
     Resolves the analysis's repository to a project, creating one when nothing
@@ -38,15 +38,14 @@ def write_analysis(path: str, record: Analysis) -> Failure | None:
         record: The analysis to record.
 
     Returns:
-        None on success, or a Failure when `path` is not a reposcan database of this
+        None on success, or an Err when `path` is not a reposcan database of this
         version, or cannot be opened.
     """
-    refusal = schema.explain_unusable(path)
-    if refusal is not None:
-        return Failure(reason=refusal)
-    session, error = sqlite.connect(path)
-    if session is None:
-        return Failure(reason=error or f"could not open {path}")
+    if is_err(err := schema.confirm_usable(path)):
+        return err
+    session = sqlite.connect(path)
+    if isinstance(session, Err):
+        return session
     with session:
         schema.create_all(session)
         if session.query(schema.SELECT_ANALYSIS_BY_UUID, (record.uuid,)):
@@ -206,7 +205,7 @@ class _Tracker:
         return issue_id
 
     def _find_candidates(self, rule: str) -> list[tuple[int, IssueAttributes]]:
-        """Every issue of this scan type that `rule` found, and what is known of it.
+        """Collect every recorded issue of this scan type with the same `rule`.
 
         A row per fingerprint, so they are gathered back onto one set of attributes
         per issue.
@@ -275,7 +274,7 @@ def insert_issue_reports(
 def _build_component_report_rows(
     scan_id: int, document: cyclonedx.CycloneDxDocument, tracker: "_Tracker"
 ) -> list[tuple[object, ...]]:
-    """One row per component, addressed by its index in the inventory."""
+    """Build one row per component, addressed by its index in the inventory."""
     return [
         (
             scan_id,
@@ -301,7 +300,7 @@ def _build_component_report_rows(
 def _build_invocation_rows(
     scan_id: int, invocations: Sequence[ToolInvocationRecord]
 ) -> list[tuple[object, ...]]:
-    """One row per executed tool command, indexed by the order they ran in."""
+    """Build one row per executed tool command, in the order they ran in."""
     return [
         (
             scan_id,

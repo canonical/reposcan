@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from reposcan.result import Err, Result
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,12 +41,12 @@ def load() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def save(settings: Mapping[str, Any]) -> str | None:
-    """Write `settings` as JSON; return an error message, or None on success."""
+def save(settings: Mapping[str, Any]) -> Result[None]:
+    """Write `settings` as JSON."""
     path = CONFIG_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(dict(settings), indent=2, sort_keys=True) + "\n")
     except OSError as exc:
-        return f"could not write config {path}: {exc}"
+        return Err(f"could not write config {path}: {exc}")
     return None

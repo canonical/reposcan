@@ -8,7 +8,8 @@ import os
 from collections.abc import Mapping, Sequence
 
 from reposcan.execution.context import RunUser
-from reposcan.execution.process import ExecResult, Failure, run_process
+from reposcan.execution.process import ExecResult, run_process
+from reposcan.result import Result
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class LocalContext:
         self._bin_dir = bin_dir
         self._env = dict(env or {})
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         return None
 
     def run(
@@ -65,10 +66,11 @@ class LocalContext:
         env: Mapping[str, str] | None = None,
         user: RunUser | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         if user is not None:
             logger.warning(
                 "the local backend runs as the invoking user (uid %d); ignoring the "
@@ -92,6 +94,7 @@ class LocalContext:
             cwd=cwd,
             env=environment,
             timeout=timeout,
+            check=check,
             stream_stdout=stream_stdout,
             stream_stderr=stream_stderr,
             stdin=stdin,

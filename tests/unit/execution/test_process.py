@@ -7,20 +7,25 @@ import io
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 
-from reposcan.execution.process import ExecResult, Failure, run_process
+from reposcan.execution.process import run_process
+from reposcan.result import Err
 
 
 def test_captures_output_exit_code_and_check() -> None:
     result = run_process(
-        [sys.executable, "-c", "import sys; print('o'); sys.stderr.write('e'); exit(3)"]
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('o'); sys.stderr.write('e'); exit(3)",
+        ]
     )
-    assert isinstance(result, ExecResult)
+    assert not isinstance(result, Err)
     assert result.stdout.strip() == "o" and "e" in result.stderr
     assert result.exit_code == 3
-    # check turns a nonzero exit into a Failure; a zero exit stays an ExecResult.
-    assert isinstance(run_process([sys.executable, "-c", ""], check=True), ExecResult)
+    # check turns a nonzero exit into a Err; a zero exit stays an ExecResult.
+    assert not isinstance(run_process([sys.executable, "-c", ""], check=True), Err)
     bad = run_process([sys.executable, "-c", "raise SystemExit(3)"], check=True)
-    assert isinstance(bad, Failure)
+    assert isinstance(bad, Err)
 
 
 def test_stdin_is_fed_to_the_command() -> None:
@@ -28,17 +33,17 @@ def test_stdin_is_fed_to_the_command() -> None:
         [sys.executable, "-c", "import sys; print(sys.stdin.read())"],
         stdin="piped-input",
     )
-    assert isinstance(result, ExecResult)
+    assert not isinstance(result, Err)
     assert result.stdout.strip() == "piped-input"
 
 
 def test_the_ways_a_run_can_fail_become_failures() -> None:
-    assert isinstance(run_process([]), Failure)  # no command
+    assert isinstance(run_process([]), Err)  # no command
     missing = run_process(["reposcan-no-such-binary-xyz"])
-    assert isinstance(missing, Failure) and not missing.timed_out
+    assert isinstance(missing, Err) and not missing.timed_out
     sleep = [sys.executable, "-c", "import time; time.sleep(5)"]
     slow = run_process(sleep, timeout=0.5)
-    assert isinstance(slow, Failure) and slow.timed_out
+    assert isinstance(slow, Err) and slow.timed_out
 
 
 def test_streams_tee_output_live_while_still_capturing_and_reporting_failures() -> None:
@@ -48,7 +53,7 @@ def test_streams_tee_output_live_while_still_capturing_and_reporting_failures() 
         result = run_process(
             [sys.executable, "-c", program], stream_stdout=True, stream_stderr=True
         )
-    assert isinstance(result, ExecResult) and result.exit_code == 4
+    assert not isinstance(result, Err) and result.exit_code == 4
     assert result.stdout.strip() == "out" and result.stderr.strip() == "err"  # captured
     assert "out" in live_out.getvalue() and "err" in live_err.getvalue()  # echoed live
 
@@ -60,5 +65,5 @@ def test_streams_tee_output_live_while_still_capturing_and_reporting_failures() 
         sleep = [sys.executable, "-c", "import time; time.sleep(5)"]
         slow = run_process(sleep, timeout=0.5, stream_stderr=True)
     # bad's reason is the captured stderr, even though it was also shown live.
-    assert isinstance(bad, Failure) and "no such file" in bad.reason
-    assert isinstance(slow, Failure) and slow.timed_out
+    assert isinstance(bad, Err) and "no such file" in bad.msg
+    assert isinstance(slow, Err) and slow.timed_out

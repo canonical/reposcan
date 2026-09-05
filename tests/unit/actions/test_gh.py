@@ -11,7 +11,7 @@ from io import StringIO
 from typing import Any
 
 from reposcan.actions import gh
-from reposcan.execution.process import Failure
+from reposcan.result import Err
 from reposcan.scm import github
 from reposcan.scm.github import Repository
 
@@ -23,16 +23,17 @@ def _build_repo(name: str) -> Repository:
 @contextmanager
 def _client(listed: Any, seen: dict[str, Any]) -> Iterator[None]:
     """Answer the client's listing with `listed`, recording its arguments in `seen`."""
+    listed_is_error = getattr(listed, "error", None) is not None
 
     def fake_list(
         *, org: str | None = None, enterprise: str | None = None, token: str = ""
     ) -> Any:
         seen.update(org=org, enterprise=enterprise, token=token)
-        return listed
+        return listed if listed_is_error else listed
 
     def fake_get(names: Sequence[str], token: str = "") -> Any:
         seen.update(repos=list(names), token=token)
-        return listed
+        return listed if listed_is_error else listed
 
     def fake_select(repositories: Sequence[Repository], **kwargs: Any) -> Any:
         seen.update(kwargs)
@@ -121,9 +122,7 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
 
     def fake_sync(url: str, workspace: str, name: str, token: str = "") -> Any:
         synced.append(name)
-        return (
-            Failure(reason="no route") if name == "acme/two" else f"{workspace}/{name}"
-        )
+        return Err("no route") if name == "acme/two" else f"{workspace}/{name}"
 
     saved = gh.clone.sync_repository
     gh.clone.sync_repository = fake_sync

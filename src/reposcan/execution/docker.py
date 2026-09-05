@@ -14,7 +14,8 @@ from reposcan.execution.context import (
     select_home,
     wrap_with_setpriv,
 )
-from reposcan.execution.process import ExecResult, Failure, run_process
+from reposcan.execution.process import ExecResult, run_process
+from reposcan.result import Err, Result
 
 
 class DockerContext:
@@ -39,17 +40,17 @@ class DockerContext:
         self._env = dict(env or {})
         self._instance_name: str | None = None
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         argv = ["docker", "run", "-d", "--rm"]
         if self._mount_source is not None:
             src = self._mount_source
             argv += ["-v", f"{src}:{locate_mounted_target(src)}:ro"]
         argv += [self._image, "sleep", "infinity"]
         result = run_process(argv)
-        if isinstance(result, Failure):
+        if isinstance(result, Err):
             return result
         if result.exit_code != 0:
-            return Failure(reason=result.stderr.strip() or "docker run failed")
+            return Err(result.stderr.strip() or "docker run failed")
         self._instance_name = result.stdout.strip()
         return None
 
@@ -61,12 +62,13 @@ class DockerContext:
         env: Mapping[str, str] | None = None,
         user: RunUser | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         if self._instance_name is None:
-            return Failure(reason="container is not started")
+            return Err("container is not started")
         argv = ["docker", "exec"]
         if stdin is not None:
             argv.append("-i")  # keep stdin open so the command can read it
@@ -84,6 +86,7 @@ class DockerContext:
         return run_process(
             argv,
             timeout=timeout,
+            check=check,
             stream_stdout=stream_stdout,
             stream_stderr=stream_stderr,
             stdin=stdin,

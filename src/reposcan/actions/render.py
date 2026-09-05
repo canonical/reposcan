@@ -45,8 +45,8 @@ def render(
 ) -> int:
     """Render the report at `input_path` as a table on stdout.
 
-    Returns 0 on success; 2 on a bad input or an unrecognized report; 1 if it could not
-    be written.
+    Returns:
+        0 on success, or 2 when the input cannot be read or is not a report.
     """
     artifact = _load(input_path)
     if artifact is None:
@@ -56,7 +56,7 @@ def render(
 
 
 def _load(input_path: str) -> Artifact | None:
-    """Load the artifact at `input_path`, or None on error (logging why)."""
+    """Load the artifact at `input_path`."""
     try:
         with open(input_path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()

@@ -1,20 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""reposcan tool installation.
-
-`reposcan bootstrap` and image generation consume the same per-tool
-`script_install`. Bootstrap runs each command through an ExecutionContext, so
-the same commands install onto the host or into a Docker/LXD container. Image
-generation writes them into a build/install script baked into the image. This module
-is the single point that orders and groups them, so there is one definition of how
-each tool installs.
-
-The commands are grouped per tool (`ToolInstall`) rather than flattened, so each
-tool is an independent failure domain: bootstrap runs each group and continues past
-a failure, and image generation emits each group as its own build step. Installing
-9 of 10 tools beats installing 0.
-"""
+"""reposcan tool installation: Generate, group, and order tool install commands."""
 
 import os
 from collections.abc import Iterable
@@ -41,7 +28,11 @@ def detect_platform() -> Platform:
 
 @dataclass(frozen=True)
 class ToolInstall:
-    """One tool's install commands, kept as a self-contained group."""
+    """One tool's install commands, kept as a self-contained group.
+
+    Grouped rather than flattened so each can be treated  as an independent failure
+    domain.
+    """
 
     tool: Tool
     commands: list[str]
@@ -76,8 +67,7 @@ def plan_installs(
         install_dir: The directory the tools install under.
 
     Returns:
-        One ToolInstall per tool, de-duplicated and ordered so each tool follows its
-        requirements.
+        One ToolInstall per tool.
     """
     ordered: list[Tool] = []
     seen: set[str] = set()

@@ -14,7 +14,8 @@ from typing import Any
 
 from reposcan.cli_kit import option
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Result, is_err
 from reposcan.scans import sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.model import ToolInvocation
@@ -65,8 +66,9 @@ class SecretsScan(SecurityScan):
         """
         mode = self.mode
         if self.mode == _AUTO:
-            result = ctx.run(["git", "-C", target, "rev-parse", "--git-dir"])
-            is_git_repo = not isinstance(result, Failure) and result.exit_code == 0
+            is_git_repo = not is_err(
+                ctx.run(["git", "-C", target, "rev-parse", "--git-dir"], check=True)
+            )
             mode = "history" if is_git_repo else "filesystem"
         match mode:
             case "filesystem":
@@ -75,11 +77,13 @@ class SecretsScan(SecurityScan):
                 args = ["git", f"file://{target}", *_COMMON_ARGS]
                 if self.depth is not None:
                     args += ["--max-depth", str(self.depth)]
-            case _:
-                raise ValueError("Unexpected execution mode")
+            case _:  # unreachable: --secrets-mode restricts the choices
+                args = ["filesystem", target, *_COMMON_ARGS]
         return [ToolInvocation("trufflehog", args)]
 
-    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+    def create_run(
+        self, tool: str, output: ExecResult, target: str
+    ) -> Result[sarif.SarifRun]:
         """Create a SarifRun from command execution output.
 
         Args:
@@ -139,7 +143,7 @@ def _build_sarif_result(
 def _read_finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
     """Read the (file, line, commit) of a finding.
 
-    'commit' is only produced by truffelhog's history mode. trufflehog dedups its
+    'commit' is only produced by trufflehog's history mode. trufflehog dedups its
     findings, so the reported commit is just *a* commit the secret was in, not
     necessarily the commit that introduced it.
     """

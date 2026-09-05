@@ -3,8 +3,8 @@
 
 """Identities for components, and equivalence for issues.
 
-Every component key carries the derivation version it was made with. An issue has no
-derived key; reports are compared against each other by EQUIVALENCE_RULES.
+A component has a derived key. An issue has none, so reports are compared against
+each other by EQUIVALENCE_RULES.
 """
 
 import hashlib
@@ -85,7 +85,7 @@ class EquivalenceRule:
     def holds(
         self, known: IssueAttributes, incoming: IssueAttributes, category: str
     ) -> bool:
-        """Evalute whether two reports concern the same issue."""
+        """Evaluate whether two reports concern the same issue."""
         if self.category and self.category != category:
             return False
         if any(
@@ -132,11 +132,11 @@ def is_same_issue(
 def _compare_fingerprints(
     recorded: Mapping[str, str], reported: Mapping[str, str]
 ) -> tuple[bool, bool]:
-    """How one kind of fingerprint compares between two reports.
+    """Compare one kind of fingerprint between two reports.
 
     Returns:
-        (has_a_match, has_a_conflict) Both are False when they have no shared
-        keys.
+        A (has_a_match, has_a_conflict) pair; both are False when the two reports
+        share no key of this kind.
     """
     shared = set(recorded) & set(reported)
     agrees = any(recorded[name] == reported[name] for name in shared)
@@ -199,7 +199,8 @@ def _build_digest(scheme: str, *parts: str) -> str:
     """Create a digest from `parts`.
 
     The parts are delimited, so no rearrangement of one field's content can imitate
-    another's.
+    another's, and IDENTITY_VERSION is mixed in, so changing how a key is derived
+    changes every key derived that way.
     """
     material = "|".join((str(IDENTITY_VERSION), scheme, *parts))
     return hashlib.sha256(material.encode("utf-8", "surrogatepass")).hexdigest()

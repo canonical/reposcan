@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 
 import reposcan.actions.sbom as sbom_cmd
 from reposcan import __version__
-from reposcan.execution.process import Failure
+from reposcan.result import Err
 from reposcan.scans.sbom import SbomScan
 from tests.unit.actions.helpers import (
     FAKE_REPOSITORY,
@@ -50,7 +50,7 @@ def test_sbom_forwards_dependency_options_to_the_scan() -> None:
 def test_sbom_reports_a_scan_failure_as_one() -> None:
     with tempfile.TemporaryDirectory() as repo:
         action = sbom_cmd.SbomCommand(path=repo)
-        with patch_run_sbom_scan(sbom_cmd, Failure(reason="cdxgen crashed")):
+        with patch_run_sbom_scan(sbom_cmd, Err("cdxgen crashed")):
             code = action.run()
     assert code == 1
 

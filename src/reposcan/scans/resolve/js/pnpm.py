@@ -6,7 +6,7 @@
 import logging
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import succeeded
+from reposcan.result import is_err
 from reposcan.tools.registry import PNPM
 
 logger = logging.getLogger(__name__)
@@ -36,11 +36,11 @@ class Pnpm:
         *,
         allow_code_execution: bool,
     ) -> None:
-        """Write a `pnpm-lock.yaml` for the workspace in `workdir`, best-effort."""
+        """Write a `pnpm-lock.yaml` for the workspace in `workdir`."""
         pnpm = PNPM.locate_executable(install_dir)
         command = [pnpm, "install", "--lockfile-only", "--ignore-scripts"]
         logger.debug("detected pnpm; running: %s", " ".join(command))
-        if succeeded(ctx.run(command, cwd=workdir, env=_ENV)):
-            logger.debug("resolved pnpm workspace in %s", workdir)
-        else:
+        if is_err(ctx.run(command, cwd=workdir, env=_ENV, check=True)):
             logger.warning("pnpm resolution skipped for %s: install failed", workdir)
+        else:
+            logger.debug("resolved pnpm workspace in %s", workdir)

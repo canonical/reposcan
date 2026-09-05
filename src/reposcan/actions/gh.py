@@ -1,12 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan gh` group.
-
-`reposcan.scm.github` is imported inside `run` rather than at module scope: it needs
-`requests`, which only the `service` extra installs, and `app` imports every action
-module to build the command tree.
-"""
+"""The `reposcan gh` group."""
 
 import logging
 import os
@@ -19,9 +14,9 @@ from typing import TYPE_CHECKING
 from reposcan import output
 from reposcan.actions.base import Action
 from reposcan.cli_kit import Group, flag, option
-from reposcan.execution.process import Failure
 from reposcan.logging import TRANSIENT
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
+from reposcan.result import Err, Result, is_err
 from reposcan.scm import clone
 from reposcan.table import DEFAULT_WRAP_LINES
 
@@ -61,7 +56,7 @@ class GhAction(Action):
         help="Skip repositories whose owner/name matches a comma-separated glob."
     )
 
-    def load_github(self) -> "ModuleType | Failure":
+    def load_github(self) -> "Result[ModuleType]":
         """Import the GitHub client."""
         # Imported here, not at module: `app` imports every action module to build
         # the command tree, and 'requests' is only included with the 'service' extra.
@@ -69,25 +64,25 @@ class GhAction(Action):
             from reposcan.scm import github
         except ModuleNotFoundError as exc:
             if exc.name != "requests":
-                raise  # a real import bug, not a missing extra
-            return Failure(
-                reason="reading from GitHub needs the 'service' extra: "
+                return Err(f"could not import reposcan.scm.github: {exc}")
+            return Err(
+                "reading from GitHub needs the 'service' extra: "
                 "pipx install 'reposcan[service]'"
             )
         return github
 
-    def get_repositories(self) -> "list[Repository] | Failure":
+    def get_repositories(self) -> "Result[list[Repository]]":
         """Fetch the repositories from `--org` and `--enterprise`, and apply filters."""
         github = self.load_github()
-        if isinstance(github, Failure):
+        if isinstance(github, Err):
             return github
         token = self.read_token()
-        if isinstance(token, Failure):
+        if isinstance(token, Err):
             return token
         discovered = github.list_repositories(
             org=self.org, enterprise=self.enterprise, token=token
         )
-        if isinstance(discovered, Failure):
+        if isinstance(discovered, Err):
             return discovered
         selected = github.filter_repositories(
             discovered,
@@ -98,8 +93,12 @@ class GhAction(Action):
         logger.info("%d of %d repositories selected", len(selected), len(discovered))
         return selected
 
-    def read_token(self) -> str | Failure:
-        """Read the gh token the caller supplied, if any."""
+    def read_token(self) -> Result[str]:
+        """Read the GitHub token from the environment or `--token-file`.
+
+        Returns:
+            The token, or an empty string when neither source supplies one.
+        """
         token = os.environ.get("REPOSCAN_GH_TOKEN", "")
         if token:
             if self.token_file is not None:
@@ -111,7 +110,7 @@ class GhAction(Action):
             with open(self.token_file, encoding="utf-8") as handle:
                 return handle.read().strip()
         except OSError as exc:
-            return Failure(reason=f"could not read token file {self.token_file}: {exc}")
+            return Err(f"could not read token file {self.token_file}: {exc}")
 
 
 class ListGhRepos(GhAction):
@@ -149,17 +148,15 @@ class ListGhRepos(GhAction):
             logger.error("requires --org or --enterprise")
             return 2
         selected = self.get_repositories()
-        if isinstance(selected, Failure):
-            logger.error("%s", selected.reason)
+        if isinstance(selected, Err):
+            logger.error("%s", selected.msg)
             return 1
 
         # A file always takes JSON; --format chooses how stdout looks.
         if self.output is not None or self.format == Format.JSON:
-            failure = output.write_json(
-                [asdict(repo) for repo in selected], self.output
-            )
-            if isinstance(failure, Failure):
-                logger.error("%s", failure.reason)
+            rows = [asdict(repo) for repo in selected]
+            if is_err(err := output.write_json(rows, self.output)):
+                logger.error("%s", err.msg)
                 return 1
         else:
             output.write_table(
@@ -197,17 +194,17 @@ class CloneGhRepos(GhAction):
         help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREADS}).",
     )
 
-    def get_repositories(self) -> "list[Repository] | Failure":
-        """Reconcile repo, org, and enterprise options and return a list of repos."""
+    def get_repositories(self) -> "Result[list[Repository]]":
+        """List the repositories named by `--repo`, or by `--org` and `--enterprise`."""
         if not self.repo:
             return super().get_repositories()
         if self.org or self.enterprise:
             logger.warning("--repo was provided, ignoring --org and --enterprise")
         github = self.load_github()
-        if isinstance(github, Failure):
+        if isinstance(github, Err):
             return github
         token = self.read_token()
-        if isinstance(token, Failure):
+        if isinstance(token, Err):
             return token
         return github.get_repositories(self.repo, token)
 
@@ -223,13 +220,13 @@ class CloneGhRepos(GhAction):
             logger.error("give at least one of --org, --enterprise, or --repo")
             return 2
         selected = self.get_repositories()
-        if isinstance(selected, Failure):
-            logger.error("%s", selected.reason)
+        if isinstance(selected, Err):
+            logger.error("%s", selected.msg)
             return 1
 
         token = self.read_token()
-        if isinstance(token, Failure):
-            logger.error("%s", token.reason)
+        if isinstance(token, Err):
+            logger.error("%s", token.msg)
             return 1
 
         failed = 0
@@ -249,10 +246,9 @@ class CloneGhRepos(GhAction):
                 logger.info(
                     "[%d/%d] %s", done, len(selected), repo.full_name, extra=TRANSIENT
                 )
-                synced = future.result()
                 # Don't crash the entire task for one failed repo
-                if isinstance(synced, Failure):
-                    logger.error("%s: %s", repo.full_name, synced.reason)
+                if is_err(err := future.result()):
+                    logger.error("%s: %s", repo.full_name, err.msg)
                     failed += 1
         logger.info("mirrored %d of %d", len(selected) - failed, len(selected))
         return 1 if failed else 0

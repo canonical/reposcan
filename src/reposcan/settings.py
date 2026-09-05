@@ -1,12 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Parameter-value resolution.
-
-`resolve` is injected to the cli_kit `Cli`: for each in-scope parameter it
-takes the value from the command line, then a REPOSCAN_* env var, then the
-saved config file, falling back to the parameter's default.
-"""
+"""Parameter-value resolution: the resolver reposcan injects into the cli_kit Cli."""
 
 import logging
 import os
@@ -17,6 +12,7 @@ from reposcan.actions.base import Action
 from reposcan.cli_kit import Param, coerce, collect_params
 from reposcan.config import load
 from reposcan.logging import configure_logging
+from reposcan.result import Err
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +32,9 @@ _NO_ENV_KEYS = frozenset({"env"})
 def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]:
     """Resolve reposcan's parameters: CLI > REPOSCAN_* env > config > default.
 
-    injected to Cli.run; `cli_values` are the parsed command-line values. this overrides
-    or injects additional parameters from other sources.
+    Called by `Cli.run` with every in-scope parameter and `cli_values`, the values the
+    command line supplied. A parameter no source sets is left out, so cli_kit fills its
+    default.
     """
     config = load()
     configure_logging(_select_verbosity(scope, cli_values, config))
@@ -52,7 +49,7 @@ def resolve(scope: list[Param], cli_values: Mapping[str, Any]) -> dict[str, Any]
 def _select_verbosity(
     scope: list[Param], cli_values: Mapping[str, Any], config: Mapping[str, Any]
 ) -> str:
-    """Identify the selected (or default) logging verbosity level."""
+    """Select the logging verbosity level."""
     param = next((p for p in scope if p.name == "verbosity"), None)
     if param is None:
         return "info"
@@ -66,9 +63,14 @@ def _resolve_one(
     env: Mapping[str, str],
     config: Mapping[str, Any],
 ) -> Any:
-    """Resolve `param` from its sources, or `_UNSET` if none sets it.
+    """Resolve `param` from its sources.
 
-    Precedence is the command line, then a REPOSCAN_* env var, then the saved config.
+    Positionals, remainders, and `_NO_ENV_KEYS` are never read from the environment.
+    An env or config value that will not coerce is warned about and skipped rather
+    than failing the command. Two sources with disagreeing values produce a log.
+
+    Returns:
+        The winning value, or `_UNSET` if no source sets it.
     """
     present: list[tuple[str, Any]] = []
     if param.name in cli_values:
@@ -81,11 +83,11 @@ def _resolve_one(
     for source, raw in ambient:
         if raw is None:
             continue
-        value, error = coerce(param, raw)
-        if error is not None:
-            logger.warning("ignoring invalid %s %s: %s", source, param.name, error)
+        result = coerce(param, raw)
+        if isinstance(result, Err):
+            logger.warning("ignoring invalid %s %s: %s", source, param.name, result.msg)
             continue
-        present.append((source, value))
+        present.append((source, result))
     if not present:
         return _UNSET
     winner_source, winner = present[0]

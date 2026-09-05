@@ -7,7 +7,8 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import ignore, sarif
 
 
@@ -23,7 +24,7 @@ class _FileContext:
         self._committed = committed or {}
         self.cwd: str | None = None
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         return None
 
     def run(
@@ -34,16 +35,17 @@ class _FileContext:
         env: Mapping[str, str] | None = None,
         user: object | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         self.cwd = cwd
         if list(command[:2]) == ["git", "show"]:
             key, source = command[2], self._committed
         else:
             key, source = command[1], self._files
         if key not in source:
-            return ExecResult(1, "", f"no such path: {key}")
+            return Err(f"no such path: {key}")
         return ExecResult(0, source[key], "")
 
     def stop(self) -> None:

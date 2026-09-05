@@ -11,7 +11,7 @@ The form of the verb decides where a name is allowed:
 - infinitives are allowed anywhere.
 - dynamic-predicates (third-person forms of dynamic verbs), need `self` as their
   subject and are only allowed on instance methods.
-  - okay: `run.matches(other)` is a
+  - okay: `run.matches(other)`
   - not okay: `matches(run, other)`
 - stative-predicates are allowed anywhere: `is_sqlite(data)` cannot be misread.
 - specific prepositions (`from_` and `to_`) are allowed in certain contexts.
@@ -29,6 +29,7 @@ against ALLOW_LIST as given, so pass them repo-relative to be excused by it.
 import ast
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
@@ -93,7 +94,7 @@ class Vocabulary:
 
 
 def read_verbs() -> Vocabulary:
-    """Read verbs.txt into its sections, rejecting anything it cannot place."""
+    """Read verbs.txt into its sections."""
     sections: dict[str, set[str]] = {name: set() for name in _SECTIONS}
     current: str | None = None
     for number, raw in enumerate(VERBS_FILE.read_text().splitlines(), 1):
@@ -273,10 +274,60 @@ def find_violations(path: Path, verbs: Vocabulary) -> list[tuple[int, str, str]]
     return sorted(found)
 
 
+# A sample to test every rule
+_SAMPLE = """
+class Rule:
+    def matches(self, other: str) -> bool: ...        # ok: self is the subject
+    def is_valid(self) -> bool: ...                   # ok: stative, anywhere
+    def to_dict(self) -> dict: ...                    # ok: conversion
+    def to_table(self, limit: int) -> dict: ...       # BAD: to_ takes only self
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Rule": ...        # ok: builds its own class
+    @classmethod
+    def from_text(cls, raw: str) -> str: ...          # BAD: returns another type
+    @classmethod
+    def ignores(cls, path: str) -> bool: ...          # BAD: predicate needs self
+
+
+def build_index(x: int) -> int: ...                   # ok: base form
+def is_sqlite(data: bytes) -> bool: ...               # ok: stative free function
+def unknown_verb(x: int) -> int: ...                  # BAD: not a known verb
+def matches(a: str, b: str) -> bool: ...              # BAD: predicate needs self
+def from_module(x: int) -> Rule: ...                  # BAD: not a classmethod
+def to_module(x: int) -> dict: ...                    # BAD: not an instance method
+"""
+
+_EXPECTED = {
+    "to_table",
+    "from_text",
+    "ignores",
+    "unknown_verb",
+    "matches",
+    "from_module",
+    "to_module",
+}
+
+
+def verify_self(verbs: Vocabulary) -> None:
+    """Run the rules over a known-bad sample."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sample = Path(tmp) / "sample.py"
+        sample.write_text(_SAMPLE)
+        found = {name for _, name, _ in find_violations(sample, verbs)}
+    if found != _EXPECTED:
+        raise SystemExit(
+            f"{Path(__file__).name} failed its self-test:\n"
+            f"  missed    {sorted(_EXPECTED - found)}\n"
+            f"  spurious  {sorted(found - _EXPECTED)}"
+        )
+
+
 def main(argv: list[str]) -> int:
     """Enforce function-naming conventions."""
-    paths = [Path(name) for name in argv] or list_python_files()
     verbs = read_verbs()
+    verify_self(verbs)
+    paths = [Path(name) for name in argv] or list_python_files()
     reported = 0
     for path in paths:
         if not path.exists():

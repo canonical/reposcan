@@ -10,10 +10,11 @@ from contextlib import contextmanager
 
 import reposcan.image.docker as docker
 from reposcan import paths
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.ensure import ensure_built, ensure_pulled
 from reposcan.image.spec import BuildSpec
+from reposcan.result import Err, Result
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 
@@ -47,7 +48,7 @@ class _FakeBuilder(DockerImageBuilder):
     def read_identity(self, reference: str) -> str | None:
         return self._id
 
-    def build(self, spec: BuildSpec) -> str:
+    def build(self, spec: BuildSpec) -> Result[str]:
         self.builds += 1
         self._id = "built-id"
         return "img:abc"
@@ -66,16 +67,14 @@ class _FakeDocker:
         *,
         identity: str | None,
         present: bool = True,
-        pull_error: Failure | None = None,
+        pull_error: Err | None = None,
     ) -> None:
         self.identity = identity
         self.present = present
         self.pull_error = pull_error
         self.pulls = 0
 
-    def __call__(
-        self, command: Sequence[str], **kwargs: object
-    ) -> ExecResult | Failure:
+    def __call__(self, command: Sequence[str], **kwargs: object) -> Result[ExecResult]:
         argv = list(command)
         if argv[:2] == ["docker", "pull"]:
             self.pulls += 1
@@ -85,7 +84,7 @@ class _FakeDocker:
             return ExecResult(0, "", "")
         if argv[:3] == ["docker", "image", "inspect"]:
             if not self.present or self.identity is None:
-                return ExecResult(1, "", "No such image")
+                return Err("No such image")
             return ExecResult(0, f"{self.identity}\n", "")
         raise AssertionError(f"unexpected command: {argv}")
 
@@ -127,9 +126,9 @@ def test_a_tag_is_pinned_on_first_use_and_refused_once_it_moves() -> None:
         # the local fast path is digest-only.
         assert docker.pulls == 2
         docker.identity = "sha256:bbb"  # the tag now points at a different image
-        result = ensure_pulled(ref)
-        assert isinstance(result, Failure)
-        assert "changed since first use" in result.reason
+        moved = ensure_pulled(ref)
+        assert isinstance(moved, Err)
+        assert "changed since first use" in moved.msg
 
 
 def test_a_digest_ref_is_pulled_once_then_trusted_locally() -> None:
@@ -148,14 +147,14 @@ def test_a_digest_ref_is_pulled_once_then_trusted_locally() -> None:
 def test_pull_failures_are_returned() -> None:
     ref = "ghcr.io/acme/thing@sha256:" + "a" * 64
     unreachable = _FakeDocker(
-        identity=None, present=False, pull_error=Failure(reason="no network")
+        identity=None, present=False, pull_error=Err("no network")
     )
     with _isolated_cache(), _docker(unreachable):
-        result = ensure_pulled(ref)
-        assert isinstance(result, Failure) and "no network" in result.reason
-    # The pull "succeeds" but the image is still not inspectable: a Failure, not a
+        failed = ensure_pulled(ref)
+        assert isinstance(failed, Err) and "no network" in failed.msg
+    # The pull "succeeds" but the image is still not inspectable: a Err, not a
     # fall-through to a stale local state.
     with _isolated_cache(), _docker(_FakeDocker(identity=None, present=False)):
-        result = ensure_pulled(ref)
-        assert isinstance(result, Failure)
-        assert "not present after pull" in result.reason
+        vanished = ensure_pulled(ref)
+        assert isinstance(vanished, Err)
+        assert "not present after pull" in vanished.msg

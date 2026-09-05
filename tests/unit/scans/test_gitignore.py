@@ -5,7 +5,8 @@
 
 from collections.abc import Mapping, Sequence
 
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.gitignore import GitIgnore
 
@@ -13,11 +14,11 @@ from reposcan.scans.gitignore import GitIgnore
 class _FakeContext:
     name = "fake"
 
-    def __init__(self, result: ExecResult | Failure) -> None:
+    def __init__(self, result: Result[ExecResult]) -> None:
         self._result = result
         self.commands: list[list[str]] = []
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         return None
 
     def run(
@@ -28,10 +29,11 @@ class _FakeContext:
         env: Mapping[str, str] | None = None,
         user: object | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         self.commands.append(list(command))
         return self._result
 
@@ -49,9 +51,9 @@ def test_from_context_splits_git_output_into_dirs_and_files() -> None:
 
 
 def test_from_context_is_empty_when_git_fails() -> None:
-    # Not a git repo / git missing -> no exclusions, scan proceeds unfiltered.
-    for result in (Failure(reason="no git"), ExecResult(128, "", "fatal")):
-        assert GitIgnore.from_context(_FakeContext(result), "/x") == GitIgnore()
+    # Not a git repo / git missing -> no exclusions, scan proceeds unfiltered. The
+    # call passes `check`, so a git that ran and failed arrives as an Err too.
+    assert GitIgnore.from_context(_FakeContext(Err("no git")), "/x") == GitIgnore()
 
 
 def test_ignores_matches_ignored_files_and_directory_subtrees() -> None:

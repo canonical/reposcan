@@ -13,6 +13,7 @@ from reposcan.actions.base import Action
 from reposcan.app import Reposcan, main
 from reposcan.cli_kit import Group, option, parse
 from reposcan.logging import LOG_LEVELS
+from reposcan.result import Err
 
 
 def _resolve_isolated(scope, cli_values, env):
@@ -38,7 +39,7 @@ def _resolve_isolated(scope, cli_values, env):
 def _resolve_argv(argv: list[str], env: dict[str, str] | None = None) -> dict[str, Any]:
     """Parse `argv` against the real tree and resolve, with no env/config by default."""
     parsed = parse(Reposcan, Action, argv, "reposcan")
-    assert parsed.error is None, parsed.error
+    assert not isinstance(parsed, Err), parsed
     return _resolve_isolated(parsed.scope, parsed.values, env)
 
 
@@ -120,7 +121,7 @@ def _build_fake_scan_tree() -> type[Group]:
 
 def _resolve_scan(argv: list[str]) -> dict[str, Any]:
     parsed = parse(_build_fake_scan_tree(), Action, argv, "reposcan")
-    assert parsed.error is None, parsed.error
+    assert not isinstance(parsed, Err), parsed
     return _resolve_isolated(parsed.scope, parsed.values, None)
 
 

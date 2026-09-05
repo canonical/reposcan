@@ -8,7 +8,8 @@ its default ruleset and passes the SARIF through as the artifact.
 """
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.model import ToolInvocation
@@ -50,7 +51,7 @@ class SastScan(SecurityScan):
 
     def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifRun | Failure:
+    ) -> Result[sarif.SarifRun]:
         """Create a SarifRun from command execution output.
 
         Args:
@@ -59,11 +60,11 @@ class SastScan(SecurityScan):
             target: The scan root, used to normalize finding uris at ingestion.
 
         Returns:
-            The tool's normalized SARIF run, or a Failure if not SARIF.
+            The tool's normalized SARIF run, or an Err if not SARIF.
         """
         run = sarif.parse_run(output.stdout, tool, target)
         if run is None:
-            return Failure(reason=f"{tool} did not produce SARIF output")
+            return Err(f"{tool} did not produce SARIF output")
         # remove semgrep's "not logged in" failure; confuses downstream tools with a
         # "hash" that says "requires login"
         for finding in run.results:

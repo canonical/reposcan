@@ -6,7 +6,7 @@
 import logging
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import succeeded
+from reposcan.result import is_err
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +54,12 @@ class Npm:
         *,
         allow_code_execution: bool,
     ) -> None:
-        """Write a `package-lock.json` for the project in `workdir`, best-effort."""
+        """Write a `package-lock.json` for the project in `workdir`."""
         # npm ships with the Node install (registry.NODE, also_link), at bin/npm.
         npm = f"{install_dir}/bin/npm"
         command = [npm, "install", "--package-lock-only", "--ignore-scripts"]
         logger.debug("detected npm; running: %s", " ".join(command))
-        if succeeded(ctx.run(command, cwd=workdir, env=_ENV)):
-            logger.debug("resolved npm project in %s", workdir)
-        else:
+        if is_err(ctx.run(command, cwd=workdir, env=_ENV, check=True)):
             logger.warning("npm resolution skipped for %s: install failed", workdir)
+        else:
+            logger.debug("resolved npm project in %s", workdir)

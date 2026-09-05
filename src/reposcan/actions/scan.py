@@ -7,10 +7,9 @@
 one backend session, then consolidates their findings into a single SARIF report.
 `<types>` is one scan type or several, comma-separated -- or `all` for every type.
 
-Each scan's options (secrets' `--mode`/`--depth`, sca's
+Each scan's own options (secrets' `--mode`/`--depth`, sca's
 `--include-dev-dependencies`/`--allow-code-execution`) are declared on the scan classes
-and aggregated onto this command via `extra_options`; each carries a `requires` that its
-scan be among the selected types, so an option for an unselected scan is a usage error.
+and aggregated onto this command via `extra_options`.
 """
 
 import copy
@@ -24,8 +23,8 @@ from reposcan.backends import start_session
 from reposcan.cli_kit import Param, collect_params, flag, option, positional
 from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser, get_host_user, resolve_env
-from reposcan.execution.process import Failure
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
+from reposcan.result import is_err
 from reposcan.scans import ignore, sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.registry import SCANS, parse_scan_names
@@ -113,13 +112,13 @@ class ScanCommand(Action):
     extra_options = _aggregate_scan_options(SCANS)
 
     def run(self) -> int:
-        """Run the requested scans and return an exit code.
+        """Run the requested scans and write the report.
 
         Exit codes:
             0 when nothing at or above --fail-on was reported
             3 when a finding at or above --fail-on was reported
-            2 for a usage error
-            1 on a scan/tool error or a write failure
+            2 for a usage error, or when no backend could be selected
+            1 when a scan failed, or on a backend, database, or write failure
         """
         names = self.scans
         path = os.path.abspath(self.path)
@@ -171,15 +170,13 @@ class ScanCommand(Action):
             report = sarif.SarifDocument.from_runs(analysis.sarif_runs)
 
             if self.db is not None:
-                failed = db_write.write_analysis(self.db, analysis)
-                if failed is not None:
-                    logger.error(failed.reason)
+                if is_err(err := db_write.write_analysis(self.db, analysis)):
+                    logger.error(err.msg)
                     return 1
                 logger.info("recorded analysis %s in %s", analysis.uuid, self.db)
             if self.output is not None or self.format == Format.JSON:
-                failure = output.write_json(report.to_dict(), self.output)
-                if isinstance(failure, Failure):
-                    logger.error(failure.reason)
+                if is_err(err := output.write_json(report.to_dict(), self.output)):
+                    logger.error(err.msg)
                     return 1
             else:
                 output.write_table(*report.to_table(), limit=self.limit, wrap=self.wrap)

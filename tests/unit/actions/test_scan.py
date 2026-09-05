@@ -18,8 +18,8 @@ import reposcan.actions.scan as scan_cmd
 from reposcan import __version__
 from reposcan.cli_kit import collect_params
 from reposcan.db import read as db_read
-from reposcan.execution.process import Failure
 from reposcan.output import Format
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.registry import SCANS
 from reposcan.scans.repo import PROPERTY_SCHEMA
@@ -31,7 +31,7 @@ from tests.unit.actions.helpers import (
 
 
 def _run(
-    *outcomes: sarif.SarifRun | Failure,
+    *outcomes: Result[sarif.SarifRun],
     scans: Sequence[str] = ("secrets",),
     fmt: Format | None = None,
 ) -> tuple[int, str]:
@@ -84,12 +84,12 @@ def test_format_json_overrides_the_stdout_table_default() -> None:
 
 
 def test_a_scan_failure_returns_one_without_abandoning_the_other_scans() -> None:
-    code, _ = _run(Failure(reason="trufflehog failed"))
+    code, _ = _run(Err("trufflehog failed"))
     assert code == 1
     # A failed scan does not stop the rest: sast still runs and is reported, and the
     # failure outranks --fail-on, so the findings do not turn this into a 3.
     code, out = _run(
-        Failure(reason="trufflehog failed"),
+        Err("trufflehog failed"),
         build_sarif_run(2),
         scans=["secrets", "sast"],
     )

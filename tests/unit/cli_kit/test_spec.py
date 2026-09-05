@@ -13,13 +13,14 @@ import pytest
 from reposcan.actions.base import Action as Globals
 from reposcan.cli_kit import (
     Action,
-    check_requires,
     collect_params,
+    confirm_param_requirements,
     flag,
     option,
     positional,
     remainder,
 )
+from reposcan.result import is_err
 
 
 class _Sample:
@@ -74,13 +75,16 @@ def test_a_command_rejects_unknown_arguments() -> None:
         _Fields(bogus=1)
 
 
-def test_check_requires_enforces_a_dependency_only_when_the_option_is_set() -> None:
+def test_requirements_are_enforced_only_when_the_option_is_set() -> None:
     params = collect_params(_Fields)
-    assert check_requires(params, {"mode": "a", "depth": None}) is None  # depth unset
-    assert check_requires(params, {"mode": "b", "depth": 5}) is None  # satisfied
     assert (
-        check_requires(params, {"mode": "a", "depth": 5}) == "--depth requires --mode=b"
-    )
+        confirm_param_requirements(params, {"mode": "a", "depth": None}) is None
+    )  # depth unset
+    assert (
+        confirm_param_requirements(params, {"mode": "b", "depth": 5}) is None
+    )  # satisfied
+    unmet = confirm_param_requirements(params, {"mode": "a", "depth": 5})
+    assert is_err(unmet) and unmet.msg == "--depth requires --mode=b"
 
 
 class _WithExtra(Action):
@@ -104,9 +108,11 @@ class _AnyOf(Action):
     detail: int | None = option(convert=int, requires={"picks": ("a", "b")})
 
 
-def test_check_requires_supports_any_of_and_list_membership() -> None:
+def test_requirements_support_any_of_and_list_membership() -> None:
     params = collect_params(_AnyOf)
     # `detail` requires that `picks` (a list) contain "a" or "b".
-    assert check_requires(params, {"picks": ["a", "c"], "detail": 1}) is None
-    error = check_requires(params, {"picks": ["c"], "detail": 1})
-    assert error == "--detail requires a or b among picks"
+    assert (
+        confirm_param_requirements(params, {"picks": ["a", "c"], "detail": 1}) is None
+    )
+    unmet = confirm_param_requirements(params, {"picks": ["c"], "detail": 1})
+    assert is_err(unmet) and unmet.msg == "--detail requires a or b among picks"

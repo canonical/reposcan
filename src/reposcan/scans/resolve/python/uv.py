@@ -6,7 +6,7 @@
 import logging
 
 from reposcan.execution.context import ExecutionContext, read_file
-from reposcan.execution.process import ExecResult, succeeded
+from reposcan.result import is_err
 from reposcan.tools.registry import UV, UV_PYTHON_SUBDIR
 
 logger = logging.getLogger(__name__)
@@ -93,22 +93,17 @@ class Uv:
         # Point uv at the managed Python baked under the install root; as the scan user
         # it has no Python of its own and would otherwise try to fetch one at scan time.
         env = {"UV_PYTHON_INSTALL_DIR": f"{install_dir}/{UV_PYTHON_SUBDIR}"}
-        wheel_only = [*base, "--only-binary", ":all:"]
-        logger.debug("detected python; running: %s", " ".join(wheel_only))
-        result = ctx.run(wheel_only, cwd=workdir, env=env)
-        if succeeded(result):
-            logger.debug("resolved %s (wheel-only)", input_name)
+        # `--only-binary :all:` blocks local builds and constrains resolution: a pkg
+        # version published as sdist-only is passed over for an older one with a wheel.
+        command = base if allow_code_execution else [*base, "--only-binary", ":all:"]
+        logger.debug("detected python; running: %s", " ".join(command))
+        result = ctx.run(command, cwd=workdir, env=env, check=True)
+        if is_err(result):
+            lines = result.msg.strip().splitlines()
+            note = lines[-1] if lines else "resolver unavailable"
+            logger.warning("python resolution skipped for %s: %s", input_name, note)
             return
-        if allow_code_execution:
-            # Retry allowing source builds so source-only packages resolve (runs code).
-            logger.debug("retrying %s with source builds", input_name)
-            result = ctx.run(base, cwd=workdir, env=env)
-            if succeeded(result):
-                logger.info("resolved %s (with source builds)", input_name)
-                return
-        stderr = result.stderr.strip() if isinstance(result, ExecResult) else ""
-        note = stderr.splitlines()[-1] if stderr else "resolver unavailable"
-        logger.warning("python resolution skipped for %s: %s", input_name, note)
+        logger.debug("resolved %s", input_name)
 
 
 def _has_manifest(names: set[str]) -> bool:

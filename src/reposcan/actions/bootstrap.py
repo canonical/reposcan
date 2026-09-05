@@ -15,7 +15,7 @@ from reposcan.backends import AUTO
 from reposcan.cli_kit import flag, positional
 from reposcan.execution.context import ExecutionContext, resolve_env
 from reposcan.execution.local import LocalContext
-from reposcan.execution.process import Failure
+from reposcan.result import is_err
 from reposcan.tools.install import detect_platform, plan_installs
 from reposcan.tools.model import Platform, Tool
 from reposcan.tools.registry import TOOLS
@@ -34,7 +34,14 @@ class BootstrapAction(Action):
     confirm: bool = flag(help="Skip interactive confirmation before installing tools.")
 
     def run(self) -> int:
-        """Install the requested tools onto this host and return an exit code."""
+        """Install the requested tools onto this host, once the user confirms.
+
+        Exit codes:
+            0 when every tool installed
+            1 when the user declines, or a tool failed to install
+            2 when a backend other than 'local' was selected, or a tool name is
+              unknown
+        """
         if self.backend not in (None, AUTO, "local"):
             logger.error(
                 "The %s backend was selected, but bootstrap only applies to 'local'.",
@@ -54,8 +61,10 @@ def bootstrap(
     """Install `names` (an empty list means every scanning tool).
 
     Adds the prerequisites each depends on. Tools install as independent groups: if one
-    fails it is reported and the rest proceed. Returns 0 when every tool installed, 1 if
-    any failed, or 2 for an unknown tool name.
+    fails it is reported and the rest proceed.
+
+    Returns:
+        0 when every tool installed, 1 if any failed, or 2 for an unknown tool name.
     """
     if names:
         requested: list[Tool] = []
@@ -80,12 +89,8 @@ def bootstrap(
         for command in step.commands:
             # Feed the script on stdin, not as a `-c` argument: a hash-pinned lock
             # embedded in the command can exceed the kernel's per-argument size limit.
-            result = ctx.run(["sh", "-eu"], stdin=command)
-            if isinstance(result, Failure):
-                reason = result.reason
-                break
-            if not result.ok:
-                reason = result.stderr.strip() or f"exit code {result.exit_code}"
+            if is_err(err := ctx.run(["sh", "-eu"], stdin=command, check=True)):
+                reason = err.msg
                 break
         if reason is not None:
             logger.error("failed to install %s: %s", step.tool.name, reason)

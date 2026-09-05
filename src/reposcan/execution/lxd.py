@@ -13,7 +13,8 @@ from reposcan.execution.context import (
     wrap_with_setpriv,
 )
 from reposcan.execution.firewall import warn_if_lxd_bridge_blocked
-from reposcan.execution.process import ExecResult, Failure, run_process, succeeded
+from reposcan.execution.process import ExecResult, run_process
+from reposcan.result import Err, Result, get_err, is_err
 
 # The dedicated LXD project reposcan works in. Every instance- or image-acting lxc
 # command is pinned to it (the LXC prefix) so reposcan's ephemeral containers and its
@@ -22,8 +23,8 @@ PROJECT = "reposcan"
 LXC = ["lxc", "--project", PROJECT]
 
 
-def ensure_project() -> Failure | None:
-    """Create reposcan's LXD project if it does not exist yet; a no-op once it does.
+def ensure_project() -> Result[None]:
+    """Create reposcan's LXD project if it does not exist yet.
 
     features.images=true keeps the built reposcan image inside this project rather
     than the default one; features.profiles=false borrows the default project's
@@ -31,26 +32,21 @@ def ensure_project() -> Failure | None:
     per-project setup.
 
     Returns:
-        None when the project already exists or was created; a Failure if creating
-        it failed.
+        None when the project exists or was created; an error if creation failed.
     """
-    presence_check = run_process(["lxc", "project", "show", PROJECT])
-    if succeeded(presence_check):
+    if not is_err(run_process(["lxc", "project", "show", PROJECT], check=True)):
         return None
-    created = run_process(
-        [
-            "lxc",
-            "project",
-            "create",
-            PROJECT,
-            "-c",
-            "features.images=true",
-            "-c",
-            "features.profiles=false",
-        ],
-        check=True,
-    )
-    return created if isinstance(created, Failure) else None
+    argv = [
+        "lxc",
+        "project",
+        "create",
+        PROJECT,
+        "-c",
+        "features.images=true",
+        "-c",
+        "features.profiles=false",
+    ]
+    return get_err(run_process(argv, check=True))
 
 
 class LxdContext:
@@ -74,11 +70,10 @@ class LxdContext:
         self._env = dict(env or {})
         self._instance_name: str | None = None
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         warn_if_lxd_bridge_blocked()
-        project_creation_error = ensure_project()
-        if project_creation_error is not None:
-            return project_creation_error
+        if is_err(err := ensure_project()):
+            return err
         handle = f"reposcan-{uuid4().hex[:12]}"
         argv = [*LXC, "launch", self._image, handle, "--ephemeral"]
         idmap = _build_raw_idmap(self._user)
@@ -88,16 +83,16 @@ class LxdContext:
             # so each scan maps exactly the invoking user.
             argv += ["--config", f"raw.idmap={idmap}"]
         result = run_process(argv)
-        if isinstance(result, Failure):
+        if isinstance(result, Err):
             return result
         if result.exit_code != 0:
-            return Failure(reason=result.stderr.strip() or "lxc launch failed")
+            return Err(result.stderr.strip() or "lxc launch failed")
         self._instance_name = handle
         if self._mount_source is not None:
             return self._mount(handle, self._mount_source)
         return None
 
-    def _mount(self, handle: str, mount_source: str) -> Failure | None:
+    def _mount(self, handle: str, mount_source: str) -> Result[None]:
         """Attach `mount_source` read-only at `locate_mounted_target(mount_source)`.
 
         Args:
@@ -105,24 +100,21 @@ class LxdContext:
             mount_source: The host directory to make available for scanning.
 
         Returns:
-            None on success, or a Failure if the disk device could not be added.
+            None on success, or an error if the disk device could not be added.
         """
-        add = run_process(
-            [
-                *LXC,
-                "config",
-                "device",
-                "add",
-                handle,
-                "scan",
-                "disk",
-                f"source={mount_source}",
-                f"path={locate_mounted_target(mount_source)}",
-                "readonly=true",
-            ],
-            check=True,
-        )
-        return add if isinstance(add, Failure) else None
+        argv = [
+            *LXC,
+            "config",
+            "device",
+            "add",
+            handle,
+            "scan",
+            "disk",
+            f"source={mount_source}",
+            f"path={locate_mounted_target(mount_source)}",
+            "readonly=true",
+        ]
+        return get_err(run_process(argv, check=True))
 
     def run(
         self,
@@ -132,12 +124,13 @@ class LxdContext:
         env: Mapping[str, str] | None = None,
         user: RunUser | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         if self._instance_name is None:
-            return Failure(reason="container is not started")
+            return Err("container is not started")
         argv = [*LXC, "exec", self._instance_name]
         if cwd is not None:
             argv += ["--cwd", cwd]
@@ -153,6 +146,7 @@ class LxdContext:
         return run_process(
             argv,
             timeout=timeout,
+            check=check,
             stream_stdout=stream_stdout,
             stream_stderr=stream_stderr,
             stdin=stdin,
@@ -169,8 +163,10 @@ def _build_raw_idmap(user: RunUser | None) -> str | None:
 
     `both <uid> <uid>` maps both the uid and the primary gid to identity; each
     supplementary gid gets a `gid <gid> <gid>` line. Root (uid 0) is already in the
-    default idmap, so it needs no entry -- mapping it again would conflict. None is
-    also returned when no user is set (the default idmap applies).
+    default idmap, so it needs no entry -- mapping it again would conflict.
+
+    Returns:
+        The raw.idmap lines, or None when no user is set or the user is root.
     """
     if user is None or user.uid == 0:
         return None

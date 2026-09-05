@@ -4,9 +4,7 @@
 """The action base carrying reposcan's flow-down global parameters.
 
 Every leaf action subclasses this, so `self.backend`/`self.verbosity`/`self.uid`/
-`self.image` are available (typed) in every `run`, and the globals may be given
-anywhere on the command line (`--backend`, `-v`/`--verbosity`, `--uid`, `--image`),
-via env (REPOSCAN_<NAME>), or in the config file. Each parameter's long flag is
+`self.image` are available (typed) in every `run`. Each parameter's long flag is
 inferred from its name, so only the short `-v` is spelled out here.
 """
 
@@ -23,7 +21,7 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _parse_uid(value: str) -> int:
-    """Parse `value` as a non-negative integer uid, or raise ValueError."""
+    """Parse `value` as a non-negative integer uid."""
     try:
         uid = int(value)
     except ValueError:
@@ -34,7 +32,7 @@ def _parse_uid(value: str) -> int:
 
 
 def _parse_env(value: str) -> str:
-    """`value` if it is a usable NAME or NAME=VALUE spec, or raise ValueError."""
+    """Parse `value` as a NAME or NAME=VALUE spec."""
     name = value.partition("=")[0]
     if _ENV_NAME.fullmatch(name) is None:
         raise ValueError(f"expected NAME or NAME=VALUE, got {value!r}")
@@ -42,7 +40,7 @@ def _parse_env(value: str) -> str:
 
 
 def _parse_image(value: str) -> str:
-    """`value` if it is a usable image reference or shorthand, or raise ValueError."""
+    """Parse `value` as a non-blank image reference or shorthand."""
     if value.strip():
         return value
     raise ValueError("give an image reference, 'canonical', or 'build'")

@@ -6,7 +6,7 @@
 from dataclasses import dataclass
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult
+from reposcan.result import get_value
 from reposcan.scans import sarif
 
 
@@ -19,7 +19,7 @@ class GitIgnore:
 
     @classmethod
     def from_context(cls, ctx: ExecutionContext, target: str) -> "GitIgnore":
-        """Build a GitIgnore config via ``git`` command.
+        """Build a GitIgnore from the paths `git` reports as ignored.
 
         Runs `git ls-files` (read-only) with `target` as the working directory, so
         git resolves its own ignore rules (.gitignore, .git/info/exclude, the global
@@ -33,23 +33,26 @@ class GitIgnore:
         Returns:
             The ignored directories and files, relative to the repository root.
         """
-        result = ctx.run(
-            [
-                "git",
-                "ls-files",
-                "-z",  # NUL-delimited, so odd paths are not quoted or split
-                "--others",  # untracked entries (ignored files are untracked)
-                "--ignored",
-                "--exclude-standard",  # honor .gitignore and the other ignore sources
-                "--directory",  # collapse a wholly-ignored directory to "<dir>/"
-            ],
-            cwd=target,
+        run = get_value(
+            ctx.run(
+                [
+                    "git",
+                    "ls-files",
+                    "-z",  # NUL-delimited, so odd paths are not quoted or split
+                    "--others",  # untracked entries (ignored files are untracked)
+                    "--ignored",
+                    "--exclude-standard",  # honor .gitignore and the other sources
+                    "--directory",  # collapse a wholly-ignored directory to "<dir>/"
+                ],
+                cwd=target,
+                check=True,
+            )
         )
-        if not (isinstance(result, ExecResult) and result.exit_code == 0):
+        if run is None:
             return cls()
         dirs: list[str] = []
         files: list[str] = []
-        for entry in result.stdout.split("\0"):
+        for entry in run.stdout.split("\0"):
             if not entry:
                 continue
             if entry.endswith("/"):
@@ -66,7 +69,7 @@ class GitIgnore:
         )
 
     def build_tool_flags(self, tool: str) -> list[str]:
-        """tool-specific CLI flags that make `tool` skip the ignored paths.
+        """Build the CLI flags that make `tool` skip the ignored paths.
 
         Args:
             tool: The tool the flags are for.

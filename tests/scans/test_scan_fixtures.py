@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from reposcan.execution.process import Failure
+from reposcan.result import Err
 from reposcan.scans import sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.registry import SCANS
@@ -66,7 +66,7 @@ def _run(name: str) -> None:
             session.install_dir,
             stream=True,
         )
-        assert not isinstance(run, Failure), f"{name}: {run}"
+        assert not isinstance(run, Err), f"{name}: {run.msg}"
         document = sarif.SarifDocument.from_runs([run])
         _assert_normalized(name, document)
         fixture.verify(document)

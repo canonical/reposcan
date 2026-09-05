@@ -6,7 +6,8 @@
 from collections.abc import Mapping, Sequence
 
 from reposcan.execution.context import RunUser
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans.repo import (
     ProjectIdentity,
     normalize_origin,
@@ -28,13 +29,14 @@ class FakeGit:
         env: Mapping[str, str] | None = None,
         user: RunUser | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         key = " ".join(command[1:3])
         if key not in self.replies:
-            return ExecResult(1, "", "unknown revision")
+            return Err("unknown revision")
         return ExecResult(0, self.replies[key], "")
 
 

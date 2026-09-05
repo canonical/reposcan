@@ -45,9 +45,9 @@ from reposcan import paths
 from reposcan.actions.exec import execute
 from reposcan.backends import BACKENDS, Backend
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import Failure
 from reposcan.image.ensure import ensure_built
 from reposcan.image.spec import build_spec
+from reposcan.result import Err
 from reposcan.tools.install import detect_platform
 from reposcan.tools.registry import TOOLS
 
@@ -90,10 +90,10 @@ def _invoke(ctx: ExecutionContext, name: str, args: list[str]) -> tuple[int, str
 
 
 def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> None:
-    availability = backend.check_availability()
-    if not availability.ok:
-        logger.warning(availability.reason)
-        pytest.skip(f"{backend.name} unavailable: {availability.reason}")
+    available = backend.check_availability()
+    if isinstance(available, Err):
+        logger.warning(available.msg)
+        pytest.skip(f"{backend.name} unavailable: {available.msg}")
     assert set(_VERSION_PROBE) == set(TOOLS)  # probe table matches the tool set
 
     builder, open_context = backend.builder, backend.context
@@ -104,7 +104,7 @@ def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> No
         reference = ensure_built(
             builder, build_spec(detect_platform()), force=force_rebuild
         )
-        assert not isinstance(reference, Failure), reference
+        assert not isinstance(reference, Err)
         logger.info("[%s] starting container from %s", backend.name, reference)
         ctx = open_context(reference)
         started = ctx.start()

@@ -5,11 +5,11 @@
 
 import logging
 
-from reposcan.execution.process import Failure
 from reposcan.image import cache, docker
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.lxd import LxdImageBuilder
 from reposcan.image.spec import BuildSpec
+from reposcan.result import Err, Result, is_err
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +20,20 @@ ImageBuilder = DockerImageBuilder | LxdImageBuilder
 
 
 def is_digest_pinned(ref: str) -> bool:
-    """Report whether `ref` pins image content by digest (name@sha256:...).
+    """Report whether `ref` is digest-pinned (name@sha256:...).
 
-    Returns:
-        The docker client verifies such a ref on pull, so it needs no trust-on-first-use
-        record.
+    The docker client verifies such a ref on pull, so it needs no trust-on-first-use
+    record of its own.
     """
     return "@sha256:" in ref
 
 
 def ensure_built(
     builder: ImageBuilder, spec: BuildSpec, *, force: bool = False
-) -> str | Failure:
-    """Build a verified image from `spec` and return its reference.
+) -> Result[str]:
+    """Build a verified image from `spec`.
 
-    Reuses the present image IFF when its hash matches its recorded identity.
+    An image already present is reused IFF its hash matches its recorded identity.
 
     Args:
         builder: The backend builder that names, hashes, and builds the image.
@@ -42,7 +41,7 @@ def ensure_built(
         force: Rebuild even when a matching image is already present.
 
     Returns:
-        The verified image reference, or a Failure if the build failed or the image
+        The verified image reference, or an error if the build failed or the image
         vanished after building.
     """
     reference = builder.derive_reference(spec)
@@ -58,17 +57,16 @@ def ensure_built(
                 reference,
             )
     logger.info("building %s image %s ...", builder.name, reference)
-    result = builder.build(spec)
-    if isinstance(result, Failure):
-        return result
+    if is_err(err := builder.build(spec)):
+        return err
     identity = builder.read_identity(reference)
     if identity is None:
-        return Failure(reason=f"{builder.name} image {reference} vanished after build")
+        return Err(f"{builder.name} image {reference} vanished after build")
     cache.record(reference, identity)
     return reference
 
 
-def ensure_pulled(ref: str) -> str | Failure:
+def ensure_pulled(ref: str) -> Result[str]:
     """Pull `ref` and return its reference.
 
     If the `ref` is digest-hash-pinned (e.g., ghcr.io/org/name@sha256:...), we
@@ -83,7 +81,7 @@ def ensure_pulled(ref: str) -> str | Failure:
     network to ensure we catch changes (i.e., a new :latest tag).
 
     Returns:
-        The reference to run, or a Failure if the pull failed, the image is absent
+        The reference to run, or an error if the pull failed, the image is absent
         after pulling, or a tag-only ref's content id no longer matches its record.
     """
     if is_digest_pinned(ref) and docker.read_image_identity(ref) is not None:
@@ -94,12 +92,11 @@ def ensure_pulled(ref: str) -> str | Failure:
         logger.info("remote image %s verified locally; reusing without pull", ref)
         return ref
 
-    error = docker.pull(ref)
-    if error is not None:
-        return error
+    if is_err(err := docker.pull(ref)):
+        return err
     identity = docker.read_image_identity(ref)
     if identity is None:
-        return Failure(reason=f"{ref} is not present after pull")
+        return Err(f"{ref} is not present after pull")
 
     if is_digest_pinned(ref):
         return ref
@@ -112,10 +109,9 @@ def ensure_pulled(ref: str) -> str | Failure:
     if recorded == identity:
         logger.info("remote image %s verified against its recorded id; reusing", ref)
         return ref
-    return Failure(
-        reason=(
-            f"remote image {ref} has changed since first use (recorded {recorded}, "
-            f"now {identity}): the tag has moved. Pin a specific image by digest "
-            f"(name@sha256:...) to accept it, or remove {ref} from the image cache."
-        )
+    return Err(
+        f"remote image {ref} has changed since first use (recorded "
+        f"{recorded}, now {identity}): the tag has moved. Pin a specific "
+        f"image by digest (name@sha256:...) to accept it, or remove {ref} "
+        f"from the image cache."
     )

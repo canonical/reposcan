@@ -84,6 +84,7 @@ relativize
 remember
 remove
 render
+reply
 request
 require
 resolve
@@ -104,6 +105,7 @@ sync
 test
 update
 use
+validate
 verify
 warn
 wrap

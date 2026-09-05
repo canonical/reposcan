@@ -5,7 +5,8 @@
 
 import json
 
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err
 from reposcan.scans import sarif
 from reposcan.scans.workflow import WorkflowScan
 
@@ -27,8 +28,8 @@ def test_create_run_then_merge_dedups_and_annotates_scanners() -> None:
     scan = WorkflowScan()
     zizmor_run = scan.create_run("zizmor", ExecResult(0, zizmor, ""), "/scan/acme")
     poutine_run = scan.create_run("poutine", ExecResult(0, poutine, ""), "/scan/acme")
-    assert not isinstance(zizmor_run, Failure)
-    assert not isinstance(poutine_run, Failure)
+    assert not isinstance(zizmor_run, Err)
+    assert not isinstance(poutine_run, Err)
     merged = sarif.merge_runs([zizmor_run, poutine_run])
     findings = merged.results
     assert len(findings) == 3  # the shared finding is deduped
@@ -42,4 +43,4 @@ def test_create_run_fails_when_a_tool_output_is_not_sarif() -> None:
     result = WorkflowScan().create_run(
         "zizmor", ExecResult(0, "not sarif", ""), "/scan/acme"
     )
-    assert isinstance(result, Failure)
+    assert isinstance(result, Err)

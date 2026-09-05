@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from reposcan.actions.scan_repos import find_worktrees
-from reposcan.execution.process import Failure
+from reposcan.result import Err, Result
 from reposcan.scans import bulk
 from reposcan.scans.analysis import Analysis
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
@@ -31,10 +31,10 @@ def _mocks(
     ) -> Analysis:
         return _build_analysis()
 
-    def fake_scan_one(path: str, *args: Any, **kwargs: Any) -> Analysis | Failure:
+    def fake_scan_one(path: str, *args: Any, **kwargs: Any) -> Result[Analysis]:
         scanned.append(path)
         if path in failures:
-            return Failure(reason=failures[path])
+            return Err(failures[path])
         recorded.append(path)
         return _build_analysis()
 
@@ -57,7 +57,7 @@ def test_one_failing_repository_does_not_abandon_the_rest() -> None:
         )
     assert sorted(scanned) == ["a", "b", "c"]  # it kept going
     assert sorted(recorded) == ["a", "c"]
-    assert sorted(p for p, r in results.items() if isinstance(r, Analysis)) == [
+    assert sorted(p for p, r in results.items() if not isinstance(r, Err)) == [
         "a",
         "c",
     ]
@@ -68,13 +68,13 @@ def test_an_unresolvable_image_fails_every_repository_without_scanning() -> None
     # one per repository discovered halfway through the run.
     scanned: list[str] = []
     saved = bulk.ensure_image
-    bulk.ensure_image = lambda backend, image: Failure(reason="no such image")
+    bulk.ensure_image = lambda backend, image: Err("no such image")
     try:
         results = bulk.scan_repositories(["a", "b"], ["secrets"], db="x.db")
     finally:
         bulk.ensure_image = saved
     assert scanned == []
-    reasons = [r.reason for r in results.values() if isinstance(r, Failure)]
+    reasons = [r.msg for r in results.values() if isinstance(r, Err)]
     assert reasons == ["no such image"] * 2
 
 

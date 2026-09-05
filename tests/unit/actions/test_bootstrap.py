@@ -12,7 +12,8 @@ import logging
 from collections.abc import Mapping, Sequence
 
 from reposcan.actions.bootstrap import bootstrap
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.tools.model import Platform
 
 _LINUX = Platform("linux", "amd64")
@@ -20,8 +21,7 @@ _ROOT = "/opt/tools"
 
 
 class _FakeContext:
-    """Records every command and returns success, unless a command contains
-    `fail_on`, in which case that one fails."""
+    """Records every command, failing any whose script contains `fail_on`."""
 
     name = "fake"
 
@@ -30,7 +30,7 @@ class _FakeContext:
         self.argvs: list[list[str]] = []
         self._fail_on = fail_on
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         return None
 
     def run(
@@ -41,15 +41,16 @@ class _FakeContext:
         env: Mapping[str, str] | None = None,
         user: object | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         script = stdin or ""  # sh -eu, with the script fed on stdin
         self.argvs.append(list(command))
         self.scripts.append(script)
         if self._fail_on is not None and self._fail_on in script:
-            return ExecResult(exit_code=1, stdout="", stderr="download failed")
+            return Err("download failed")
         return ExecResult(exit_code=0, stdout="", stderr="")
 
     def stop(self) -> None:

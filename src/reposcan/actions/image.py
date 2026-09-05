@@ -9,8 +9,8 @@ import sys
 from reposcan.actions.base import Action
 from reposcan.backends import select_backend
 from reposcan.cli_kit import Group, flag, positional
-from reposcan.execution.process import Failure
 from reposcan.image import cache
+from reposcan.result import Err, is_err
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +24,17 @@ class ImageBuild(Action):
     def run(self) -> int:
         """Build (or reuse) the reposcan image and print its reference."""
         backend = select_backend(self.backend)
-        if isinstance(backend, Failure):
-            logger.error(backend.reason)
+        if isinstance(backend, Err):
+            logger.error(backend.msg)
             return 2
         if not backend.containerized:
             logger.error("the %s backend cannot build images", backend.name)
             return 2
-        result = backend.build_image(force=self.force)
-        if isinstance(result, Failure):
-            logger.error(result.reason)
+        built = backend.build_image(force=self.force)
+        if isinstance(built, Err):
+            logger.error(built.msg)
             return 1
-        sys.stdout.write(f"{result}\n")
+        sys.stdout.write(f"{built}\n")
         return 0
 
 
@@ -79,14 +79,15 @@ def list_cache() -> int:
 def remove_cache_entry(reference: str) -> int:
     """Remove `reference` from the image cache.
 
-    Returns 0 when removed, 1 when it was not in the cache or the cache could not be
-    written.
+    Returns:
+        0 when removed, 1 when it was not in the cache or the cache could not be
+        written.
     """
-    result = cache.remove(reference)
-    if isinstance(result, Failure):
-        logger.error(result.reason)
+    removed = cache.remove(reference)
+    if isinstance(removed, Err):
+        logger.error(removed.msg)
         return 1
-    if not result:
+    if not removed:
         logger.error("no image cache entry for %s", reference)
         return 1
     logger.info("removed %s from the image cache", reference)
@@ -96,12 +97,12 @@ def remove_cache_entry(reference: str) -> int:
 def clear_cache() -> int:
     """Remove every image cache entry.
 
-    Returns 0 on success, 1 if the cache could not be written.
+    Returns:
+        0 on success, 1 when the cache could not be written.
     """
     count = len(cache.load())
-    error = cache.clear()
-    if error is not None:
-        logger.error(error.reason)
+    if is_err(err := cache.clear()):
+        logger.error(err.msg)
         return 1
     noun = "entry" if count == 1 else "entries"
     logger.info("cleared the image cache (%d %s)", count, noun)

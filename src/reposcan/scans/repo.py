@@ -6,7 +6,7 @@
 A scan records which repository it covered and where in that repository's history it
 sat, so a long-lived report database can tell one project's findings from another's
 and place a scan relative to its neighbours. Everything here is read-only: it runs
-git in the execution context exactly as `gitignore.IgnoredPaths` does, and a target
+git in the execution context exactly as `gitignore.GitIgnore` does, and a target
 that is not a git working tree yields an identity carrying only its directory name.
 """
 
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult
+from reposcan.result import get_value
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,6 @@ def normalize_origin(url: str) -> str:
 
 
 def _git(ctx: ExecutionContext, target: str, *args: str) -> str | None:
-    """Run a git command in `target` and return its stripped stdout, or None."""
-    result = ctx.run(["git", *args], cwd=target)
-    if not (isinstance(result, ExecResult) and result.exit_code == 0):
-        return None
-    return result.stdout.strip()
+    """Run a git command in `target` and return its stripped stdout."""
+    run = get_value(ctx.run(["git", *args], cwd=target, check=True))
+    return None if run is None else run.stdout.strip()

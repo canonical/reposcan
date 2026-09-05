@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""SARIF tests.scans.sarif)."""
+"""Tests for SARIF building, parsing, and merging (reposcan.scans.sarif)."""
 
 import hashlib
 import json
@@ -10,6 +10,7 @@ from typing import cast
 
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.model import ToolInvocationRecord
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
@@ -120,7 +121,7 @@ def test_parse_relativizes_every_location_not_just_the_primary() -> None:
 
 def test_add_primarylocationlinehash() -> None:
     class _Ctx:
-        def run(self, command: list[str], **kwargs: object) -> ExecResult:
+        def run(self, command: list[str], **kwargs: object) -> Result[ExecResult]:
             return ExecResult(0, "import os\nSECRET = 'abc'\n", "")
 
     region = {"startLine": 2, "snippet": {"text": "    other = 'text'"}}
@@ -143,7 +144,7 @@ def test_add_primarylocationlinehash() -> None:
 
 def test_identical_lines_in_one_file_get_distinct_fingerprints() -> None:
     class _Ctx:
-        def run(self, command: list[str], **kwargs: object) -> ExecResult:
+        def run(self, command: list[str], **kwargs: object) -> Result[ExecResult]:
             return ExecResult(0, "password = get()\npassword = get()\n", "")
 
     findings = [
@@ -163,8 +164,8 @@ def test_identical_lines_in_one_file_get_distinct_fingerprints() -> None:
 
 def test_add_primarylocationlinehash_skips_when_the_source_is_unreadable() -> None:
     class _Ctx:
-        def run(self, command: list[str], **kwargs: object) -> ExecResult:
-            return ExecResult(1, "", "")
+        def run(self, command: list[str], **kwargs: object) -> Result[ExecResult]:
+            return Err("no such file")  # read_file runs `cat` with check
 
     finding = sarif.SarifResult.build("AWS", "k", "app.py", 12, "trufflehog", "/r")
     run = sarif.SarifRun.from_results("trufflehog", "1.0", [finding])

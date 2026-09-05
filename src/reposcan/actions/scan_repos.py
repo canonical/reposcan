@@ -87,7 +87,7 @@ class ScanRepos(Action):
 
 
 def find_worktrees(workspace: str) -> list[str]:
-    """Find the repositories a workspace holds, as `gh clone-repos` lays them out."""
+    """Find the worktrees under `workspace`, as `gh clone-repos` lays them out."""
     root = os.path.join(workspace, WORKTREE_DIR)
     found: list[str] = []
     for owner in sorted(os.listdir(root)) if os.path.isdir(root) else []:

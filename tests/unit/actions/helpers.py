@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import reposcan.scans.run as scans_run
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import Failure
+from reposcan.result import Result
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
@@ -59,7 +59,7 @@ class FakeSession:
 @contextmanager
 def patch_run_scan(
     module: Any,
-    *outcomes: sarif.SarifRun | Failure,
+    *outcomes: Result[sarif.SarifRun],
     captured: list[SecurityScan] | None = None,
 ) -> Iterator[None]:
     """Patch `run_scan` to return `outcomes` in turn, one per scan the command runs.
@@ -69,11 +69,11 @@ def patch_run_scan(
     `start_session` is patched on the command `module`. Each call's scan is recorded
     into `captured` when given.
     """
-    remaining: list[sarif.SarifRun | Failure] = list(outcomes)
+    remaining: list[Result[sarif.SarifRun]] = list(outcomes)
 
     def fake(
         scan: SecurityScan, *args: object, **kwargs: object
-    ) -> sarif.SarifRun | Failure:
+    ) -> Result[sarif.SarifRun]:
         if captured is not None:
             captured.append(scan)
         return remaining.pop(0)
@@ -95,7 +95,7 @@ def patch_run_scan(
 @contextmanager
 def patch_run_sbom_scan(
     module: Any,
-    *outcomes: cyclonedx.CycloneDxDocument | Failure,
+    *outcomes: Result[cyclonedx.CycloneDxDocument],
     captured: list[SbomScan] | None = None,
 ) -> Iterator[None]:
     """Patch the sbom command `module`'s `run_sbom_scan` to return `outcomes` in turn.
@@ -103,11 +103,11 @@ def patch_run_sbom_scan(
     Also patches `start_session` to a fake session and `read_repository_state` to
     `FAKE_REPOSITORY`; each call's scan is recorded into `captured` when given.
     """
-    remaining: list[cyclonedx.CycloneDxDocument | Failure] = list(outcomes)
+    remaining: list[Result[cyclonedx.CycloneDxDocument]] = list(outcomes)
 
     def fake(
         scan: SbomScan, *args: object, **kwargs: object
-    ) -> cyclonedx.CycloneDxDocument | Failure:
+    ) -> Result[cyclonedx.CycloneDxDocument]:
         if captured is not None:
             captured.append(scan)
         return remaining.pop(0)

@@ -12,8 +12,9 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 
 import reposcan.image.lxd as lxd
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
 from reposcan.image.spec import BuildSpec
+from reposcan.result import Err, Result
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = lxd.LxdImageBuilder()
@@ -21,7 +22,7 @@ _OK = ExecResult(0, "", "")
 
 
 @contextmanager
-def _patched(respond: Callable[[list[str]], ExecResult | Failure]):
+def _patched(respond: Callable[[list[str]], Result[ExecResult]]):
     calls: list[list[str]] = []
 
     def fake(
@@ -33,7 +34,7 @@ def _patched(respond: Callable[[list[str]], ExecResult | Failure]):
         check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         calls.append(list(command))
         return respond(list(command))
 
@@ -61,8 +62,9 @@ _LXC = ["lxc", "--project", "reposcan"]
 def test_build_launches_provisions_publishes_and_cleans_up() -> None:
     with _patched(lambda argv: _OK) as calls:
         alias = _BUILDER.build(_SPEC)
+    assert not isinstance(alias, Err)
     assert alias == f"reposcan-{_SPEC.short_digest}"
-    assert isinstance(alias, str) and ":" not in alias  # LXD aliases cannot use a colon
+    assert ":" not in alias  # LXD aliases cannot use a colon
     assert calls[0][:5] == [*_LXC, "image", "delete"]  # clear any stale alias first
     assert calls[1][:4] == [*_LXC, "launch"]
     assert calls[-2][:4] == [*_LXC, "publish"] and "--alias" in calls[-2]
@@ -72,14 +74,14 @@ def test_build_launches_provisions_publishes_and_cleans_up() -> None:
 
 def test_build_deletes_the_builder_even_when_a_step_fails() -> None:
     # Fail the "run the install script" exec step; the builder must still be deleted.
-    def respond(argv: list[str]) -> ExecResult | Failure:
+    def respond(argv: list[str]) -> Result[ExecResult]:
         if "sh" in argv and "/root/install.sh" in argv:
-            return Failure(reason="install failed")
+            return Err("install failed")
         return _OK
 
     with _patched(respond) as calls:
-        result = _BUILDER.build(_SPEC)
-    assert isinstance(result, Failure) and result.reason == "install failed"
+        failed = _BUILDER.build(_SPEC)
+    assert isinstance(failed, Err) and failed.msg == "install failed"
     assert calls[-1][:4] == [*_LXC, "delete"]
 
 
@@ -100,9 +102,9 @@ def test_build_aborts_early_and_warns_when_the_container_has_no_network() -> Non
     install script (no multi-minute doomed download), warn about the firewall cause,
     and still delete the builder."""
 
-    def respond(argv: list[str]) -> ExecResult | Failure:
+    def respond(argv: list[str]) -> Result[ExecResult]:
         if any("/dev/tcp" in arg for arg in argv):  # the connectivity probe
-            return ExecResult(1, "", "Network is unreachable")
+            return Err("Network is unreachable")  # the probe runs with check
         return _OK
 
     handler = _RecordingHandler()
@@ -110,11 +112,11 @@ def test_build_aborts_early_and_warns_when_the_container_has_no_network() -> Non
     logger.addHandler(handler)
     try:
         with _patched(respond) as calls:
-            result = _BUILDER.build(_SPEC)
+            offline = _BUILDER.build(_SPEC)
     finally:
         logger.removeHandler(handler)
 
-    assert isinstance(result, Failure) and "network" in result.reason.lower()
+    assert isinstance(offline, Err) and "network" in offline.msg.lower()
     assert not any("/root/install.sh" in argv for argv in calls)  # install never ran
     assert calls[-1][:4] == [*_LXC, "delete"]  # builder still cleaned up
     # The firewall warning is emitted (the diagnostic that was previously never shown).

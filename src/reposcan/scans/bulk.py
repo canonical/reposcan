@@ -12,8 +12,8 @@ from typing import Any
 from reposcan.backends import ensure_image, start_session
 from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser
-from reposcan.execution.process import Failure
 from reposcan.logging import TRANSIENT
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import ignore
 from reposcan.scans.analysis import Analysis
 from reposcan.scans.registry import SCANS
@@ -33,7 +33,7 @@ def scan_repositories(
     env: Mapping[str, str] | None = None,
     threads: int = 1,
     options: Mapping[str, Any] | None = None,
-) -> dict[str, Analysis | Failure]:
+) -> dict[str, Result[Analysis]]:
     """Scan every repository in `paths`, recording each analysis in the database.
 
     Args:
@@ -49,15 +49,14 @@ def scan_repositories(
 
     Returns:
         The analysis of each repository, keyed by its path, in completion order. A
-        repository that could not be scanned carries a Failure rather than raising.
+        repository that could not be scanned carries an error.
     """
     # Resolved once up front so concurrent sessions reuse one build or pull rather
     # than each starting its own
-    unavailable = ensure_image(backend, image)
-    if unavailable is not None:
-        return dict.fromkeys(paths, unavailable)
+    if is_err(err := ensure_image(backend, image)):
+        return dict.fromkeys(paths, err)
 
-    results: dict[str, Analysis | Failure] = {}
+    results: dict[str, Result[Analysis]] = {}
     with ThreadPoolExecutor(max_workers=max(1, threads)) as pool:
         running = {
             pool.submit(
@@ -77,8 +76,8 @@ def scan_repositories(
             path = running[future]
             result = future.result()
             logger.info("[%d/%d] %s", done, len(paths), path, extra=TRANSIENT)
-            if isinstance(result, Failure):
-                logger.error("%s: %s", path, result.reason)
+            if isinstance(result, Err):
+                logger.error("%s: %s", path, result.msg)
             results[path] = result
     return results
 
@@ -93,7 +92,7 @@ def _scan_one(
     user: RunUser | None,
     env: Mapping[str, str] | None,
     options: Mapping[str, Any],
-) -> Analysis | Failure:
+) -> Result[Analysis]:
     """Scan one repository and record it in the database."""
     scans = [SCANS[name](**_filter_options(name, options)) for name in scan_names]
     rules: list[ignore.IgnoreRule] = []
@@ -110,14 +109,14 @@ def _scan_one(
         env=env,
     ) as session:
         if not session.ok:
-            return Failure(reason="could not start a session")
+            return Err("could not start a session")
         analysis = run_analysis(session, scans, ignore_rules=rules, stream=False)
-    written = db_write.write_analysis(db, analysis)
-    return written if isinstance(written, Failure) else analysis
+    err = db_write.write_analysis(db, analysis)
+    return err if is_err(err) else analysis
 
 
 def _filter_options(name: str, options: Mapping[str, Any]) -> dict[str, Any]:
-    """Pick the options `name`'s scan class declares from those given."""
+    """Select the options `name`'s scan class declares."""
     from reposcan.cli_kit import collect_params
 
     return {

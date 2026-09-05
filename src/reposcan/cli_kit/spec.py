@@ -4,37 +4,23 @@
 """Command declaration surface: parameters, commands, groups, and the application.
 
 This is the neutral vocabulary a command declares itself with, independent of the
-CLI engine (which imports it, not the other way round).
-
-A command is a class: it declares its parameters as typed class attributes and
-implements `run`. On dispatch the engine resolves every in-scope parameter (via the
-application's resolver) and populates the instance, so `run` reads them as plain
-typed attributes:
-
-    class CacheRemove(Action):
-        name = "remove"
-        help = "Remove one entry by its image reference."
-        reference: str = positional(help="Image reference to forget.")
-
-        def run(self) -> int:
-            ...                                         # self.reference: str
+CLI engine (which imports it, not the other way round). Parsing and help rendering
+live in `reposcan.cli_kit`; resolution (turning parsed tokens plus any external
+sources into values) is supplied by the application as the `Cli` resolver. This
+module is the declaration surface plus the `Cli.run` entry point.
 
 Flow-down: parameters declared on the command base (the globals) are in scope for
 every command and may appear anywhere in the arguments, before or after any
-subcommand, at any depth -- so `self.backend` is available in every `run`, and
-`reposcan image cache --backend docker remove r1` is accepted. A global is simply a
-parameter declared on the base.
-
-Parsing and help rendering live in `reposcan.cli_kit`; resolution (turning
-parsed tokens plus any external sources into values) is supplied by the application
-as the `Cli` resolver. This module is the declaration surface plus the `Cli.run`
-entry point.
+subcommand, at any depth, so `reposcan image cache --backend docker remove r1` is
+accepted. A global is simply a parameter declared on the base.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, ClassVar, Generic, TypeVar
+
+from reposcan.result import Err, Result, is_err
 
 T = TypeVar("T")
 
@@ -85,7 +71,7 @@ class Param(Generic[T]):
         self.env_var = env_var
         # A cross-parameter dependency: another parameter -> the value(s) it must have
         # (or, for a list-valued parameter, contain) for this one to be valid; a tuple
-        # means any-of. Enforced by `check_requires` only when this parameter is set.
+        # means any-of. Enforced by `confirm_param_requirements` only when it is set.
         self.requires = requires
         if name:
             self._ensure_long_flag()
@@ -243,16 +229,18 @@ def collect_params(cls: type) -> list[Param]:
     return list(found.values())
 
 
-def check_required(params: list[Param], values: Mapping[str, Any]) -> str | None:
-    """Name the first required parameter left without a value, or None."""
+def confirm_required(params: list[Param], values: Mapping[str, Any]) -> Result[None]:
+    """Confirm every required parameter was given a value."""
     for param in params:
         if param.required and not param.positional and values.get(param.name) is None:
-            return f"missing option: {param.flags[-1]}"
+            return Err(f"missing option: {param.flags[-1]}")
     return None
 
 
-def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | None:
-    """Find the first unmet cross-parameter requirement in `params`, or None.
+def confirm_param_requirements(
+    params: Iterable[Param], values: Mapping[str, Any]
+) -> Result[None]:
+    """Confirm every cross-parameter requirement in `params` is met.
 
     A parameter's `requires` maps another parameter to the value(s) it must have. It is
     enforced only when the parameter is actually set (its resolved value differs from
@@ -276,8 +264,10 @@ def check_requires(params: Iterable[Param], values: Mapping[str, Any]) -> str | 
                 satisfied = target in allowed
             if satisfied:
                 continue
-            return _describe_requirement_error(
-                param, by_name.get(required_name), required, target
+            return Err(
+                _describe_requirement_error(
+                    param, by_name.get(required_name), required, target
+                )
             )
     return None
 
@@ -307,9 +297,17 @@ class Action:
     """A leaf command: typed parameter attributes plus a `run` method.
 
     Subclass it, set `name`/`help`, declare parameters as typed class attributes
-    (`option`/`flag`/`positional`/`remainder`), and implement `run`, which reads
-    `self.<name>` as an ordinary typed attribute -- both its own parameters and the
-    flow-down globals declared on the base.
+    (`option`/`flag`/`positional`/`remainder`), and implement `run`. On dispatch the
+    engine resolves every in-scope parameter and populates the instance, so `run`
+    reads them -- its own and the flow-down globals -- as plain typed attributes:
+
+        class CacheRemove(Action):
+            name = "remove"
+            help = "Remove one entry by its image reference."
+            reference: str = positional(help="Image reference to forget.")
+
+            def run(self) -> int:
+                ...                                     # self.reference: str
 
     Construct an Action instance like a dataclass (specify attribute values with
     kwargs). Unspecified parameters/attributes fall back to their defaults.
@@ -386,8 +384,8 @@ class Cli:
 
         args = list(sys.argv[1:] if argv is None else argv)
         parsed = parse(self.root, self.base, args, self.name)
-        if parsed.error is not None:
-            print(f"{parsed.prog}: {parsed.error}", file=sys.stderr)
+        if isinstance(parsed, Err):
+            print(parsed.msg, file=sys.stderr)  # parse names the command path itself
             return 2
         if parsed.help:
             print(render_help(parsed.node, parsed.scope, parsed.prog))
@@ -401,12 +399,11 @@ class Cli:
             resolved = self.resolve(parsed.scope, parsed.values)
         # Apply each parameter's default for anything unresolved
         values = {p.name: resolved.get(p.name, p.default) for p in parsed.scope}
-        missing = check_required(parsed.scope, values)
-        if missing is not None:
-            print(f"{parsed.prog}: {missing}", file=sys.stderr)
+        if is_err(err := confirm_required(parsed.scope, values)):
+            print(f"{parsed.prog}: {err.msg}", file=sys.stderr)
             return 2
-        requirement = check_requires(parsed.scope, values)
-        if requirement is not None:  # an unmet cross-option dependency is a usage error
-            print(f"{parsed.prog}: {requirement}", file=sys.stderr)
+        # an unmet cross-option dependency is a usage error too
+        if is_err(err := confirm_param_requirements(parsed.scope, values)):
+            print(f"{parsed.prog}: {err.msg}", file=sys.stderr)
             return 2
         return parsed.command(**values).run()

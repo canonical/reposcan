@@ -53,6 +53,7 @@ deps = ["-r{tox_root}/requirements/lint.txt"]
 commands = [
     ["bash", "tests/lint/ascii-check.sh", "py"],
     ["bash", "tests/lint/license-check.sh"],
+    ["python", "tests/lint/result-check.py"],
     ["python", "tests/lint/verb-check.py"],
     ["ruff", "check", "{tox_root}/src", "{tox_root}/tests"],
     ["ruff", "format", "--check", "{tox_root}/src", "{tox_root}/tests"],
@@ -106,6 +107,7 @@ commands = [["pytest", { replace = "posargs", default = [], extend = true }]]
 factors = [["py310", "py312", "py314"]]
 description = "Integration tests against real docker/lxd"
 deps = ["-r{tox_root}/requirements/test.txt"]
+recreate = true
 commands = [[
   "pytest", "{tox_root}/tests/integration", "-s", "--log-cli-level=INFO",
   { replace = "posargs", default = [], extend = true }
@@ -115,6 +117,7 @@ pass_env = ["HOME", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"
 [tool.tox.env.scans]
 description = "Test scans against known-bad content fixtures"
 deps = ["-r{tox_root}/requirements/test.txt"]
+recreate = true
 commands = [[
   "pytest", "{tox_root}/tests/scans", "-s", "--log-cli-level=INFO",
   { replace = "posargs", default = [], extend = true }

@@ -9,18 +9,19 @@ from contextlib import contextmanager, redirect_stdout
 
 import reposcan.actions.image as image_cmd
 import reposcan.backends as backends
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
 from reposcan.image.spec import BuildSpec
+from reposcan.result import Err, Result
 
 
 @contextmanager
-def _mocks(result: str | Failure) -> Iterator[dict[str, bool]]:
+def _mocks(built: Result[str]) -> Iterator[dict[str, bool]]:
     """Make every backend available and script what a build returns."""
     seen: dict[str, bool] = {}
 
-    def fake_build(builder: object, spec: BuildSpec, *, force: bool) -> str | Failure:
+    def fake_build(builder: object, spec: BuildSpec, *, force: bool) -> Result[str]:
         seen["force"] = force
-        return result
+        return built
 
     saved_built, saved_run = backends.ensure_built, backends.run_process
     backends.ensure_built = fake_build
@@ -41,7 +42,7 @@ def test_success_prints_the_reference_and_forwards_force() -> None:
 
 
 def test_build_failure_returns_one() -> None:
-    with _mocks(Failure(reason="docker build failed")):
+    with _mocks(Err("docker build failed")):
         code = image_cmd.ImageBuild(backend="docker", force=False).run()
     assert code == 1
 

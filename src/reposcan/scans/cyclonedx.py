@@ -3,9 +3,9 @@
 
 """Parse and merge CycloneDX SBOM documents.
 
-An SBOM lists a repository's software components. SBOM tools each emit CycloneDX
-JSON; these helpers merge several into one deduped inventory, annotating each
-component with which scanners reported it (via CycloneDX `properties`).
+An SBOM lists a repository's software components, and the SBOM tools each emit
+CycloneDX JSON. Which scanners reported a component is recorded on the component
+itself, as a CycloneDX `properties` entry.
 """
 
 import copy
@@ -217,7 +217,7 @@ def _record_scanner(component: dict[str, Any], scanner: str) -> None:
 
 
 def _serialize_invocation(index: int, inv: ToolInvocationRecord) -> dict[str, Any]:
-    """One executed tool command, as a CycloneDX formulation workflow."""
+    """Render one executed tool command as a CycloneDX formulation workflow."""
     workflow: dict[str, Any] = {
         "bom-ref": f"reposcan-{inv.tool}-{index}",
         "uid": f"{inv.tool}-{index}",

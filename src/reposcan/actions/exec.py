@@ -10,7 +10,7 @@ from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import option, remainder
 from reposcan.execution.context import ExecutionContext, resolve_env
-from reposcan.execution.process import Failure
+from reposcan.result import Err
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +44,20 @@ class ExecAction(Action):
 def execute(
     context: ExecutionContext, command: list[str], *, timeout: float | None
 ) -> int:
-    """Run `command` in the already-started `context` and return an exit code.
+    """Run `command` in the already-started `context`.
 
-    Returns the command's own exit code when it ran, 2 for a usage error, 124 on
-    timeout, or 1 when it could not be started.
+    Exit codes:
+        the command's own exit code when it ran
+        1 when it could not be run
+        2 when no command was given
+        124 when the command timed out
     """
     if not command:
         logger.error("no command given")
         return 2
     result = context.run(command, timeout=timeout)
-    if isinstance(result, Failure):
-        logger.error("%s", result.reason)
+    if isinstance(result, Err):
+        logger.error("%s", result.msg)
         return TIMEOUT_EXIT_CODE if result.timed_out else 1
     # Forward the command's own output verbatim; this is program output, not a log.
     sys.stdout.write(result.stdout)

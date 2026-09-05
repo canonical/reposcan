@@ -9,6 +9,7 @@ import sys
 from reposcan.actions.base import Action
 from reposcan.cli_kit import Group, coerce, collect_params, positional
 from reposcan.config import load, save
+from reposcan.result import is_err
 from reposcan.table import render_table
 
 logger = logging.getLogger(__name__)
@@ -28,15 +29,13 @@ class ConfigSet(Action):
         if param is None:
             logger.error("unknown config key: %s", self.key)
             return 2
-        _, error = coerce(param, self.value)
-        if error is not None:
-            logger.error("%s", error)
+        if is_err(err := coerce(param, self.value)):
+            logger.error("%s", err.msg)
             return 2
         settings = load()
         settings[self.key] = self.value
-        error = save(settings)
-        if error is not None:
-            logger.error("%s", error)
+        if is_err(err := save(settings)):
+            logger.error("%s", err.msg)
             return 1
         return 0
 
@@ -74,9 +73,8 @@ class ConfigUnset(Action):
             logger.info("config key not set: %s", self.key)
             return 0
         del settings[self.key]
-        error = save(settings)
-        if error is not None:
-            logger.error("%s", error)
+        if is_err(err := save(settings)):
+            logger.error("%s", err.msg)
             return 1
         return 0
 

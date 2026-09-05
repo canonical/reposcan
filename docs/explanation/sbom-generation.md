@@ -124,16 +124,14 @@ read-only, reposcan copies the repository to `/resolved-deps/<key>/<repo-name>`,
 writes the generated lockfiles into that copy, and runs the scan against the
 copy; the name is preserved so finding locations still read as `<repo>/...`, and
 the key (a digest of the source path) keeps two repositories of the same name
-apart when scans run concurrently. The
-step is best-effort, so any failure -- no network, an unsatisfiable resolve, or
-a manifest no package manager handles -- leaves that manifest unchanged and the
-scan still runs, falling back to the lockfile-or-nothing behavior described
-under "Limits and gaps". No untrusted code runs by default: uv resolves
-wheel-only (`--only-binary :all:`, metadata only), npm and pnpm pass
-`--ignore-scripts`, and poetry and pipenv resolve registry metadata. The
-`--allow-code-execution` scan flag opts into building source packages -- uv
-retries without `--only-binary` -- for the source-only packages that a
-wheel-only resolve cannot satisfy.
+apart when scans run concurrently. The step is best-effort, so any failure -- no
+network, an unsatisfiable resolve, or a manifest no package manager handles --
+leaves that manifest unchanged and the scan still runs, falling back to the
+lockfile-or-nothing behavior described under "Limits and gaps". No untrusted
+code runs by default: uv resolves wheel-only (`--only-binary :all:`, metadata
+only), npm and pnpm pass `--ignore-scripts`, and poetry and pipenv resolve
+registry metadata. The `--allow-code-execution` scan allows building source-only
+packages.
 
 ### Resolvers
 

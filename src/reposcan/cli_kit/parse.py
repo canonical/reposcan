@@ -6,8 +6,7 @@
 One left-to-right pass. Options in scope are recognized wherever they appear;
 non-option tokens select subcommands until a leaf is reached, then fill
 positionals; `--` starts a verbatim remainder. Each collected value is coerced
-against its parameter `convert` and `choices` attributes, so `Parsed.values`
-holds finished, typed command-line values.
+against its parameter's `convert` and `choices` attributes.
 """
 
 from __future__ import annotations
@@ -17,16 +16,17 @@ from typing import Any
 
 from reposcan.cli_kit.coerce import coerce
 from reposcan.cli_kit.spec import Action, Group, Param, collect_params
+from reposcan.result import Err, Result, is_err
 
 
 @dataclass
 class Parsed:
-    """The outcome of scanning argv against the tree.
+    """A successful scan of argv against the tree.
 
-    Exactly one of the following conditions will be truthy: `error`, `help`,
-    type(`node`) == `Group`, or type(`command`) == Action. On the command outcome,
-    `values` holds the coerced command-line values, keyed by name, for parameters
-    actually given; absent parameters are left null.
+    Exactly one of the following holds: `help`, type(`node`) == `Group`, or
+    type(`command`) == Action. On the command outcome, `values` holds the coerced
+    command-line values, keyed by name, for parameters actually given; absent
+    parameters are left null.
     """
 
     prog: str
@@ -35,12 +35,11 @@ class Parsed:
     values: dict[str, Any] = field(default_factory=dict)
     command: type[Action] | None = None
     help: bool = False
-    error: str | None = None
 
 
 def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
     root: type[Group], base: type[Action], argv: list[str], prog_name: str
-) -> Parsed:
+) -> Result[Parsed]:
     """Scan `argv` against the tree; `base`'s parameters are the flow-down globals."""
     scope: dict[str, Param] = {p.name: p for p in collect_params(base)}
     node: type[Action | Group] = root
@@ -58,6 +57,9 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
             prog=" ".join(prog), node=command or node, scope=list(scope.values()), **kw
         )
 
+    def fail(message: str) -> Result[Parsed]:
+        return Err(f"{' '.join(prog)}: {message}")
+
     i, n = 0, len(argv)
     while i < n:
         tok = argv[i]
@@ -74,7 +76,7 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
                 if remainder is not None and len(positionals) >= len(singles):
                     raw[remainder.name] = argv[i:]  # an unknown option starts remainder
                     break
-                return result(command=command, error=f"unknown option: {key}")
+                return fail(f"unknown option: {key}")
             name = param.name
             # A repeatable option accumulates; any other keeps its last value.
             if not param.takes_cli_value:
@@ -88,14 +90,14 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
                 raw[name] = [*raw.get(name, []), nxt] if param.many else nxt
                 i += 2
             else:
-                return result(command=command, error=f"option {key} requires a value")
+                return fail(f"option {key} requires a value")
             continue
 
         # a positional token (or any token once options have ended)
         if command is None:
             child = _find_child(node, tok)
             if child is None:
-                return result(error=f"unknown command: {tok}")
+                return fail(f"unknown command: {tok}")
             prog.append(tok)
             scope.update({p.name: p for p in collect_params(child)})
             if isinstance(child, type) and issubclass(child, Group):
@@ -116,19 +118,18 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
         if remainder is not None:
             raw[remainder.name] = argv[i:]  # trailing tokens are the verbatim remainder
             break
-        return result(command=command, error=f"unexpected argument: {tok}")
+        return fail(f"unexpected argument: {tok}")
 
     if command is None:
         return result(command=None)  # a subcommand is required
-    error = _bind_positionals(raw, positionals, singles, many)
-    if error is not None:
-        return result(command=command, error=error)
+    if is_err(e := _bind_positionals(raw, positionals, singles, many)):
+        return fail(e.msg)
     if remainder is not None:
         raw.setdefault(remainder.name, [])  # an absent remainder is the empty list
-    values, error = _coerce_all(raw, scope)
-    if error is not None:
-        return result(command=command, error=error)
-    return result(command=command, values=values)
+    coerced = _coerce_all(raw, scope)
+    if isinstance(coerced, Err):
+        return fail(coerced.msg)
+    return result(command=command, values=coerced)
 
 
 def _find_option(scope: dict[str, Param], flag: str) -> Param | None:
@@ -148,7 +149,7 @@ def _find_child(node: type[Action | Group], name: str) -> type[Action | Group] |
 
 def _bind_positionals(
     raw: dict[str, Any], tokens: list[str], singles: list[Param], many: Param | None
-) -> str | None:
+) -> Result[None]:
     """Distribute collected positional tokens to the single params, then the many."""
     index = 0
     for param in singles:
@@ -156,25 +157,23 @@ def _bind_positionals(
             raw[param.name] = tokens[index]
             index += 1
         elif param.required:
-            return f"missing argument: {param.name}"
+            return Err(f"missing argument: {param.name}")
     if many is not None:
         raw[many.name] = tokens[index:]
     elif index < len(tokens):
-        return f"unexpected argument: {tokens[index]}"
+        return Err(f"unexpected argument: {tokens[index]}")
     return None
 
 
-def _coerce_all(
-    raw: dict[str, Any], scope: dict[str, Param]
-) -> tuple[dict[str, Any], str | None]:
+def _coerce_all(raw: dict[str, Any], scope: dict[str, Param]) -> Result[dict[str, Any]]:
     """Coerce every collected command-line value against its parameter.
 
-    Returns the coerced values, or ({}, message) on the first bad value.
+    Stops at the first bad value.
     """
     values: dict[str, Any] = {}
     for name, value in raw.items():
-        coerced, error = coerce(scope[name], value)
-        if error is not None:
-            return {}, error
+        coerced = coerce(scope[name], value)
+        if isinstance(coerced, Err):
+            return coerced
         values[name] = coerced
-    return values, None
+    return values

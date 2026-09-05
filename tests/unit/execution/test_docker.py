@@ -12,11 +12,12 @@ from contextlib import contextmanager
 import reposcan.execution.docker as docker
 from reposcan.execution.context import RunUser
 from reposcan.execution.docker import DockerContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 
 
 @contextmanager
-def _patched_run(result: ExecResult | Failure):
+def _patched_run(result: Result[ExecResult]):
     calls: list[list[str]] = []
 
     def fake(
@@ -25,10 +26,11 @@ def _patched_run(result: ExecResult | Failure):
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         calls.append(list(command))
         return result
 
@@ -43,7 +45,7 @@ def _patched_run(result: ExecResult | Failure):
 def test_starts_the_given_image_and_execs_commands_in_it() -> None:
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
         assert ctx._instance_name == "abc123"  # container id from `docker run`
         assert "reposcan:tools" in calls[-1]  # started from the given image
         ctx.run(["ls", "-a"], cwd="/src", env={"K": "V"})
@@ -55,7 +57,7 @@ def test_stdin_keeps_the_exec_interactive() -> None:
     # docker exec discards stdin unless -i is passed; the context adds it only then.
     with _patched_run(ExecResult(0, "", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
         ctx.run(["cp", "/dev/stdin", "out.txt"], cwd="/scan", stdin="data")
     assert calls[-1][:3] == ["docker", "exec", "-i"]
 
@@ -67,7 +69,7 @@ def test_a_user_drops_privileges_via_setpriv() -> None:
     # to the dropped user).
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools", user=RunUser(10000, 10000, ()))
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
         ctx.run(["trivy", "fs", "."], cwd="/scan/acme")
     exec_argv = calls[-1]
     assert "HOME=/home/reposcan" in exec_argv  # the scan user's home for tool caches
@@ -82,7 +84,7 @@ def test_run_without_a_default_user_runs_as_root() -> None:
     # A context built with no user runs as root: no setpriv, no HOME override.
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
         ctx.run(["ls"])
     exec_argv = calls[-1]
     assert "setpriv" not in exec_argv
@@ -93,7 +95,7 @@ def test_run_user_override_runs_as_that_identity_for_one_call() -> None:
     # An explicit `user` on .run overrides the context's default for that call only.
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")  # default: root
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
         ctx.run(["ls"], user=RunUser(1000, 1000, (42,)))
     exec_argv = calls[-1]
     assert "--reuid=1000" in exec_argv and "--regid=1000" in exec_argv
@@ -104,7 +106,7 @@ def test_run_user_override_runs_as_that_identity_for_one_call() -> None:
 def test_mounts_the_source_read_only_keeping_its_name() -> None:
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools", mount_source="/host/acme-api")
-        assert ctx.start() is None
+        assert not isinstance(ctx.start(), Err)
     run_argv = calls[-1]  # the `docker run` argv
     assert "-v" in run_argv
     mount = run_argv[run_argv.index("-v") + 1]

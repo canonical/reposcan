@@ -7,7 +7,8 @@ import json
 from typing import cast
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err
 from reposcan.scans.sast import SastScan
 
 
@@ -28,7 +29,7 @@ def test_create_run_normalizes_semgrep_sarif() -> None:
     run = SastScan().create_run(
         "semgrep", ExecResult(0, json.dumps(document), ""), "/scan/acme"
     )
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     findings = run.results
     assert len(findings) == 1
     assert findings[0].rule_id == "x" and findings[0].level == "error"
@@ -60,7 +61,7 @@ def test_create_run_drops_requires_login_fingerprints() -> None:
     run = SastScan().create_run(
         "semgrep", ExecResult(0, json.dumps(document), ""), "/scan/acme"
     )
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     one, two = run.results
     assert "fingerprints" not in one.result  # emptied field removed
     assert two.result["fingerprints"] == {"otherHash": "abc123"}
@@ -71,4 +72,4 @@ def test_create_run_rejects_non_sarif_output() -> None:
     result = SastScan().create_run(
         "semgrep", ExecResult(0, "not sarif output", ""), "/scan/acme"
     )
-    assert isinstance(result, Failure)
+    assert isinstance(result, Err)

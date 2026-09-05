@@ -7,7 +7,8 @@ from typing import Any, ClassVar
 
 from reposcan.cli_kit import collect_params, flag
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Result
 from reposcan.scans import sarif
 from reposcan.scans.model import ToolInvocation
 
@@ -47,7 +48,7 @@ class SecurityScan(Scan):
 
     def create_run(
         self, tool: str, output: ExecResult, target: str
-    ) -> sarif.SarifRun | Failure:
+    ) -> Result[sarif.SarifRun]:
         """Turn a tool invocation's output into a SARIF run.
 
         Called once per executed tool; a tool invocation produces exactly one run.

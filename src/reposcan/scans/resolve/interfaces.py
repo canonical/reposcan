@@ -3,12 +3,8 @@
 
 """The resolution framework: a `PackageManager` Protocol and a `Resolver` base class.
 
-A `Resolver` coordinates one ecosystem (Python, JS, Go): it discovers the directories
-the ecosystem can resolve and drives resolution in each by composing
-`PackageManager`s -- the specific tools within the ecosystem (uv, poetry, pipenv, npm,
-pnpm). Each package manager resolves differently, so `PackageManager` is a Protocol;
-the ecosystems all dispatch identically, so `Resolver` is a base class subclasses fill
-in with a `name` and a `_managers` tuple.
+A `Resolver` coordinates one ecosystem (Python, JS) by composing `PackageManager`s
+-- the specific tools within that ecosystem (uv, poetry, pipenv, npm, pnpm).
 """
 
 from abc import ABC

@@ -12,9 +12,9 @@ import pytest
 
 from reposcan.backends import BACKENDS
 from reposcan.execution.docker import DockerContext
-from reposcan.execution.process import ExecResult, Failure
 from reposcan.image.ensure import ensure_pulled
 from reposcan.image.spec import CANONICAL_REF
+from reposcan.result import Err
 from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
@@ -25,15 +25,13 @@ _TEST_CMD = "trivy"
 
 def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
     backend = BACKENDS["docker"]
-    availability = backend.check_availability()
-    assert availability.ok, f"docker unavailable: {availability.reason}"
+    available = backend.check_availability()
+    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
 
     logger.info("pulling the ghcr image %s", CANONICAL_REF)
     reference = ensure_pulled(CANONICAL_REF)
-    if isinstance(reference, Failure):
-        pytest.fail(
-            f"could not pull the ghcr image {CANONICAL_REF}: {reference.reason}"
-        )
+    if isinstance(reference, Err):
+        pytest.fail(f"could not pull the ghcr image {CANONICAL_REF}: {reference.msg}")
 
     assert isinstance(reference, str)
     ctx = DockerContext(reference)
@@ -44,8 +42,10 @@ def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
         executable = tool.locate_executable("/opt/reposcan")
         logger.info("[%s] checking %s --version", _TEST_CMD, executable)
         result = ctx.run([executable, "--version"])
-        assert isinstance(result, ExecResult), result
-        assert result.ok, f"{_TEST_CMD} exited {result.exit_code}: {result.stderr}"
+        assert not isinstance(result, Err)
+        assert result.exit_code == 0, (
+            f"{_TEST_CMD} exited {result.exit_code}: {result.stderr}"
+        )
         assert tool.version in result.stdout, (
             f"the ghcr image's {_TEST_CMD} did not report the pinned version "
             f"{tool.version}: {result.stdout!r}"

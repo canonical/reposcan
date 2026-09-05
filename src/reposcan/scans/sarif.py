@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from reposcan.execution.context import ExecutionContext, read_file
-from reposcan.execution.process import succeeded
+from reposcan.result import get_value
 from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
 from reposcan.scans.repo import PROPERTY_SCHEMA, RepositoryState
 
@@ -410,7 +410,7 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
 
 
 def _normalize(document: dict[str, Any], scanner: str, target: str) -> None:
-    """Normalize every result in a raw SARIF document, in place (used by `parse`)."""
+    """Normalize every result in a raw SARIF document, in place."""
     for run in document.get("runs", []):
         rule_levels = _index_rule_levels(run)
         for result in run.get("results", []):
@@ -450,10 +450,14 @@ def read_source(ctx: ExecutionContext, target: str, finding: SarifResult) -> str
     if not finding.uri:
         return None
     if finding.commit:
-        shown = ctx.run(
-            ["git", "show", f"{finding.commit}:{finding.uri}"], cwd=target or None
+        run = get_value(
+            ctx.run(
+                ["git", "show", f"{finding.commit}:{finding.uri}"],
+                cwd=target or None,
+                check=True,
+            )
         )
-        return shown.stdout if succeeded(shown) else None
+        return None if run is None else run.stdout
     return read_file(ctx, finding.uri, cwd=target or None)
 
 
@@ -532,7 +536,7 @@ def _relativize_uri(uri: str, target: str) -> str:
 
 
 def _serialize_invocation(inv: ToolInvocationRecord) -> dict[str, Any]:
-    """One executed tool command, as a SARIF invocation object."""
+    """Render one executed tool command as a SARIF invocation object."""
     invocation: dict[str, Any] = {
         "commandLine": shlex.join(inv.command),
         "arguments": list(inv.command[1:]),
@@ -559,7 +563,7 @@ def _serialize_invocation(inv: ToolInvocationRecord) -> dict[str, Any]:
 
 
 def _deserialize_invocation(invocation: dict[str, Any]) -> ToolInvocationRecord | None:
-    """Deserialize invocations written by `_serialize_invocation`."""
+    """Deserialize one invocation written by `_serialize_invocation`."""
     properties = invocation.get("properties", {})
     if _TOOL_PROPERTY not in properties:
         return None

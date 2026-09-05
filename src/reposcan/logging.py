@@ -40,7 +40,7 @@ class _TerminalHandler(logging.StreamHandler):
         self._drawn = False
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Write `record`, potentially erasing an in-place line."""
+        """Write `record`, erasing any transient line already drawn."""
         transient = getattr(record, "transient", False)
         if transient and not self.stream.isatty():
             return

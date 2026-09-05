@@ -7,7 +7,8 @@ import hashlib
 from collections.abc import Mapping, Sequence
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import sarif
 from reposcan.scans.analysis import ScanStatus, scan_status
 from reposcan.scans.base import SecurityScan
@@ -18,14 +19,14 @@ from reposcan.scans.run import run_scan
 class _FakeContext:
     name = "fake"
 
-    def __init__(self, result: ExecResult | Failure) -> None:
+    def __init__(self, result: Result[ExecResult]) -> None:
         self._result = result
         self.commands: list[list[str]] = []
         self.streamed: list[tuple[bool, bool]] = []
         self.cwds: list[str | None] = []
         self.envs: list[Mapping[str, str] | None] = []
 
-    def start(self) -> Failure | None:
+    def start(self) -> Result[None]:
         return None
 
     def run(
@@ -36,10 +37,11 @@ class _FakeContext:
         env: Mapping[str, str] | None = None,
         user: object | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
+    ) -> Result[ExecResult]:
         self.commands.append(list(command))
         self.streamed.append((stream_stdout, stream_stderr))
         self.cwds.append(cwd)
@@ -59,7 +61,9 @@ class _FakeScan(SecurityScan):
     ) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
-    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+    def create_run(
+        self, tool: str, output: ExecResult, target: str
+    ) -> Result[sarif.SarifRun]:
         return sarif.SarifRun({"results": []})
 
 
@@ -77,7 +81,9 @@ class _Scan(SecurityScan):
     ) -> list[ToolInvocation]:
         return self._invocations
 
-    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+    def create_run(
+        self, tool: str, output: ExecResult, target: str
+    ) -> Result[sarif.SarifRun]:
         self.seen.append(output)
         return sarif.SarifRun({"results": []})
 
@@ -91,7 +97,9 @@ class _ScanWithFinding(SecurityScan):
     ) -> list[ToolInvocation]:
         return [ToolInvocation("trufflehog", ["--version"])]
 
-    def create_run(self, tool: str, output: ExecResult, target: str) -> sarif.SarifRun:
+    def create_run(
+        self, tool: str, output: ExecResult, target: str
+    ) -> Result[sarif.SarifRun]:
         finding = sarif.SarifResult.build("R", "m", "app.py", 2, tool, target)
         return sarif.SarifRun.from_results(tool, "1.0", [finding])
 
@@ -102,7 +110,7 @@ def test_run_scan_adds_the_github_line_hash_to_every_scans_findings() -> None:
     # every scan now -- there is no per-scan opt-out.
     ctx = _FakeContext(ExecResult(0, "import os\nSECRET = 'x'\n", ""))
     run = run_scan(_ScanWithFinding(), ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     (finding,) = run.results
     digest = hashlib.sha256(b"SECRET = 'x'").hexdigest()[:16]
     expected = f"{digest}:1"  # the first occurrence of that line in that file
@@ -112,7 +120,7 @@ def test_run_scan_adds_the_github_line_hash_to_every_scans_findings() -> None:
 def test_run_scan_runs_each_tool_at_its_installed_path_and_consolidates() -> None:
     ctx = _FakeContext(ExecResult(0, "", ""))
     run = run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     # one consolidated run, tagged with the scan's code-scanning category
     assert run.to_dict()["automationDetails"] == {"id": "reposcan/faux/"}
     assert ctx.commands[0][:2] == ["git", "ls-files"]  # the git-ignored-path lookup
@@ -122,8 +130,8 @@ def test_run_scan_runs_each_tool_at_its_installed_path_and_consolidates() -> Non
 def test_run_scan_reports_a_nonzero_tool_exit_as_a_failure() -> None:
     ctx = _FakeContext(ExecResult(2, "", "trufflehog: bad target"))
     result = run_scan(_FakeScan(), ctx, "/scan/acme", "/opt/reposcan")
-    assert isinstance(result, Failure)
-    assert "trufflehog failed" in result.reason
+    assert isinstance(result, Err)
+    assert "trufflehog failed" in result.msg
 
 
 def test_run_scan_streams_tool_progress_but_not_its_stdout() -> None:
@@ -156,7 +164,7 @@ def test_run_scan_records_tool_invocations_as_provenance() -> None:
     ctx = _FakeContext(ExecResult(0, "", ""))
     scan = _Scan([ToolInvocation("trufflehog", ["--version"], env={"K": "V"})])
     run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     (invocation,) = run.to_dict()["invocations"]
     assert invocation["commandLine"] == "/opt/reposcan/bin/trufflehog --version"
     assert invocation["environmentVariables"] == {"K": "V"}
@@ -182,10 +190,10 @@ def test_an_optional_tool_that_never_ran_is_still_recorded() -> None:
     # only trace it was meant to run at all. Without one, a scan that skipped a tool
     # looks exactly like one where the tool ran and found nothing -- which a reader
     # would take as "nothing is wrong" rather than "nothing looked".
-    ctx = _FakeContext(Failure(reason="exec failed"))
+    ctx = _FakeContext(Err("exec failed"))
     scan = _Scan([ToolInvocation("trufflehog", ["--version"], optional=True)])
     run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(run, Failure)  # optional, so the scan itself survives
+    assert not isinstance(run, Err)  # optional, so the scan itself survives
     (recorded,) = run.tool_invocations
     assert recorded.tool == "trufflehog"
     assert recorded.successful is False
@@ -196,5 +204,5 @@ def test_a_scan_whose_tools_all_succeeded_is_complete() -> None:
     ctx = _FakeContext(ExecResult(0, "", ""))
     scan = _Scan([ToolInvocation("trufflehog", ["--version"])])
     run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
-    assert not isinstance(run, Failure)
+    assert not isinstance(run, Err)
     assert scan_status(run) is ScanStatus.COMPLETE

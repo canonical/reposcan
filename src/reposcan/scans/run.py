@@ -11,7 +11,8 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from reposcan.execution.context import ExecutionContext, read_file
-from reposcan.execution.process import ExecResult, Failure
+from reposcan.execution.process import ExecResult
+from reposcan.result import Err, Result
 from reposcan.scans import cyclonedx, ignore, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.gitignore import GitIgnore
@@ -40,13 +41,13 @@ def _run_tools(
     ignored: GitIgnore,
     *,
     stream: bool,
-) -> tuple[_ToolOutputs, list[ToolInvocationRecord]] | Failure:
+) -> Result[tuple[_ToolOutputs, list[ToolInvocationRecord]]]:
     """Run each of `scan`'s tools against `target`, collecting their outputs.
 
     Each tool is looked up in the registry and run at its installed path. A tool that
-    cannot be started, or exits non-zero, aborts the scan as a Failure -- a scan sets
-    its tools' flags so a non-zero exit means a real error, not findings -- unless the
-    invocation is optional, in which case it is skipped.
+    cannot be started, or exits with a code its invocation does not list in `ok_codes`,
+    aborts the scan as an Err, unless the invocation is optional -- then it is skipped
+    and recorded as unsuccessful.
 
     Args:
         scan: The scan whose invocations to run.
@@ -58,14 +59,14 @@ def _run_tools(
 
     Returns:
         The (invocation, output) of each tool that ran, plus provenance records, or the
-        first Failure encountered.
+        first Err encountered.
     """
     outputs: _ToolOutputs = []
     provenance: list[ToolInvocationRecord] = []
     for invocation in scan.build_invocations(ctx, target):
         tool = TOOLS.get(invocation.tool)
         if tool is None:
-            return Failure(reason=f"unknown tool: {invocation.tool}")
+            return Err(f"unknown tool: {invocation.tool}")
         cmd = [
             tool.locate_executable(install_dir),
             *invocation.args,
@@ -87,9 +88,9 @@ def _run_tools(
             working_directory=invocation.cwd or target,
             environment=dict(invocation.env or {}),
         )
-        if isinstance(result, Failure):
+        if isinstance(result, Err):
             if invocation.optional:
-                logger.warning("%s did not run: %s", invocation.tool, result.reason)
+                logger.warning("%s did not run: %s", invocation.tool, result.msg)
                 provenance.append(recorded(exit_code=-1, successful=False))
                 continue
             return result
@@ -104,7 +105,7 @@ def _run_tools(
             if invocation.optional:
                 logger.warning("skipping %s: %s", invocation.tool, reason)
                 continue
-            return Failure(reason=f"{invocation.tool} failed: {reason}")
+            return Err(f"{invocation.tool} failed: {reason}")
         if invocation.output_file is not None:
             content = read_file(
                 ctx, invocation.output_file, cwd=invocation.cwd or target
@@ -114,10 +115,10 @@ def _run_tools(
                 if invocation.optional:
                     logger.warning("%s", note)
                     continue
-                return Failure(reason=note)
+                return Err(note)
             result = ExecResult(result.exit_code, content, result.stderr)
         outputs.append((invocation, result))
-    return outputs, provenance
+    return (outputs, provenance)
 
 
 def run_scan(
@@ -128,11 +129,11 @@ def run_scan(
     *,
     resolution_workdir: str = "",
     stream: bool = False,
-) -> sarif.SarifRun | Failure:
-    """Run a security `scan` against `target`, returning a consolidated SarifRun.
+) -> Result[sarif.SarifRun]:
+    """Run a security `scan` against `target`.
 
     Returns:
-        The scan's consolidated SARIF run, or the first Failure encountered.
+        The scan's consolidated SARIF run, or the first Err encountered.
     """
     if scan.resolves_dependencies:
         target = resolve_dependencies(
@@ -144,15 +145,15 @@ def run_scan(
         )
     ignored = GitIgnore.from_context(ctx, target)
     outcome = _run_tools(scan, ctx, target, install_dir, ignored, stream=stream)
-    if isinstance(outcome, Failure):
+    if isinstance(outcome, Err):
         return outcome
     outputs, provenance = outcome
     runs: list[sarif.SarifRun] = []
     for invocation, output in outputs:
         created = scan.create_run(invocation.tool, output, target)
-        if isinstance(created, Failure):
+        if isinstance(created, Err):
             if invocation.optional:
-                logger.warning("skipping %s: %s", invocation.tool, created.reason)
+                logger.warning("skipping %s: %s", invocation.tool, created.msg)
                 continue
             return created
         runs.append(created)
@@ -175,11 +176,11 @@ def run_sbom_scan(
     *,
     resolution_workdir: str = "",
     stream: bool = False,
-) -> cyclonedx.CycloneDxDocument | Failure:
-    """Generate an SBOM.
+) -> Result[cyclonedx.CycloneDxDocument]:
+    """Generate an SBOM for `target`.
 
     Returns:
-        The consolidated CycloneDX SBOM, or the first Failure encountered.
+        The consolidated CycloneDX SBOM, or the first Err encountered.
     """
     target = resolve_dependencies(
         ctx,
@@ -190,7 +191,7 @@ def run_sbom_scan(
     )
     ignored = GitIgnore.from_context(ctx, target)
     outcome = _run_tools(sbom, ctx, target, install_dir, ignored, stream=stream)
-    if isinstance(outcome, Failure):
+    if isinstance(outcome, Err):
         return outcome
     outputs, provenance = outcome
     documents: list[cyclonedx.CycloneDxDocument] = []
@@ -200,7 +201,7 @@ def run_sbom_scan(
             if invocation.optional:
                 logger.warning("skipping %s: not CycloneDX", invocation.tool)
                 continue
-            return Failure(reason=f"{invocation.tool} did not produce CycloneDX output")
+            return Err(f"{invocation.tool} did not produce CycloneDX output")
         documents.append(document)
     merged = cyclonedx.merge(documents)
     merged.record_invocations(provenance)
@@ -243,8 +244,8 @@ def run_analysis(
                 resolution_workdir=session.resolution_workdir,
                 stream=stream,
             )
-            if isinstance(run, Failure):
-                logger.error("%s scan failed: %s", scan.name, run.reason)
+            if isinstance(run, Err):
+                logger.error("%s scan failed: %s", scan.name, run.msg)
                 analysis.fail(scan.name)
                 continue
             analysis.add(

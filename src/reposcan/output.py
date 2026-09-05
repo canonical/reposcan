@@ -9,7 +9,7 @@ import sys
 from enum import Enum
 from typing import Any
 
-from reposcan.execution.process import Failure
+from reposcan.result import Err, Result
 from reposcan.table import DEFAULT_WRAP_LINES, render_table
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class Format(str, Enum):
     JSON = "json"
 
 
-def write_json(document: Any, output: str | None = None) -> Failure | None:
+def write_json(document: Any, output: str | None = None) -> Result[None]:
     """Write `document` as JSON.
 
     Args:
@@ -33,7 +33,7 @@ def write_json(document: Any, output: str | None = None) -> Failure | None:
         output: A file to write to, or None for stdout.
 
     Returns:
-        None on success, or a Failure if the output file already exists (it is not
+        None on success, or an Err if the output file already exists (it is not
         overwritten) or could not be written.
     """
     text = json.dumps(document, indent=2) + "\n"
@@ -46,11 +46,9 @@ def write_json(document: Any, output: str | None = None) -> Failure | None:
         with open(output, "x", encoding="utf-8") as handle:
             handle.write(text)
     except FileExistsError:
-        return Failure(
-            reason=f"output file already exists, refusing to overwrite: {output}"
-        )
+        return Err(f"output file already exists, refusing to overwrite: {output}")
     except OSError as exc:
-        return Failure(reason=f"could not write {output}: {exc}")
+        return Err(f"could not write {output}: {exc}")
     return None
 
 
@@ -61,7 +59,7 @@ def write_table(
     limit: int = DEFAULT_ROW_LIMIT,
     wrap: int = DEFAULT_WRAP_LINES,
 ) -> None:
-    """Print a table of `entries` to stdout, capped at `limit` rows.
+    """Print `rows` as a table on stdout, capped at `limit` rows.
 
     Args:
         headers: The column headers.

@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""reposcan GitHub module."""
+"""Read repository metadata from GitHub's REST and GraphQL APIs."""
 
 import fnmatch
 import logging
@@ -16,8 +16,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from reposcan.execution.process import Failure
 from reposcan.logging import TRANSIENT
+from reposcan.result import Err, Result, is_err
 
 logger = logging.getLogger(__name__)
 
@@ -116,18 +116,18 @@ def filter_repositories(
 
 def list_repositories(
     *, org: str | None = None, enterprise: str | None = None, token: str = ""
-) -> list[Repository] | Failure:
+) -> Result[list[Repository]]:
     """List the repositories in `org`, `enterprise`, or both.
 
     Args:
         org: A GH organization.
-        enterprise: A GH enterprise. Requires `token`. Fetching an enterprise's
-        organizations requires the GraphQL API, which refuses anonymous clients.
-        token: A token to authenticate with, or None. Unauthenticated requests
+        enterprise: A GH enterprise. Requires `token`: fetching an enterprise's
+            organizations needs the GraphQL API, which refuses anonymous clients.
+        token: A token to authenticate with, or empty. Unauthenticated requests
             can only list public repos and have a lower rate limit.
 
     Returns:
-        Repositories, or a Failure.
+        The discovered repositories, or an Err on the first request failure.
     """
     headers = _build_headers(token)
     with _open_session() as session:
@@ -135,7 +135,7 @@ def list_repositories(
         if enterprise:
             logger.info("resolving the organizations in %s", enterprise)
             found = get_enterprise_organizations(session, headers, enterprise)
-            if isinstance(found, Failure):
+            if isinstance(found, Err):
                 return found
             orgs.extend(found)
         if org:
@@ -145,31 +145,29 @@ def list_repositories(
         for found_org in dict.fromkeys(orgs):  # an org may be named twice
             logger.info("listing repositories in %s", found_org)
             listed = get_org_repositories(session, headers, found_org)
-            if isinstance(listed, Failure):
+            if isinstance(listed, Err):
                 return listed
             for repository in listed:
                 repositories.setdefault(repository.full_name, repository)
     return list(repositories.values())
 
 
-def get_repositories(
-    names: Sequence[str], token: str = ""
-) -> list[Repository] | Failure:
+def get_repositories(names: Sequence[str], token: str = "") -> Result[list[Repository]]:
     """Fetch each repository named `owner/name`.
 
     Args:
-        names: The repositories to fetch. Any Failure is fatal.
-        token: A token to authenticate with, or None.
+        names: The repositories to fetch.
+        token: A token to authenticate with, or empty.
 
     Returns:
-        Repositories, deduplicated by full name, or a Failure.
+        The repositories, or an Err  on first fetch failure.
     """
     headers = _build_headers(token)
     repositories: dict[str, Repository] = {}
     with _open_session() as session:
         for full_name in dict.fromkeys(names):
             found = get_repository(session, headers, full_name)
-            if isinstance(found, Failure):
+            if isinstance(found, Err):
                 return found
             repositories.setdefault(found.full_name, found)
     return list(repositories.values())
@@ -189,7 +187,7 @@ def _build_headers(token: str) -> dict[str, str]:
 def _open_session() -> "requests.Session":
     """Open a session that retries transient server errors with backoff.
 
-    Rate limits are NOT handled here.
+    Rate limits are not handled here.
     """
     session = requests.Session()
     session.mount(
@@ -208,45 +206,48 @@ def _open_session() -> "requests.Session":
 
 def get_repository(
     session: "requests.Session", headers: dict[str, str], full_name: str
-) -> Repository | Failure:
+) -> Result[Repository]:
     """Fetch `owner/name`."""
     response = _request(session, "GET", f"{_GITHUB_API}/repos/{full_name}", headers)
-    if isinstance(response, Failure):
+    if isinstance(response, Err):
         return response
     if response.status_code == HTTPStatus.NOT_FOUND:
-        return Failure(reason=f"no such repository: {full_name}")
-    refusal = _check_refusal(response, full_name)
-    if refusal is not None:
-        return refusal
+        return Err(f"no such repository: {full_name}")
+    if is_err(err := _validate_response(response)):
+        return err
     try:
         payload = response.json()
     except ValueError as exc:
-        return Failure(reason=f"{full_name} did not return JSON: {exc}")
+        return Err(f"{full_name} did not return JSON: {exc}")
     repository = Repository.from_dict(payload)
     if repository is None:
-        return Failure(reason=f"{full_name} named no clone url")
+        return Err(f"{full_name} named no clone url")
     return repository
 
 
 def get_org_repositories(
     session: "requests.Session", headers: dict[str, str], org: str
-) -> list[Repository] | Failure:
-    """Fetch every repository in ``org``."""
+) -> Result[list[Repository]]:
+    """Fetch every repository in `org`.
+
+    Stops after `_MAX_PAGES` pages, warning that the listing is incomplete.
+    """
     repositories: list[Repository] = []
     url = f"{_GITHUB_API}/orgs/{org}/repos?per_page={_PER_PAGE}"
     for _ in range(_MAX_PAGES):
         response = _request(session, "GET", url, headers)
-        if isinstance(response, Failure):
+        if isinstance(response, Err):
             return response
-        refusal = _check_refusal(response, org)
-        if refusal is not None:
-            return refusal
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return Err(f"no such organization: {org}")
+        if is_err(err := _validate_response(response)):
+            return err
         try:
             payloads = response.json()
         except ValueError as exc:
-            return Failure(reason=f"{url} did not return JSON: {exc}")
+            return Err(f"{url} did not return JSON: {exc}")
         if not isinstance(payloads, list):
-            return Failure(reason=f"{url} did not return a list of repositories")
+            return Err(f"{url} did not return a list of repositories")
         for payload in payloads:
             repository = Repository.from_dict(payload)
             if repository is not None:
@@ -270,11 +271,12 @@ def get_org_repositories(
 
 def get_enterprise_organizations(
     session: "requests.Session", headers: dict[str, str], enterprise: str
-) -> list[str] | Failure:
+) -> Result[list[str]]:
     """Fetch every organization in `enterprise`.
 
     GraphQL rather than REST because the REST API exposes no route from an enterprise
-    to its organizations or repositories.
+    to its organizations or repositories. Stops after `_MAX_PAGES` pages, warning that
+    the listing is incomplete.
     """
     orgs: list[str] = []
     cursor: str | None = None
@@ -284,21 +286,22 @@ def get_enterprise_organizations(
             "variables": {"slug": enterprise, "after": cursor},
         }
         response = _request(session, "POST", _GITHUB_GRAPHQL, headers, body)
-        if isinstance(response, Failure):
+        if isinstance(response, Err):
             return response
-        refusal = _check_refusal(response, enterprise)
-        if refusal is not None:
-            return refusal
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return Err(f"no such enterprise: {enterprise}")
+        if is_err(err := _validate_response(response)):
+            return err
         try:
             payload = response.json()
         except ValueError as exc:
-            return Failure(reason=f"{_GITHUB_GRAPHQL} did not return JSON: {exc}")
+            return Err(f"{_GITHUB_GRAPHQL} did not return JSON: {exc}")
         if payload.get("errors"):
             detail = payload["errors"][0].get("message", "unknown error")
-            return Failure(reason=f"github rejected the query: {detail}")
+            return Err(f"github rejected the query: {detail}")
         found = (payload.get("data") or {}).get("enterprise")
         if found is None:
-            return Failure(reason=f"no such enterprise: {enterprise}")
+            return Err(f"no such enterprise: {enterprise}")
         organizations = found.get("organizations", {})
         orgs.extend(
             str(node["login"]) for node in organizations.get("nodes") or [] if node
@@ -323,7 +326,7 @@ def _request(
     url: str,
     headers: dict[str, str],
     body: dict[str, Any] | None = None,
-) -> "requests.Response | Failure":
+) -> "Result[requests.Response]":
     """Make an HTTP request, waiting out a rate limit GitHub asks reposcan to honour."""
     for _ in range(_RETRY_ATTEMPTS):
         try:
@@ -331,46 +334,45 @@ def _request(
                 method, url, headers=headers, json=body, timeout=_TIMEOUT
             )
         except requests.RequestException as exc:
-            return Failure(reason=f"could not reach {url}: {exc}")
+            return Err(f"could not reach {url}: {exc}")
         if response.status_code not in _RATE_LIMIT_STATUSES:
             return response
         if response.headers.get("x-ratelimit-remaining") == "0":
-            return response  # a primary limit, which resets too slowly to wait on
+            return response  # a primary limit, too slow to wait out
         try:
             pause = min(float(response.headers["Retry-After"]), _MAX_RETRY_WAIT)
         except (KeyError, ValueError):
-            return response  # a 403 for another reason, such as SSO enforcement
+            return response  # a 403 for another reason, such as SSO
         logger.warning("github asked reposcan to wait %.0fs; retrying", pause)
         time.sleep(pause)
-    return Failure(
-        reason=f"github rate limited reposcan {_RETRY_ATTEMPTS} times in a row"
-    )
+    return Err(f"github rate limited reposcan {_RETRY_ATTEMPTS} times in a row")
 
 
-def _check_refusal(response: "requests.Response", name: str) -> Failure | None:
-    """Check whether this request was refused."""
-    if response.status_code == HTTPStatus.NOT_FOUND:
-        return Failure(reason=f"no such organization: {name}")
+def _validate_response(response: "requests.Response") -> Result[None]:
+    """Validate that GitHub answered the request.
+
+    A 404 is left to the caller, which knows what it asked for and can name it.
+    """
     if response.status_code in _RATE_LIMIT_STATUSES:
         if response.headers.get("x-ratelimit-remaining") == "0":
             reset = response.headers.get("x-ratelimit-reset", "an unknown time")
-            return Failure(reason=f"github rate limit exhausted; resets at {reset}")
+            return Err(f"github rate limit exhausted; resets at {reset}")
         retry_after = response.headers.get("Retry-After")
         wait = f"; retry after {retry_after}s" if retry_after else ""
         # SAML/SSO enforcement answers 403, and its message is the whole remedy.
-        return Failure(
-            reason=f"github refused the request{wait}: {_parse_error_message(response)}"
+        return Err(
+            f"github refused the request{wait}: {_parse_error_message(response)}"
         )
     if response.status_code == HTTPStatus.UNAUTHORIZED:
-        return Failure(reason="github rejected the token")
+        return Err("github rejected the token")
     if not response.ok:
         message = _parse_error_message(response)
-        return Failure(reason=f"github returned {response.status_code}: {message}")
+        return Err(f"github returned {response.status_code}: {message}")
     return None
 
 
 def _parse_error_message(response: "requests.Response") -> str:
-    """Parse the error message GitHub returned, else a stand-in for the reader."""
+    """Parse the error message GitHub returned."""
     try:
         body = response.json()
     except ValueError:

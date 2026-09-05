@@ -1,18 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Value types and the ExecutionContext Protocol.
-
-An ExecutionContext is a place reposcan can run commands: the local host, or an
-ephemeral Docker/LXD container. main owns its lifecycle with start() and stop(),
-and commands run() in between. Contexts are structural (Protocol) types, so a
-concrete context is any object with the right methods.
-
-Outcomes are returned, not raised. start() returns None on success or a Failure
-carrying the reason. run() yields an ExecResult with the command's exit code and
-captured output (whatever that exit code), or a Failure when the command could not
-be started or timed out.
-"""
+"""Value types and the ExecutionContext Protocol."""
 
 import logging
 import os
@@ -20,7 +9,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from reposcan.execution.process import ExecResult, Failure, succeeded
+from reposcan.execution.process import ExecResult
+from reposcan.result import Result, get_err, get_value
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +141,9 @@ class ExecutionContext(Protocol):
 
     name: str
 
-    def start(self) -> Failure | None: ...
+    def start(self) -> Result[None]:
+        """Start the context."""
+        ...
 
     def run(
         self,
@@ -161,20 +153,29 @@ class ExecutionContext(Protocol):
         env: Mapping[str, str] | None = None,
         user: RunUser | None = None,
         timeout: float | None = None,
+        check: bool = False,
         stream_stdout: bool = False,
         stream_stderr: bool = False,
         stdin: str | None = None,
-    ) -> ExecResult | Failure:
-        """Run `command`, returning its result or a Failure.
+    ) -> Result[ExecResult]:
+        """Run `command`.
 
         `user`, when set, runs this one command as that identity, overriding the
         context's default for this call (container backends only; the local context
         ignores it and runs as the invoking user). None runs as the context's default
         identity -- the one set at construction, or root when none was set.
+
+        Returns:
+            An ExecResult or Err.
         """
         ...
 
-    def stop(self) -> None: ...
+    def stop(self) -> None:
+        """Stop the context.
+
+        Safe to call whether or not start() succeeded.
+        """
+        ...
 
 
 def read_file(
@@ -183,9 +184,9 @@ def read_file(
     *,
     cwd: str | None = None,
 ) -> str | None:
-    """Read the text of `path` through `ctx` (via `cat`), or None on failure."""
-    result = ctx.run(["cat", path], cwd=cwd)
-    return result.stdout if succeeded(result) else None
+    """Read the text of `path` through `ctx` (via `cat`)."""
+    run = get_value(ctx.run(["cat", path], cwd=cwd, check=True))
+    return run.stdout if run is not None else run
 
 
 def write_file(
@@ -194,7 +195,7 @@ def write_file(
     content: str,
     *,
     cwd: str | None = None,
-) -> bool:
-    """Write `content` to `path` through `ctx`, returning whether it succeeded."""
-    result = ctx.run(["cp", "/dev/stdin", path], cwd=cwd, stdin=content)
-    return succeeded(result)
+) -> Result[None]:
+    """Write `content` to `path` through `ctx` (via `cp` from stdin)."""
+    argv = ["cp", "/dev/stdin", path]
+    return get_err(ctx.run(argv, cwd=cwd, stdin=content, check=True))

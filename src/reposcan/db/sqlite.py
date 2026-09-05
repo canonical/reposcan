@@ -3,9 +3,8 @@
 
 """Read and write tabular data as a sqlite database.
 
-A `TableSchema` carries a table's name, column names, and literal CREATE/INSERT
-statements to run. A `Table` pairs a schema with its rows. Callers serialize their own
-values. All reads and writes occur within a `Session`.
+Callers serialize their own values, and every read and write happens within a
+`Session`.
 """
 
 import logging
@@ -15,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+
+from reposcan.result import Err, Result
 
 # How long to wait for a lock before giving up.
 BUSY_TIMEOUT_SECONDS = 30.0
@@ -63,10 +64,10 @@ def is_sqlite(data: bytes) -> bool:
     return data[:16] == _MAGIC
 
 
-def connect(path: str) -> tuple["Session | None", str | None]:
+def connect(path: str) -> "Result[Session]":
     """Open a session on the database at `path`.
 
-    Creates the file when it is absent. Returns an error msg rather than raising.
+    Creates the file when it is absent. Returns an error rather than raising.
 
     sqlite serializes writers. Write-ahead logging lets readers work while a write is in
     flight, and the busy timeout makes a second writer wait rather than fail.
@@ -83,12 +84,17 @@ def connect(path: str) -> tuple["Session | None", str | None]:
         if str(mode).lower() != "wal":
             logger.debug("%s is journalled as %s, not wal", path, mode)
     except sqlite3.Error as exc:
-        return None, f"could not open {path}: {exc}"
-    return Session(connection), None
+        return Err(f"could not open {path}: {exc}")
+    return Session(connection)
 
 
 def read_version(path: str) -> int | None:
-    """Read the database's `PRAGMA user_version`, or None if `path` is not one."""
+    """Read the database's `PRAGMA user_version`.
+
+    Returns:
+        The version stamped on the database, or None when `path` is not a readable
+        sqlite database.
+    """
     if not Path(path).is_file():
         return None
     connection = sqlite3.connect(path)
@@ -131,10 +137,7 @@ class Session:
             self._connection.close()
 
     def create(self, schema: TableSchema) -> None:
-        """Run the schema's CREATE statement, exactly as written.
-
-        Consider adding `IF NOT EXISTS` to `schema.create`
-        """
+        """Run the schema's CREATE statement."""
         self._connection.execute(schema.create)
 
     def insert(self, table: Table) -> None:
@@ -156,7 +159,7 @@ class Session:
     def query(
         self, statement: str, params: Sequence[object] = ()
     ) -> list[tuple[Any, ...]]:
-        """Every row `statement` selects, binding `params` as its `?` placeholders."""
+        """Run `statement` with `params` bound, and return every row it selects."""
         return self._connection.execute(statement, tuple(params)).fetchall()
 
     def read_version(self) -> int:
