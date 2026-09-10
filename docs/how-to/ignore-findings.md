@@ -69,9 +69,9 @@ A finding is dropped if it matches a rule. Each rule has the following fields:
 - `content-regex` (optional): a regular expression matched against the offending
   content. When given, the finding is dropped only if the regex also matches.
   The content is the finding's line (or the whole file when it has no line). A
-  secrets finding from git history is read from the commit it was found in rather
-  than the working tree, so a rule still matches a line that has since changed. The
-  finding is kept if that content cannot be read.
+  secrets finding from git history is read from the commit it was found in
+  rather than the working tree, so a rule still matches a line that has since
+  changed. The finding is kept if that content cannot be read.
 
 Notes:
 
@@ -81,5 +81,5 @@ Notes:
 - Each entry must have exactly three or four fields.
 
 By default, reposcan reads `.reposcan-ignore` from the scanned repository. A
-custom filepath can be specified with `--ignore-file <path>`. Use of the default
-filepath can be toggled off with `--no-ignore-file`.
+custom filepath can be specified with `--ignore-file <path>`. The ignore-file
+feature can be completely disabled by including `--no-ignore-file`.

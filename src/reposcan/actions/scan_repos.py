@@ -34,12 +34,10 @@ class ScanRepos(Action):
     )
     workspace: str = option(
         required=True,
-        env_var="REPOSCAN_WORKSPACE",
         help="Directory holding the worktrees to scan, as `gh clone-repos` writes.",
     )
     db: str = option(
         required=True,
-        env_var="REPOSCAN_DB",
         help="Record every analysis in the database at FILE, creating it if absent.",
     )
     threads: int = option(

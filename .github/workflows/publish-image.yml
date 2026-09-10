@@ -71,6 +71,6 @@ jobs:
             echo "## Published image"
             echo "Pull (digest-pinned): \`${pinned}\`"
             echo
-            echo "To make this the default image reposcan pulls, set \`CANONICAL_REF\`"
-            echo "in \`src/reposcan/image/remote.py\` to the pinned ref above."
+            echo "To make this the default image reposcan pulls, find and set "
+            echo "the \`CANONICAL_REF\` variable in src/reposcan/"
           } >> "$GITHUB_STEP_SUMMARY"

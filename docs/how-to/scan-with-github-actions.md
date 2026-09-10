@@ -38,10 +38,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history for the secrets scan
       - uses: canonical/reposcan@main
 ```
 
-The runner needs Docker (included in the `ubuntu-latest` image).
+The workflow requires Docker to be installed on the runner image. (It typically
+is; for example, Docker is included in GitHub's `ubuntu-latest` image).
 
 ## Choosing scans
 

@@ -20,30 +20,32 @@ An execution context is a place reposcan can run commands, exposing a small
 lifecycle: start, run, stop. There are three: a local context on the host,
 Docker, and LXD. A backend decides whether its context is available and
 constructs it; backend selection prefers Docker, then LXD, then local (see
-[choose a backend](../how-to/choose-a-backend.md)).
+[select a backend](../how-to/select-a-backend.md)).
 
 The container backends bind-mount the target repository read-only at
 `/scan/<name>`, keeping the repository's own directory name so tool output reads
-naturally, and run each tool as an unprivileged user (UID 10000) via `setpriv`.
-The local backend runs the tools as the invoking user with no isolation, which
-is why it is discouraged for untrusted repositories.
+naturally, and run each tool via `setpriv` as the invoking host user, or as the
+uid given by `--uid`, rather than as the container's root. The local backend
+runs the tools as the invoking user with no isolation, which is why it is
+discouraged for untrusted repositories.
 
 ## The reposcan image
 
 Every pinned tool is installed into one image, so a container scan starts from a
 single, reproducible environment. The image is content-addressed: its identity
 is a hash of the build script, which embeds every tool's version, download URL,
-and checksum. By default, a container backend pulls a published, digest-pinned
-image from GHCR and reuses it. With `--image build`, it builds the image on
-demand instead. It reuses the locally built image for future scans. A change to
-any tool version or hash, or to the base image, yields a new hash and triggers a
-rebuild.
+and checksum, together with the base image and the install root. By default, the
+Docker backend pulls a published, digest-pinned image from GHCR and reuses it.
+With `--image build`, it builds the image on demand instead. It reuses the
+locally built image for future scans. The LXD backend does not support using a
+remote OCI image and always uses a locally-built container. A change to any tool
+version or hash, or to the base image, yields a new hash and triggers a rebuild.
 
 ## Tools
 
 Each tool is defined once in a registry with its supply-chain pins inline:
 native binaries by per-platform download URL and sha256, Go tools by their
-checksum-database hashes, and PyPI tools by a hash-locked requirements file. The
+`go.sum` module hashes, and PyPI tools by a hash-locked requirements file. The
 tools are installed the same way whether baked into the image or installed onto
 the host by `bootstrap`.
 
@@ -65,10 +67,9 @@ for CycloneDX. Each entry is annotated with the tools that reported it. Because
 the tools disagree on exit conventions, the commands present uniform exit codes
 rather than passing a tool's code through.
 
-The driver also handles two cross-cutting concerns for every scan so the scan
-modules stay simple: it excludes git-ignored paths from filesystem-walking tools
-(see [path exclusion](path-exclusion.md)), and it records provenance in the
-report -- each executed command, and the analysis it belonged to.
+The driver also handles [gitignore support](./gitignore-support.md) and records
+provenance (scan commands, arguments, and related metadata) in the SARIF and
+CycloneDX artifacts.
 
 ## Dependency resolution
 

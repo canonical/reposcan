@@ -3,9 +3,8 @@
 `reposcan` runs a suite of security scans against a codebase, aggregating and
 normalizing the output.
 
-By default, it executes all scans in ephemeral containers. It defaults to Docker
-and falls back to LXD based on availability. It supports running scans directly
-on the local host, though this is discouraged.
+By default, it executes all scans in ephemeral containers, preferring Docker and
+falling back to LXD.
 
 ## Get started
 
@@ -17,7 +16,7 @@ The rest of the documentation is in [`docs/`](docs/index.md).
 
 ## Scans
 
-`reposcan scan <type>` runs one of five scan types against a repository:
+`reposcan scan <types> <path>` runs one or more scan types against a repository:
 
 - `secrets`: leaked credentials in the git history or working tree.
 - `sast`: static analysis of source code for security bugs.
@@ -47,7 +46,7 @@ output.
 - **Findings tracked over time and across repositories:** `--db` records each
   analysis in a database that follows issues across point-in-time scans.
 - **False positives suppressed in one place:** The reposcan-ignore file unifies
-  false positive suppression across all tools drive by reposcan.
+  false positive suppression across all tools driven by reposcan.
 
 ## Roadmap
 

@@ -41,7 +41,7 @@ The design and the reasoning behind it.
 
 - [Architecture](explanation/architecture.md)
 - [SBOM generation](explanation/sbom-generation.md)
-- [Path exclusion](explanation/path-exclusion.md)
+- [Gitignore support](explanation/gitignore-support.md)
 - [License compliance](explanation/licensing.md)
 
 The project overview and the bundled tools with their licenses are in the

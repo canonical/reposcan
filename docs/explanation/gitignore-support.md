@@ -1,23 +1,16 @@
-# Path exclusion for filesystem scanners
+# Gitignore support
 
 ## Problem
 
-The SBOM tools (trivy, syft, cdxgen) and the SCA tools (trivy, grype) catalog a
-repository by walking its working tree. By default they descend into directories
-a developer would never ship: virtualenvs (`.venv`, `.tox`), dependency caches
-(`node_modules`), and build output. These are almost always listed in the repo's
-`.gitignore`, so the scanners report packages that are not really part of the
-project. Observed: syft cataloging packages under `.venv` and `.tox`.
+Most of the scanning tools driven by `reposcan` examine a repository by walking
+its working tree. Some tools respect `.gitignore`, but many don't, leading to
+false-positives.
 
-Since scans run with the target repo as the working directory (see `run_scan`),
-each tool's own path filters resolve relative to the repo root, which makes the
-fix below straightforward.
+## Example: SBOM tools
 
-## Findings per tool
-
-None of the three SBOM tools honors `.gitignore` natively. Each has an open,
-unmerged feature request. Each offers a manual path-exclusion flag instead, with
-a different glob dialect and different anchoring rules.
+None of the `reposcan`-driven SBOM tools honors `.gitignore` natively. Each has
+an open, unmerged feature request. Each offers a manual path-exclusion flag
+instead, with a different glob dialect and different anchoring rules.
 
 ### syft 1.46.0
 
@@ -39,9 +32,7 @@ a different glob dialect and different anchoring rules.
   `scan.skip-dirs`/`scan.skip-files` in `trivy.yaml`. Applies to `trivy fs` for
   both the CycloneDX SBOM and the vuln (SCA) scan.
 - Dialect: doublestar, matched relative to the scan target / CWD (now the same
-  path). Gotcha: a bare `**/X` does NOT match a root-level `X` (`**/.terraform`
-  skips `foo/.terraform` but not `./.terraform`), so a wildcard exclude needs
-  BOTH `X` and `**/X`.
+  path). Note: `**/.terraform` matches `foo/.terraform` but not `./.terraform`.
 - `.trivyignore` is NOT a path filter: it suppresses vulnerability/rule IDs from
   findings after the scan, and has no effect on what gets cataloged. (Maintainer
   confirmation: aquasecurity/trivy discussion #4584.)
@@ -69,18 +60,24 @@ a different glob dialect and different anchoring rules.
 - Docs: https://github.com/CycloneDX/cdxgen/blob/v12.7.0/docs/ADVANCED.md ,
   https://github.com/CycloneDX/cdxgen/blob/v12.7.0/docs/ENV.md
 
-## Fix
+## reposcan's fix
 
-The exclusion set is derived from git and translated per tool.
+`reposcan` uses `git` to identify and manually exclude `gitignored` content.
 
-The command:
+The `git` command:
 
 ```
 git ls-files -z -o -i --exclude-standard --directory
 ```
 
 ...is run in the repo root to list ignored entries, with wholly-ignored
-directories collapsed to `<dir>/`. Each path is mapped to tool flags:
+directories collapsed to `<dir>/`.
+
+The result is used two ways:
+
+### Per-tool exclusion arguments
+
+Each `gitignored` path is mapped to tool flags. For example:
 
 | Tool        | ignored dir `d/`   | ignored file `f` |
 | ----------- | ------------------ | ---------------- |
@@ -88,21 +85,9 @@ directories collapsed to `<dir>/`. Each path is mapped to tool flags:
 | trivy       | `--skip-dirs d`    | `--skip-files f` |
 | cdxgen      | `--exclude d/**`   | `--exclude f`    |
 
-CWD is the repo root, so paths resolve directly and no wildcard anchoring is
-needed. A non-git target, or unavailable git, yields no paths and no exclusions.
+The flags are then injected into the tool commands.
 
-### Where it plugs in
+### Security scan result exclusions
 
-`scans/exclude.py`:
-
-- `IgnoredPaths.from_context(ctx, target)` runs the git lookup and returns the
-  ignored directories and files.
-- `build_exclude_flags(tool, ignored)` maps them to `tool`'s flags per the table
-  above; empty for non-filesystem tools.
-
-`run_scan` (`scans/model.py`) computes the ignored set once per scan, only when
-an invocation names a tool in `EXCLUDABLE_TOOLS` (`trivy`, `syft`, `grype`,
-`cdxgen`), then appends each tool's flags to its command. Scan modules are
-unchanged. The SBOM scan (trivy, syft, cdxgen) and SCA scan (trivy, grype) are
-covered; grype shares syft's dialect. govulncheck is unaffected: it analyzes the
-Go module graph, not a file walk.
+All security scan results are checked against the `gitignored` paths and dropped
+if out of scope.

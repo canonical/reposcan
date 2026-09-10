@@ -38,6 +38,7 @@ class _FakeContext:
         self._tracked = tracked
         self._files = dict(files or {})
         self.runs: list[tuple[list[str], str | None]] = []
+        self.envs: list[Mapping[str, str] | None] = []
 
     def start(self) -> Result[None]:
         return None
@@ -49,11 +50,13 @@ class _FakeContext:
         command: Sequence[str],
         *,
         cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
         check: bool = False,
         **_: object,
     ) -> Result[ExecResult]:
         cmd = list(command)
         self.runs.append((cmd, cwd))
+        self.envs.append(dict(env) if env is not None else None)
         if cmd[0] == "git":
             return ExecResult(0, self._tracked, "")
         if cmd[0] == "cat":
@@ -145,13 +148,19 @@ def test_leaves_target_unchanged_without_resolvable_python() -> None:
 
 def test_resolves_a_legacy_poetry_project() -> None:
     # [tool.poetry] with no [project] (and no poetry.lock): uv skips it; poetry locks
-    # and exports a pinned requirements file the catalogers read.
+    # and exports a pinned requirements file the catalogers read. Poetry cannot lock
+    # without building source packages, so it only runs with the flag.
     ctx = _FakeContext(
         _join_nul("pyproject.toml"),
         files={f"{DEST}/pyproject.toml": "[tool.poetry]\nname = 'acme'\n"},
     )
 
-    assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == DEST
+    assert (
+        resolve_dependencies(
+            ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR, allow_code_execution=True
+        )
+        == DEST
+    )
     ran = [cmd for cmd, _ in ctx.runs]
     poetry = f"{INSTALL_DIR}/bin/poetry"
     assert [poetry, "lock"] in ran and any(cmd[:2] == [poetry, "export"] for cmd in ran)
@@ -230,3 +239,37 @@ def test_skips_js_directories_that_are_already_locked() -> None:
 
     assert resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR) == TARGET
     assert not ctx.copied
+
+
+def test_poetry_does_not_run_unless_code_execution_is_allowed() -> None:
+    # `poetry lock` runs a source-only dependency's build backend to read its
+    # metadata and offers no way to refuse, so the default must not run it at all.
+    ctx = _FakeContext(
+        _join_nul("pyproject.toml"),
+        files={f"{DEST}/pyproject.toml": "[tool.poetry]\nname = 'acme'\n"},
+    )
+
+    resolve_dependencies(ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR)
+
+    assert not any("poetry" in cmd[0] for cmd, _ in ctx.runs)
+
+
+def test_pipenv_refuses_source_builds_unless_code_execution_is_allowed() -> None:
+    # pipenv resolves through pip, which refuses an sdist under PIP_ONLY_BINARY
+    # rather than running its build backend to read the metadata.
+    def lock_env(*, allowed: bool) -> Mapping[str, str]:
+        ctx = _FakeContext(
+            _join_nul("Pipfile"), files={f"{DEST}/Pipfile": "[packages]\n"}
+        )
+        resolve_dependencies(
+            ctx, TARGET, INSTALL_DIR, RESOLUTION_WORKDIR, allow_code_execution=allowed
+        )
+        pipenv = f"{INSTALL_DIR}/bin/pipenv"
+        return next(
+            env or {}
+            for (cmd, _), env in zip(ctx.runs, ctx.envs, strict=True)
+            if cmd == [pipenv, "lock"]
+        )
+
+    assert lock_env(allowed=False)["PIP_ONLY_BINARY"] == ":all:"
+    assert "PIP_ONLY_BINARY" not in lock_env(allowed=True)

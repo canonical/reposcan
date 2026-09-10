@@ -12,7 +12,7 @@ without a lockfile would otherwise yield incomplete or no transitive coverage.
 reposcan closes that gap with a dependency-resolution step that runs before the
 tools (see "Dependency resolution"). When the scan has network access, it
 invokes each ecosystem's own package manager to generate the missing lockfiles.
-That step runs no untrusted code by default, resolving from registry metadata,
+That step resolves from registry metadata and runs no untrusted code by default,
 but the `--allow-code-execution` flag configurably lets it build source
 packages, which does execute untrusted repository and dependency code.
 
@@ -62,15 +62,15 @@ behavior of pip. We did it for maven, but it was really challenging."
 ## Tool invocation
 
 reposcan runs all three tools with the target repository as the working
-directory, as an unprivileged user, and with git-ignored directories excluded
-(see `path-exclusion.md`). Each tool also takes dev-dependency flags that vary
-with `--include-dev-dependencies` (see "Development dependencies").
+directory, as an unprivileged user, and with git-ignored directories
+[excluded](./gitignore-support.md). Each tool also takes dev-dependency flags
+that vary with `--include-dev-dependencies` (see "Development dependencies").
 
 - syft: `syft dir:<target> -o cyclonedx-json`, with env
-  `SYFT_CHECK_FOR_APP_UPDATE=false`,
+  `SYFT_FILE_METADATA_SELECTION=none`, `SYFT_CHECK_FOR_APP_UPDATE=false`,
   `SYFT_PYTHON_GUESS_UNPINNED_REQUIREMENTS=true`, and
   `--override-default-catalogers all`.
-- trivy: `trivy fs --format cyclonedx <target>`.
+- trivy: `trivy fs --skip-version-check --format cyclonedx <target>`.
 - cdxgen:
   `cdxgen --no-install-deps --lifecycle pre-build --no-banner -o <file> <target>`,
   with env `CDXGEN_SECURE_MODE=true`.
@@ -117,41 +117,48 @@ is used), and pnpm 11.21.0.
 
 ### Mechanism
 
-Discovery uses one `git ls-files` on the target, which lists every tracked
-manifest at any depth so that git-ignored build directories such as `.venv` and
-`node_modules` are never mistaken for sources. Because the repository mount is
-read-only, reposcan copies the repository to `/resolved-deps/<key>/<repo-name>`,
-writes the generated lockfiles into that copy, and runs the scan against the
-copy; the name is preserved so finding locations still read as `<repo>/...`, and
-the key (a digest of the source path) keeps two repositories of the same name
-apart when scans run concurrently. The step is best-effort, so any failure -- no
-network, an unsatisfiable resolve, or a manifest no package manager handles --
-leaves that manifest unchanged and the scan still runs, falling back to the
-lockfile-or-nothing behavior described under "Limits and gaps". No untrusted
-code runs by default: uv resolves wheel-only (`--only-binary :all:`, metadata
-only), npm and pnpm pass `--ignore-scripts`, and poetry and pipenv resolve
-registry metadata. The `--allow-code-execution` scan allows building source-only
-packages.
+Discovery uses `git ls-files` on the target, which lists all tracked manifests
+at any depth.
+
+Because the repository mount is read-only, reposcan copies the repository to
+`/resolved-deps/<key>/<repo-name>`, writes the generated lockfiles into that
+copy, and runs the scan against the copy; the name is preserved so finding
+locations still read as `<repo>/...`, and the key (a digest of the source path)
+keeps two repositories of the same name apart when scans run concurrently.
+
+The step is best-effort, so failure is ignored and the scan falls back to the
+lockfile-or-nothing behavior described under "Limits and gaps".
+
+No untrusted code runs by default: uv resolves wheel-only
+(`--only-binary :all:`, metadata only), pipenv resolves under
+`PIP_ONLY_BINARY=:all:`, which makes pip refuse a source-only distribution, and
+npm and pnpm pass `--ignore-scripts`. Poetry does not support a "don't build"
+parameter and therefore does not run at all unless `--allow-code-execution` is
+set.
+
+When `--allow-code-execution` is set, uv drops `--only-binary :all:`, pipenv
+drops `PIP_ONLY_BINARY`, and poetry runs.
 
 ### Resolvers
 
 Python has three resolvers.
 
-- uv resolves a PEP 621 `[project]` `pyproject.toml`, `requirements*.{txt,in}`,
-  and a static `setup.cfg` with `uv pip compile <input> --only-binary :all:`,
-  writing `reposcan-resolved.*.requirements.txt`. It is skipped when the
-  directory already has `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`,
-  `pylock.toml`, or a fully-`==`-pinned `requirements.txt`.
-  ([docs](https://docs.astral.sh/uv/pip/compile/))
+- uv resolves a PEP 621 `[project]` `pyproject.toml`, `requirements*.in`, any
+  `requirements*.txt` that is not fully-`==`-pinned, and a static `setup.cfg`,
+  with `uv pip compile <input> --only-binary :all:`, writing one
+  `reposcan-resolved.*.requirements.txt` per input. The directory is skipped
+  when it already has `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, or
+  `pylock.toml`. ([docs](https://docs.astral.sh/uv/pip/compile/))
 - poetry resolves a legacy `[tool.poetry]` `pyproject.toml` (one with no
   `[project]`) with `poetry lock` and
   `poetry export -f requirements.txt --without-hashes`, writing
   `reposcan-resolved.poetry.requirements.txt`. It is skipped when a
-  `poetry.lock` is present.
+  `poetry.lock` is present, and when `--allow-code-execution` is not set.
   ([plugin](https://github.com/python-poetry/poetry-plugin-export))
 - pipenv resolves a `Pipfile` with `pipenv lock` and `pipenv requirements`,
-  writing `reposcan-resolved.pipfile.requirements.txt`. It is skipped when a
-  `Pipfile.lock` is present.
+  writing `reposcan-resolved.pipfile.requirements.txt`, with
+  `PIP_ONLY_BINARY=:all:` unless `--allow-code-execution` is set. It is skipped
+  when a `Pipfile.lock` is present.
   ([docs](https://pipenv.pypa.io/en/latest/commands.html#requirements))
 
 JavaScript and TypeScript have two.

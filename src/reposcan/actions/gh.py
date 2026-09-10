@@ -185,7 +185,6 @@ class CloneGhRepos(GhAction):
     )
     workspace: str = option(
         required=True,
-        env_var="REPOSCAN_GH_WORKSPACE",
         help="Working directory to hold mirrors and worktrees.",
     )
     threads: int = option(

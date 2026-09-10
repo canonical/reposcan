@@ -52,8 +52,8 @@ always runs as the invoking user.
 
 ### `--image <ref>`
 
-The image to run scans in. Not supported for backend=local. See
-[use a published image](../how-to/use-a-published-image.md).
+The image to run scans in. Ignored by backend=local, which does not use an
+image. See [use a published image](../how-to/use-a-published-image.md).
 
 | Property       | Description                                                                    |
 | -------------- | ------------------------------------------------------------------------------ |
@@ -71,7 +71,7 @@ option for several variables.
 | Property       | Description                                                    |
 | -------------- | -------------------------------------------------------------- |
 | Allowed values | `NAME`, or `NAME=VALUE`.                                       |
-| Env var to set | `REPOSCAN_ENV` (one variable).                                 |
+| Env var to set | none -- `--env` is not read from the environment.              |
 | Config key     | `env` (one variable via `config set`)                          |
 | Default value  | none -- see [select a backend](../how-to/select-a-backend.md). |
 
@@ -92,7 +92,7 @@ Common options:
 - `-o, --output <FILE>`: write the report to a file instead of stdout. Files are
   always formatted as JSON (SARIF for scans, CycloneDX for `sbom`).
 - `--db <FILE>`: record the analysis in the database at `FILE`, creating it if
-  absent. Independent of `-o`. See [the database](#the-database).
+  absent. Independent of `-o`.
 - `-f, --format <fmt>`: `table` (the default) or `json`, for stdout only. To put
   a table in a file, redirect: `reposcan scan sast ./repo > report.txt`.
 - `-n, --limit <N>`: maximum table rows shown (default 20).
@@ -107,7 +107,9 @@ Common options:
 - `--include-dev-dependencies`: for `sca` only, resolve development
   dependencies.
 - `--allow-code-execution`: for `sca` only, let dependency resolution build
-  source packages, which may run untrusted code (off by default).
+  source packages, which may run untrusted code (off by default). Without it, uv
+  and pipenv resolve from pre-built distributions only, and poetry projects are
+  not resolved at all.
 - `--mode <history|filesystem>`, `--depth <N>`: for `secrets` only; see the
   [scans reference](scans.md).
 
@@ -159,8 +161,8 @@ Disabled repositories are never included.
 
 #### list-repos
 
-`reposcan gh list-repos` lists repositories discovered from `--org` or
-`--enterprise` is required. Options:
+`reposcan gh list-repos` lists the repositories discovered from `--org` or
+`--enterprise`; one of the two is required. Options:
 
 - `--org <NAME>`: an organization to read. Env var: `REPOSCAN_GH_ORG`.
 - `--enterprise <SLUG>`: an enterprise whose organizations to read. Env var:
@@ -175,12 +177,16 @@ Disabled repositories are never included.
 `reposcan gh clone-repos --workspace <DIR>` clones or syncs a local copy of each
 selected repository under `DIR`. Each repository is cloned as a bare mirror in
 `DIR/mirrors` and its default branch is checked out as a worktree in
-`DIR/worktrees/`.
+`DIR/worktrees/`. Options:
 
-The repositories to clone are discovered via `--org`, `--enterprise`, or
-`--repo <OWNER/NAME>` (repeatable).
-
-`--threads <N>` sets how many repositories are cloned at once (default 5).
+- `--workspace <DIR>`: the directory holding the mirrors and worktrees. Env var:
+  `REPOSCAN_WORKSPACE`.
+- `--org <NAME>`: an organization to clone. Env var: `REPOSCAN_GH_ORG`.
+- `--enterprise <SLUG>`: an enterprise whose organizations to clone. Env var:
+  `REPOSCAN_GH_ENTERPRISE`.
+- `--repo <OWNER/NAME>`: a repository to clone. Repeatable. Env var:
+  `REPOSCAN_GH_REPO`.
+- `--threads <N>`: repositories to clone at once (default 5).
 
 ### scan-repos
 
@@ -207,8 +213,8 @@ What the scans run, and where they run.
 
 ### list-tools
 
-`reposcan list-tools` lists the scanning tools and whether each is installed in
-the selected backend.
+`reposcan list-tools` lists the scanning tools and whether each is installed on
+this host.
 
 ### bootstrap
 
@@ -220,8 +226,9 @@ container gets its tools from the reposcan image, so `--backend docker` or
 
 ### image
 
-- `reposcan image build [--backend <name>]`: build (or rebuild) the reposcan image
-  and print its reference. Reuses an existing image when nothing changed.
+- `reposcan image build [--force]`: build (or rebuild) the reposcan image and
+  print its reference. Reuses an existing image when nothing changed, unless
+  `--force` is passed.
 - `reposcan image cache list`: list the recorded built and pulled images.
 - `reposcan image cache remove <reference>`: remove one record.
 - `reposcan image cache clear`: remove all records.

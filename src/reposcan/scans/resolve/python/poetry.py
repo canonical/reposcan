@@ -44,6 +44,11 @@ class Poetry:
         allow_code_execution: bool,
     ) -> None:
         """Lock and export a legacy Poetry project's dependencies."""
+        if not allow_code_execution:
+            # `poetry lock` builds sdist-only dependencies and does not support a
+            # "don't build" parameter, so we skip it completely
+            logger.debug("skipping poetry in %s: it cannot resolve safely", workdir)
+            return
         content = read_file(ctx, f"{workdir}/pyproject.toml")
         if content is None or not _is_legacy_poetry(content):
             return  # PEP 621 or not Poetry at all: the uv package manager handles it

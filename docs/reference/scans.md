@@ -6,8 +6,13 @@ findings are merged and de-duplicated, and each finding is annotated with the
 tools that reported it.
 
 Scans run via `reposcan scan` and exit `0` (nothing at or above `--fail-on`),
-`3` (a finding at or above `--fail-on`), `1` (internal error), or `2` (usage
-error). All accept the shared output options (`-o`, `--db`, `-f/--format`,
+`3` (a finding at or above `--fail-on`), `1` (internal failure), or `2` (usage
+error).
+
+Several scan types can be named at once, comma-separated, and `all` selects
+every type.
+
+All scans accept the same output options (`-o`, `--db`, `-f/--format`,
 `-n/--limit`, `--wrap`); see [commands](commands.md).
 
 ## secrets

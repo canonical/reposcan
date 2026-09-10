@@ -49,21 +49,26 @@ reposcan --image build sbom ./repo           # build, then inventory
 reposcan config set image build              # persisted
 ```
 
-Build (or rebuild) the reposcan image without running a scan:
+Build the reposcan image without running a scan. An image already built for the
+current spec is reused; `--force` rebuilds it anyway:
 
 ```
 reposcan image build
 reposcan image build --backend docker
+reposcan image build --force
 ```
 
-The image is content-addressed by a digest of its build script, so reposcan
-reuses an existing image when nothing has changed and rebuilds when a tool
-version, hash, or the base image changes.
+The image is content-addressed by a digest of its build script, base image, and
+install directory, so reposcan reuses an existing image when nothing has changed
+and rebuilds when a tool version, hash, or the base image changes.
 
 ## Manage the image record
 
-reposcan records the identity of each image it built or pulled. Inspect or clear
-that record:
+reposcan records the identity of each image it builds, and of each tag-only
+image it pulls, as a map of reference to content identity in
+`$XDG_DATA_HOME/reposcan/images.json`. A digest-pinned reference needs no
+record, since the pull itself verifies its content. To inspect or clear that
+record:
 
 ```
 reposcan image cache list
@@ -71,4 +76,5 @@ reposcan image cache remove <reference>
 reposcan image cache clear
 ```
 
-`image cache remove` clears a stale entry.
+`image cache list` prints each reference with its recorded identity; `image
+cache remove` clears a stale entry, and `image cache clear` removes them all.

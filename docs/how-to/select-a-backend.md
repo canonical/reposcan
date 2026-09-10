@@ -35,16 +35,18 @@ reposcan --backend local scan sast ./repo
 ```
 
 Note: environment variables are stripped for processes executed via the local
-backend: only `HOME`, `PATH`, the locale, the cache and temp directories, and
-the proxy and CA settings are passed through. Anything else in your environment
-is dropped. This also applies to [`exec`](../reference/commands.md#exec).
-Additional environment variables can be explicitly passed through with `--env`.
+backend: only `HOME`, `PATH`, the locale, the temp directory, the XDG base
+directories, and the proxy and CA settings are passed through. Anything else in
+the environment is dropped. This also applies to
+[`exec`](../reference/commands.md#exec). Additional environment variables can be
+explicitly passed through with `--env`.
 
 ## Set the in-container user
 
-Container scans run as an unprivileged user (UID 10000) by default so that
-untrusted repository code cannot run as root. Override the UID when a repository
-has files that user cannot read; the local backend ignores it and runs as you.
+Container scans run as the invoking host user by default, with that user's
+groups, so a repository stays as readable inside the container as it is on the
+host. Override the UID to run in-container processes as a different user. The
+local backend ignores the UID parameter and runs with your UID.
 
 ```
 reposcan --uid 1000 sbom ./repo

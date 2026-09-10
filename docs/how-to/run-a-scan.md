@@ -28,18 +28,18 @@ reposcan scan all ./repo                     # every scan type
 
 The meta-name `all` expands to every scan type. All findings merge into a single
 SARIF report; duplicate findings are deduped and annotated with each tool that
-reported them. The exit code is `3` if any scan reported something, else `0`.
+reported them. The exit code is `3` if any scan reported a finding at or above
+`--fail-on`, else `0`.
 
 ## Read the exit code
 
 Security scans use the exit code to report the outcome, so they fit into
 pipelines:
 
-- `0`: the scan ran and found nothing.
-- `3`: the scan ran and reported one or more findings.
-- `1`: a scan or tool error.
-- `2`: a usage error (unknown scan, bad path, or an output file that already
-  exists).
+- `0`: the scan ran and reported nothing at or above `--fail-on`.
+- `3`: the scan ran and reported a finding at or above `--fail-on`.
+- `1`: an internal failure.
+- `2`: a usage error.
 
 ## Choose the output format
 
@@ -90,6 +90,6 @@ reposcan scan secrets ./repo --mode history --depth 500
 
 ## Related tasks
 
-- Select where the tools run: [choose a backend](choose-a-backend.md).
+- Select where the tools run: [select a backend](select-a-backend.md).
 - Use a published reposcan image:
   [use a published image](use-a-published-image.md).

@@ -42,14 +42,19 @@ class Pipenv:
     ) -> None:
         """Lock and export a Pipenv project's dependencies."""
         pipenv = PIPENV.locate_executable(install_dir)
+        env = dict(_ENV)
+        if not allow_code_execution:
+            # pipenv resolves via pip, which respects PIP_ONLY_BINARY and refuses to
+            # build sdist-only deps
+            env["PIP_ONLY_BINARY"] = ":all:"
         logger.debug("detected pipenv; running: %s lock", pipenv)
-        if is_err(ctx.run([pipenv, "lock"], cwd=workdir, env=_ENV, check=True)):
+        if is_err(ctx.run([pipenv, "lock"], cwd=workdir, env=env, check=True)):
             logger.warning("pipenv resolution skipped for %s: lock failed", workdir)
             return
         # `pipenv requirements` prints the locked deps to stdout (it has no output
         # flag), so capture it and write the file ourselves.
         exported = get_value(
-            ctx.run([pipenv, "requirements"], cwd=workdir, env=_ENV, check=True)
+            ctx.run([pipenv, "requirements"], cwd=workdir, env=env, check=True)
         )
         if exported is None:
             logger.warning(

@@ -1,8 +1,9 @@
 # Configuration
 
 reposcan reads a small set of settings, each resolvable from four sources.
-Persisted settings live in a flat key/value file under `$XDG_CONFIG_HOME`
-(default `~/.config/reposcan/`) and are managed with the
+Persisted settings live in a JSON object at
+`$XDG_CONFIG_HOME/reposcan/config.json` (default
+`~/.config/reposcan/config.json`) and are managed with the
 [`config`](commands.md#config) commands.
 
 ## Resolution order
@@ -10,14 +11,27 @@ Persisted settings live in a flat key/value file under `$XDG_CONFIG_HOME`
 Each setting resolves from, in order of precedence:
 
 1. command-line options
-1. environment variables
+1. `REPOSCAN_*` environment variables
 1. saved config values
 1. built-in defaults
+
+## Environment variables
+
+Most options can be set with `REPOSCAN_<name>`, where `<name>` is the
+uppercased option name with hyphens replaced by underscores. For example,
+`--backend` can be set with `REPOSCAN_BACKEND`. Positional arguments,
+remainders, and `--env` are never read from the environment.
+
+Some command options use a different format:
+
+- `gh` commands support `REPOSCAN_GH_TOKEN` (not configurable as a parameter),
+  `REPOSCAN_GH_TOKEN_FILE`, `REPOSCAN_GH_ORG`, `REPOSCAN_GH_ENTERPRISE`,
+  and `REPOSCAN_GH_REPO`.
 
 ## Config options
 
 The list of options that can be set in persistent configuration is exactly the
-the list of global options in [commands](./commands.md)
+list of global options in [commands](./commands.md)
 
 ## Storage locations
 
