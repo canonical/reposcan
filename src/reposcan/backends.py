@@ -123,9 +123,8 @@ def select_backend(requested: str | None) -> Result[Backend]:
 
 def _provision_image(backend: Backend, image: str | None) -> Result[str]:
     """Build or pull `backend`'s reposcan image."""
-    puller = backend.puller
-    if puller is None or image == LOCAL_BUILD_SHORTHAND:
-        if image and image != LOCAL_BUILD_SHORTHAND and puller is None:
+    if backend.puller is None or image == LOCAL_BUILD_SHORTHAND:
+        if image and image != LOCAL_BUILD_SHORTHAND and backend.puller is None:
             logger.warning(
                 "the %s backend cannot pull the configured image %r; building the "
                 "reposcan image locally",
@@ -135,7 +134,7 @@ def _provision_image(backend: Backend, image: str | None) -> Result[str]:
         return backend.build_image()
     # Unset and the `canonical` shorthand both mean the pinned published image.
     ref = CANONICAL_REF if not image or image == CANONICAL_SHORTHAND else image
-    pulled = puller(ref)
+    pulled = backend.puller(ref)
     if isinstance(pulled, Err) and image is None:
         return Err(
             f"could not pull the image {ref}: {pulled.msg}. "

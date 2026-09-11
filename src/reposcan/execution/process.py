@@ -83,7 +83,8 @@ def run_process(
     Args:
         command: The argv to run; the first element is the executable.
         cwd: Working directory for the process, or None to inherit this process's.
-        env: Environment for the process, or None to inherit this process's.
+        env: Environment for the subprocess, replacing (not merging) this process's
+            own. None inherits this process's own wholesale.
         timeout: Seconds to wait before killing the process, or None for no limit.
         check: When True, treat a nonzero exit as an Err rather than an ExecResult.
         stream_stdout: When True, echo the command's stdout live as it runs.

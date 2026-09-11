@@ -9,8 +9,9 @@ import sys
 from reposcan.actions.base import Action
 from reposcan.backends import select_backend
 from reposcan.cli_kit import Group, flag, positional
-from reposcan.image import cache
+from reposcan.image import cache as image_cache
 from reposcan.result import Err, is_err
+from reposcan.table import render_table
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,14 @@ class CacheList(Action):
     help = "List the recorded image cache entries."
 
     def run(self) -> int:
-        return list_cache()
+        """Print each recorded image cache entry as a table."""
+        entries = image_cache.load()
+        if not entries:
+            logger.info("the image cache is empty")
+            return 0
+        rows = [[ref, identity] for ref, identity in sorted(entries.items())]
+        sys.stdout.write(render_table(["reference", "identity"], rows))
+        return 0
 
 
 class CacheRemove(Action):
@@ -53,7 +61,21 @@ class CacheRemove(Action):
     reference: str = positional(help="The image reference to forget.")
 
     def run(self) -> int:
-        return remove_cache_entry(self.reference)
+        """Remove `self.reference` from the image cache.
+
+        Returns:
+            0 when removed, 1 when it was not in the cache or the cache could not be
+            written.
+        """
+        removed = image_cache.remove(self.reference)
+        if isinstance(removed, Err):
+            logger.error(removed.msg)
+            return 1
+        if not removed:
+            logger.error("no image cache entry for %s", self.reference)
+            return 1
+        logger.info("removed %s from the image cache", self.reference)
+        return 0
 
 
 class CacheClear(Action):
@@ -61,52 +83,18 @@ class CacheClear(Action):
     help = "Remove all image cache entries."
 
     def run(self) -> int:
-        return clear_cache()
+        """Remove every image cache entry.
 
-
-def list_cache() -> int:
-    """Print each recorded image cache entry as `reference  identity` to stdout."""
-    entries = cache.load()
-    if not entries:
-        logger.info("the image cache is empty")
+        Returns:
+            0 on success, 1 when the cache could not be written.
+        """
+        count = len(image_cache.load())
+        if is_err(err := image_cache.clear()):
+            logger.error(err.msg)
+            return 1
+        noun = "entry" if count == 1 else "entries"
+        logger.info("cleared the image cache (%d %s)", count, noun)
         return 0
-    width = max(len(reference) for reference in entries)
-    for reference, identity in sorted(entries.items()):
-        sys.stdout.write(f"{reference:<{width}}  {identity}\n")
-    return 0
-
-
-def remove_cache_entry(reference: str) -> int:
-    """Remove `reference` from the image cache.
-
-    Returns:
-        0 when removed, 1 when it was not in the cache or the cache could not be
-        written.
-    """
-    removed = cache.remove(reference)
-    if isinstance(removed, Err):
-        logger.error(removed.msg)
-        return 1
-    if not removed:
-        logger.error("no image cache entry for %s", reference)
-        return 1
-    logger.info("removed %s from the image cache", reference)
-    return 0
-
-
-def clear_cache() -> int:
-    """Remove every image cache entry.
-
-    Returns:
-        0 on success, 1 when the cache could not be written.
-    """
-    count = len(cache.load())
-    if is_err(err := cache.clear()):
-        logger.error(err.msg)
-        return 1
-    noun = "entry" if count == 1 else "entries"
-    logger.info("cleared the image cache (%d %s)", count, noun)
-    return 0
 
 
 class CacheGroup(Group):
