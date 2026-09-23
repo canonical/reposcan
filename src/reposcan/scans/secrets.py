@@ -146,13 +146,18 @@ def _read_finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
     'commit' is only produced by trufflehog's history mode. trufflehog dedups its
     findings, so the reported commit is just *a* commit the secret was in, not
     necessarily the commit that introduced it.
+
+    A secret in a commit message carries a commit but no file, so each
+    field is read independently: a block missing `file` will still yield its commit.
     """
     data = finding.get("SourceMetadata", {}).get("Data", {})
     if isinstance(data, dict):
         for value in data.values():  # e.g. Git or Filesystem
-            if isinstance(value, dict) and value.get("file"):
+            if isinstance(value, dict) and (
+                value.get("file") or value.get("commit") or value.get("line")
+            ):
                 return (
-                    str(value["file"]),
+                    str(value.get("file") or ""),
                     int(value.get("line") or 0),
                     str(value.get("commit") or ""),
                 )
