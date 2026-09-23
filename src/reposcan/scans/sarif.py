@@ -27,6 +27,8 @@ _ANALYSIS_PROPERTY = "reposcan:analysis"
 # the scan was performed; the commit property is used to store a scanner-annotated
 # commit, e.g. a historical secret-containing commit reported by trufflehog
 _COMMIT_PROPERTY = "reposcan:commit"
+# Raw secret value, retained only when a scan is asked to (--retain-secrets).
+_SECRET_PROPERTY = "reposcan:secret"
 _TOOL_PROPERTY = "reposcan:tool"
 _VERSION_PROPERTY = "reposcan:version"
 _ARGS_PROPERTY = "reposcan:args"
@@ -140,6 +142,14 @@ class SarifResult:
 
     def set_commit(self, commit: str) -> None:
         self.result.setdefault("properties", {})[_COMMIT_PROPERTY] = commit
+
+    @property
+    def secret(self) -> str:
+        """The raw secret value, when a scan retains it, else empty."""
+        return str(self.result.get("properties", {}).get(_SECRET_PROPERTY, ""))
+
+    def set_secret(self, secret: str) -> None:
+        self.result.setdefault("properties", {})[_SECRET_PROPERTY] = secret
 
     def add_fingerprint(self, name: str, value: str) -> None:
         """Record a complete fingerprint.

@@ -193,3 +193,24 @@ def test_create_run_annotates_commit_for_a_finding_in_a_commit_message() -> None
     assert finding.commit == "7f630c9b"
     assert finding.line == 7
     assert finding.uri == ""
+
+
+def test_retain_secrets_keeps_the_raw_value_only_when_enabled() -> None:
+    output = (
+        json.dumps(
+            {
+                "SourceMetadata": {"Data": {"Git": {"file": "a.py", "line": 1}}},
+                "DetectorName": "AWS",
+                "Verified": False,
+                "Raw": "RAWSECRETEXAMPLE",
+            }
+        )
+        + "\n"
+    )
+    off = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
+    on = SecretsScan(retain_secrets=True).create_run(
+        "trufflehog", ExecResult(0, output, ""), "/scan/x"
+    )
+    assert not isinstance(off, Err) and not isinstance(on, Err)
+    assert off.results[0].secret == ""  # off by default
+    assert on.results[0].secret == "RAWSECRETEXAMPLE"  # retained when enabled
