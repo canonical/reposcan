@@ -55,6 +55,10 @@ class SecretsScan(SecurityScan):
         requires={"mode": "history"},
         help="For secrets history mode: scan the commits of every ref, not just HEAD.",
     )
+    retain_secrets: bool = flag(
+        help="Keep the raw secret value in each finding's properties. Off by "
+        "default: the report will contain live credentials when enabled.",
+    )
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
         """The single trufflehog invocation for `target` in the resolved mode.
@@ -100,7 +104,7 @@ class SecretsScan(SecurityScan):
             One SARIF run listing the findings.
         """
         findings = [
-            _to_result(finding, tool, target)
+            _build_sarif_result(finding, tool, target, self.retain_secrets)
             for finding in _parse_findings(output.stdout)
         ]
         return sarif.SarifRun.from_results(tool, TRUFFLEHOG.version, findings)
@@ -122,7 +126,9 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
     return findings
 
 
-def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.SarifResult:
+def _build_sarif_result(
+    finding: dict[str, Any], scanner: str, target: str, retain_secret: bool = False
+) -> sarif.SarifResult:
     """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
     verified = bool(finding.get("Verified"))
@@ -140,6 +146,8 @@ def _to_result(finding: dict[str, Any], scanner: str, target: str) -> sarif.Sari
         digest = hashlib.sha256(secret.encode("utf-8", "surrogatepass")).hexdigest()
         # use sarif's 'name/vN' convention
         result.add_fingerprint("secretHash/v1", digest)
+        if retain_secret:
+            result.set_secret(secret)
     return result
 
 
