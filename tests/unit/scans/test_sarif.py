@@ -33,7 +33,7 @@ def test_build_creates_a_finding_normalized_at_construction() -> None:
     assert finding.location == "src/app.py:12"
     assert finding.level == "error"
     assert finding.scanners == ["trufflehog"]  # annotated at creation
-    assert finding.key == ("AWS", "src/app.py", 12)
+    assert finding.key == ("AWS", "src/app.py", 12, "")  # commit empty when absent
 
 
 def test_from_runs_wraps_a_run_built_from_results() -> None:

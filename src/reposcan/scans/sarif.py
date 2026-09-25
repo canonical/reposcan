@@ -131,9 +131,9 @@ class SarifResult:
         return []
 
     @property
-    def key(self) -> tuple[str, str, int]:
-        """A dedup key: the finding's rule and primary location."""
-        return (self.rule_id, self.uri, self.line)
+    def key(self) -> tuple[str, str, int, str]:
+        """A dedup key: the finding's rule, primary location, and commit."""
+        return (self.rule_id, self.uri, self.line, self.commit)
 
     @property
     def commit(self) -> str:
@@ -383,8 +383,8 @@ def merge_runs(runs: Sequence[SarifRun]) -> SarifRun:
     Args:
         runs: The normalized runs to combine (e.g. one scan's per-tool runs).
     """
-    by_key: dict[tuple[str, str, int], dict[str, Any]] = {}
-    order: list[tuple[str, str, int]] = []
+    by_key: dict[tuple[str, str, int, str], dict[str, Any]] = {}
+    order: list[tuple[str, str, int, str]] = []
     rules_by_id: dict[str, dict[str, Any]] = {}
     for run in runs:
         for rule in run.rules:
