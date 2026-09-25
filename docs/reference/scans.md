@@ -24,6 +24,9 @@ Leaked credentials, via trufflehog. Emits SARIF. Options:
   otherwise (so a non-git directory is scanned rather than failing).
 - `--depth <N>`: in history mode, scan only the most recent N commits (default:
   all).
+- `--retain-secrets`: keep the raw secret value in each finding's properties
+  (`reposcan:secret`). Off by default; enabling it puts live credentials in the
+  report.
 
 ## sast
 

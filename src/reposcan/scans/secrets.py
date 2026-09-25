@@ -12,7 +12,7 @@ import hashlib
 import json
 from typing import Any
 
-from reposcan.cli_kit import option
+from reposcan.cli_kit import flag, option
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult
 from reposcan.result import Result, is_err
@@ -50,6 +50,10 @@ class SecretsScan(SecurityScan):
         convert=int,
         requires={"mode": "history"},
         help="For secrets history mode: scan only the most recent N commits.",
+    )
+    retain_secrets: bool = flag(
+        help="Keep the raw secret value in each finding's properties. Off by "
+        "default: the report will contain live credentials when enabled.",
     )
 
     def build_invocations(
@@ -95,7 +99,7 @@ class SecretsScan(SecurityScan):
             One SARIF run listing the findings.
         """
         findings = [
-            _build_sarif_result(finding, tool, target)
+            _build_sarif_result(finding, tool, target, self.retain_secrets)
             for finding in _parse_findings(output.stdout)
         ]
         return sarif.SarifRun.from_results(tool, TRUFFLEHOG.version, findings)
@@ -118,7 +122,7 @@ def _parse_findings(stdout: str) -> list[dict[str, Any]]:
 
 
 def _build_sarif_result(
-    finding: dict[str, Any], scanner: str, target: str
+    finding: dict[str, Any], scanner: str, target: str, retain_secret: bool = False
 ) -> sarif.SarifResult:
     """Build a SARIF finding from one trufflehog finding."""
     detector = finding.get("DetectorName", "unknown")
@@ -137,6 +141,8 @@ def _build_sarif_result(
         digest = hashlib.sha256(secret.encode("utf-8", "surrogatepass")).hexdigest()
         # use sarif's 'name/vN' convention
         result.add_fingerprint("secretHash/v1", digest)
+        if retain_secret:
+            result.set_secret(secret)
     return result
 
 
@@ -146,13 +152,18 @@ def _read_finding_location(finding: dict[str, Any]) -> tuple[str, int, str]:
     'commit' is only produced by trufflehog's history mode. trufflehog dedups its
     findings, so the reported commit is just *a* commit the secret was in, not
     necessarily the commit that introduced it.
+
+    A secret in a commit message carries a commit but no file, so each
+    field is read independently: a block missing `file` will still yield its commit.
     """
     data = finding.get("SourceMetadata", {}).get("Data", {})
     if isinstance(data, dict):
         for value in data.values():  # e.g. Git or Filesystem
-            if isinstance(value, dict) and value.get("file"):
+            if isinstance(value, dict) and (
+                value.get("file") or value.get("commit") or value.get("line")
+            ):
                 return (
-                    str(value["file"]),
+                    str(value.get("file") or ""),
                     int(value.get("line") or 0),
                     str(value.get("commit") or ""),
                 )
