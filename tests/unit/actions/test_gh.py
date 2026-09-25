@@ -130,7 +130,7 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
         with _client(
             [_build_repo("one"), _build_repo("two"), _build_repo("three")], {}
         ):
-            code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x"))
+            code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x", threads=1))
     finally:
         gh.clone.sync_repository = saved
 
