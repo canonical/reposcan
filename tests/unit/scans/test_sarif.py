@@ -287,3 +287,21 @@ def test_a_repository_with_no_remote_gets_no_version_control_provenance() -> Non
     assert "versionControlProvenance" not in rendered
     # The commit is retained
     assert rendered["properties"]["reposcan:repository"]["commitSha"] == "abc123"
+
+
+def test_merge_runs_keeps_findings_that_differ_only_by_commit() -> None:
+    # The same secret location in two different commits is two findings, not one:
+    # a credential rotated in place is a distinct leak in each commit it appears in.
+    commit_one = sarif.SarifResult.build(
+        "AWS", "k", "/r/deploy.sh", 10, "trufflehog", "/r"
+    )
+    commit_one.set_commit("aaaa111")
+    commit_two = sarif.SarifResult.build(
+        "AWS", "k", "/r/deploy.sh", 10, "trufflehog", "/r"
+    )
+    commit_two.set_commit("bbbb222")
+    run = sarif.SarifRun.from_results("trufflehog", "1.0", [commit_one, commit_two])
+
+    merged = sarif.merge_runs([run])
+
+    assert [result.commit for result in merged.results] == ["aaaa111", "bbbb222"]
