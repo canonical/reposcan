@@ -1,31 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Integration tests: build the real reposcan image and invoke every tool in it.
-
-For each container backend (docker, lxd), force a real, hash-verified build of the tool
-image, then run every tool through the real, unpatched `exec` with a
-version probe, checking the pinned version appears in its output. This exercises the
-whole path end to end: image creation and every tool invocation.
-
-Excluded from the default unit run; invoke explicitly:
-
-    tox run -f integration      (across the py310/py312/py314 matrix)
-    OR
-    tox run -e integration-py310
-    OR
-    pytest tests/integration -s --log-cli-level=INFO
-
-Pass `--short` (e.g. `tox run -f integration -- --short`) to reuse an existing
-reposcan image when it still verifies instead of forcing a rebuild, which skips the
-slow LXD image build on re-runs.
-
-Skipped when a backend is unavailable. Slow: the image build downloads and installs
-every tool, so the first run per backend can take several minutes. The build output
-streams live to the console (-s keeps pytest from capturing it) and each tool
-invocation is logged at INFO (--log-cli-level=INFO), so the run narrates itself
-instead of sitting silent; the tox integration envs set both.
-"""
+"""Shared utils for the docker and lxd integration tests."""
 
 import io
 import logging
@@ -39,11 +15,9 @@ from contextlib import (
     redirect_stdout,
 )
 
-import pytest
-
 from reposcan import paths
 from reposcan.actions.exec import execute
-from reposcan.backends import BACKENDS, Backend
+from reposcan.backends import Backend
 from reposcan.execution.context import ExecutionContext
 from reposcan.image.ensure import ensure_built
 from reposcan.image.spec import build_spec
@@ -70,6 +44,35 @@ _VERSION_PROBE = {
 }
 
 
+def exercise_lifecycle(ctx: ExecutionContext) -> None:
+    """Test execution context lifecycle.
+
+    Run a series of commands in an already-started context and check that:
+     - they execute inside an ubuntu:26.04 container
+     - cwd, env, and exit-code are honored.
+    """
+    # Runs in the ubuntu:26.04 image, not on the host.
+    os_release = ctx.run(["cat", "/etc/os-release"])
+    assert not isinstance(os_release, Err)
+    assert os_release.exit_code == 0
+    assert 'VERSION_ID="26.04"' in os_release.stdout
+
+    # The command's exit code is propagated.
+    exit_code = ctx.run(["sh", "-c", "exit 7"])
+    assert not isinstance(exit_code, Err)
+    assert exit_code.exit_code == 7
+
+    # Per-command env reaches the container.
+    env = ctx.run(["sh", "-c", "echo $REPOSCAN_IT"], env={"REPOSCAN_IT": "present"})
+    assert not isinstance(env, Err)
+    assert env.stdout.strip() == "present"
+
+    # cwd is honored.
+    cwd = ctx.run(["pwd"], cwd="/tmp")
+    assert not isinstance(cwd, Err)
+    assert cwd.stdout.strip() == "/tmp"
+
+
 @contextmanager
 def _isolated_cache() -> Iterator[None]:
     """Keep the image-identity cache out of the developer's ~/.local/share."""
@@ -89,11 +92,22 @@ def _invoke(ctx: ExecutionContext, name: str, args: list[str]) -> tuple[int, str
     return code, out.getvalue() + err.getvalue()
 
 
-def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> None:
+def probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> None:
+    """Build the reposcan image in `backend` and invoke every tool in it.
+
+    Force a real, hash-verified build of the reposcan image, then run every tool through
+    the real, unpatched `exec` with a version probe, checking the pinned version appears
+    in its output. This exercises the whole path end to end: image creation and tool
+    usage.
+
+    This test is slow: the image build downloads and installs every tool, so the first
+    run can take several minutes. The build output streams live to the console and each
+    tool invocation is logged at INFO, so the run's progress is visible.
+    """
     available = backend.check_availability()
-    if isinstance(available, Err):
-        logger.warning(available.msg)
-        pytest.skip(f"{backend.name} unavailable: {available.msg}")
+    assert not isinstance(available, Err), (
+        f"{backend.name} unavailable: {available.msg}"
+    )
     assert set(_VERSION_PROBE) == set(TOOLS)  # probe table matches the tool set
 
     builder, open_context = backend.builder, backend.context
@@ -118,13 +132,3 @@ def _probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> No
                 logger.info("[%s] %s -> %s OK", backend.name, name, TOOLS[name].version)
         finally:
             ctx.stop()
-
-
-def test_every_tool_runs_in_the_docker_image(request: pytest.FixtureRequest) -> None:
-    short = bool(request.config.getoption("--short"))
-    _probe_every_tool_in(BACKENDS["docker"], force_rebuild=not short)
-
-
-def test_every_tool_runs_in_the_lxd_image(request: pytest.FixtureRequest) -> None:
-    short = bool(request.config.getoption("--short"))
-    _probe_every_tool_in(BACKENDS["lxd"], force_rebuild=not short)

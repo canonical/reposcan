@@ -32,7 +32,7 @@ packages = ["src/reposcan"]
 #######################################
 
 [tool.tox]
-# tox>=4.46 is necessary for the integration-py310/py312/py314 factor-resolution.
+# tox>=4.46 is necessary for the integration envs' py310/py312/py314 factor-resolution.
 requires = ["tox>=4.46", "tox-uv>=1"]
 env_list = [
   "unit-py310", "unit-py312", "unit-py314",
@@ -102,17 +102,40 @@ extras = ["service"]
 recreate = true  # Recreate tox env on each run
 commands = [["pytest", { replace = "posargs", default = [], extend = true }]]
 
-# run with `tox run -f integration` or `tox run -e integration-py310`
-[tool.tox.env_base.integration]
+# run with `tox run -f integration docker` or `tox run -e integration-docker-py310`
+[tool.tox.env_base.integration-docker]
 factors = [["py310", "py312", "py314"]]
-description = "Integration tests against real docker/lxd"
+description = "Integration tests with docker containers"
 deps = ["-r{tox_root}/requirements/test.txt"]
 recreate = true
 commands = [[
-  "pytest", "{tox_root}/tests/integration", "-s", "--log-cli-level=INFO",
+  "pytest", "{tox_root}/tests/integration/docker", "-s", "--log-cli-level=INFO",
   { replace = "posargs", default = [], extend = true }
 ]]
 pass_env = ["HOME", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]
+
+# run with `tox run -f integration lxd` or `tox run -e integration-lxd-py310`
+[tool.tox.env_base.integration-lxd]
+factors = [["py310", "py312", "py314"]]
+description = "Integration tests with lxd containers"
+deps = ["-r{tox_root}/requirements/test.txt"]
+recreate = true
+commands = [[
+  "pytest", "{tox_root}/tests/integration/lxd", "-s", "--log-cli-level=INFO",
+  { replace = "posargs", default = [], extend = true }
+]]
+pass_env = ["HOME", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]
+
+# run with `tox run -f integration local` or `tox run -e integration-local-py310`
+[tool.tox.env_base.integration-local]
+factors = [["py310", "py312", "py314"]]
+description = "Integration tests that don't need containers"
+deps = ["-r{tox_root}/requirements/test.txt"]
+recreate = true
+commands = [[
+  "pytest", "{tox_root}/tests/integration/local", "-s", "--log-cli-level=INFO",
+  { replace = "posargs", default = [], extend = true }
+]]
 
 [tool.tox.env.scans]
 description = "Test scans against known-bad content fixtures"
