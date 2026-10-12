@@ -19,6 +19,9 @@ Leaked credentials, via trufflehog. Emits SARIF. Options:
   otherwise (so a non-git directory is scanned rather than failing).
 - `--depth <N>`: in history mode, scan only the most recent N commits (default:
   all).
+- `--all-refs`: scan the commits of every git ref (other branches, tags,
+  remote-tracking refs), not just the commits reachable from HEAD. The
+  ignorefile is only read from the working tree. Only relevant in history mode.
 
 ## sast
 

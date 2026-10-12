@@ -22,7 +22,10 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner-image: [ubuntu-latest, self-hosted-linux-amd64-noble-small]
+    runs-on: ${{ matrix.runner-image }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

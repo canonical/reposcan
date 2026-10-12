@@ -12,7 +12,7 @@ import hashlib
 import json
 from typing import Any
 
-from reposcan.cli_kit import option
+from reposcan.cli_kit import flag, option
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult, Failure
 from reposcan.scans import sarif
@@ -34,7 +34,8 @@ class SecretsScan(SecurityScan):
     (catching secrets later removed); "filesystem" scans only the working tree. When it
     is not chosen, `invocations` picks 'history' for a git repository and 'filesystem'
     otherwise. `depth` limits a history scan to the most recent N commits, or None for
-    all; it applies only in history mode.
+    all; it applies only in history mode. A history scan only reads the commits
+    reachable from HEAD, unless `all_refs` is set.
     """
 
     name = "secrets"
@@ -49,6 +50,10 @@ class SecretsScan(SecurityScan):
         convert=int,
         requires={"mode": "history"},
         help="For secrets history mode: scan only the most recent N commits.",
+    )
+    all_refs: bool = flag(
+        requires={"mode": "history"},
+        help="For secrets history mode: scan the commits of every ref, not just HEAD.",
     )
 
     def invocations(self, ctx: ExecutionContext, target: str) -> list[ToolInvocation]:
@@ -71,6 +76,12 @@ class SecretsScan(SecurityScan):
                 args = ["filesystem", target, *_COMMON_ARGS]
             case "history":
                 args = ["git", f"file://{target}", *_COMMON_ARGS]
+                # trufflehog scans every ref by default, which would include other
+                # branches, potentially ahead of the current branch.
+                if not self.all_refs:
+                    head = ctx.run(["git", "-C", target, "rev-parse", "HEAD"])
+                    if not isinstance(head, Failure) and head.exit_code == 0:
+                        args += ["--branch", head.stdout.strip()]
                 if self.depth is not None:
                     args += ["--max-depth", str(self.depth)]
             case _:

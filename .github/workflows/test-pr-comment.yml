@@ -1,0 +1,74 @@
+name: test-pr-comment
+
+# Another workflow's bot comment must survive the action updating its own.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/test-pr-comment.yml
+      - action.yml
+
+permissions:
+  contents: read
+  pull-requests: write # post, read, and delete PR comments
+
+concurrency:
+  group: test-pr-comment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-comment:
+    # A fork's token cannot write comments
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Post a decoy comment
+        id: decoy
+        env:
+          BODY: reposcan decoy comment, run ${{ github.run_id }}
+        run: |
+          id="$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            -f "body=${BODY}" --jq .id)"
+          echo "id=${id}" >> "${GITHUB_OUTPUT}"
+          echo "body=${BODY}" >> "${GITHUB_OUTPUT}"
+
+      - uses: ./
+        with:
+          code-scanning: false
+          pr-comment: true
+          secrets: false
+          sast: false
+          iac: false
+          workflow: false
+          sca: false
+
+      - name: Check the decoy is untouched and the reposcan comment exists
+        env:
+          DECOY_ID: ${{ steps.decoy.outputs.id }}
+          DECOY_BODY: ${{ steps.decoy.outputs.body }}
+        run: |
+          body="$(gh api "repos/${GH_REPO}/issues/comments/${DECOY_ID}" --jq .body)"
+          if [ "${body}" != "${DECOY_BODY}" ]; then
+            echo "::error::the action edited another comment: ${body}"
+            exit 1
+          fi
+          ours="$(gh api --paginate "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- reposcan-summary -->")) | .id')"
+          if [ -z "${ours}" ]; then
+            echo "::error::the action did not post its comment"
+            exit 1
+          fi
+
+      - name: Delete the decoy comment
+        if: always() && steps.decoy.outputs.id != ''
+        env:
+          DECOY_ID: ${{ steps.decoy.outputs.id }}
+        run: gh api --method DELETE "repos/${GH_REPO}/issues/comments/${DECOY_ID}"

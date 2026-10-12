@@ -115,6 +115,12 @@ commands = [[
 ]]
 pass_env = ["HOME", "DOCKER_HOST", "XDG_RUNTIME_DIR"]
 
+[tool.tox.env.actionlint]
+description = "Lint GitHub Actions workflows with actionlint"
+skip_install = true
+deps = ["actionlint-py"]
+commands = [["actionlint"]]
+
 #######################################
 # TOOL CONFIG                         #
 #######################################
