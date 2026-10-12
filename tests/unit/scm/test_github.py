@@ -12,7 +12,7 @@ import requests
 
 from reposcan.result import Err
 from reposcan.scm import github
-from reposcan.scm.github import get_repositories, list_repositories
+from reposcan.scm.github import fetch_named_repositories, list_repositories
 
 
 @dataclass
@@ -159,11 +159,11 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
 
 def test_a_repository_can_be_fetched_by_name() -> None:
     with _answering(_Response(body=_build_payload("one"))) as fake:
-        found = get_repositories(["acme/one"])
+        found = fetch_named_repositories(["acme/one"])
     assert not isinstance(found, Err)
     assert [repo.full_name for repo in found] == ["acme/one"]
     assert fake.urls == ["https://api.github.com/repos/acme/one"]
 
     # a name that does not exist is an error, not a silent omission
     with _answering(_Response(404)):
-        assert isinstance(get_repositories(["acme/gone"]), Err)
+        assert isinstance(fetch_named_repositories(["acme/gone"]), Err)

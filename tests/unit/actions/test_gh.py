@@ -41,18 +41,18 @@ def _client(listed: Any, seen: dict[str, Any]) -> Iterator[None]:
 
     saved = (
         github.list_repositories,
-        github.get_repositories,
+        github.fetch_named_repositories,
         github.filter_repositories,
     )
     github.list_repositories = fake_list
-    github.get_repositories = fake_get
+    github.fetch_named_repositories = fake_get
     github.filter_repositories = fake_select
     try:
         yield
     finally:
         (
             github.list_repositories,
-            github.get_repositories,
+            github.fetch_named_repositories,
             github.filter_repositories,
         ) = saved
 

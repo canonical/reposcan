@@ -152,7 +152,9 @@ def list_repositories(
     return list(repositories.values())
 
 
-def get_repositories(names: Sequence[str], token: str = "") -> Result[list[Repository]]:
+def fetch_named_repositories(
+    names: Sequence[str], token: str = ""
+) -> Result[list[Repository]]:
     """Fetch each repository named `owner/name`.
 
     Args:

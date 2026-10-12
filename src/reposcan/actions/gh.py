@@ -71,14 +71,11 @@ class GhAction(Action):
             )
         return github
 
-    def get_repositories(self) -> "Result[list[Repository]]":
+    def discover_repositories(self, token: str) -> "Result[list[Repository]]":
         """Fetch the repositories from `--org` and `--enterprise`, and apply filters."""
         github = self.load_github()
         if isinstance(github, Err):
             return github
-        token = self.read_token()
-        if isinstance(token, Err):
-            return token
         discovered = github.list_repositories(
             org=self.org, enterprise=self.enterprise, token=token
         )
@@ -147,7 +144,11 @@ class ListGhRepos(GhAction):
         if not (self.org or self.enterprise):
             logger.error("requires --org or --enterprise")
             return 2
-        selected = self.get_repositories()
+        token = self.read_token()
+        if isinstance(token, Err):
+            logger.error("%s", token.msg)
+            return 1
+        selected = self.discover_repositories(token)
         if isinstance(selected, Err):
             logger.error("%s", selected.msg)
             return 1
@@ -193,19 +194,18 @@ class CloneGhRepos(GhAction):
         help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREADS}).",
     )
 
-    def get_repositories(self) -> "Result[list[Repository]]":
+    def select_repositories(self, token: str) -> "Result[list[Repository]]":
         """List the repositories named by `--repo`, or by `--org` and `--enterprise`."""
         if not self.repo:
-            return super().get_repositories()
+            return self.discover_repositories(token)
         if self.org or self.enterprise:
             logger.warning("--repo was provided, ignoring --org and --enterprise")
         github = self.load_github()
         if isinstance(github, Err):
             return github
-        token = self.read_token()
-        if isinstance(token, Err):
-            return token
-        return github.get_repositories(self.repo, token)
+        # Repositories named explicitly are cloned as named: the archived, fork, and
+        # --exclude filters apply only to discovery.
+        return github.fetch_named_repositories(self.repo, token)
 
     def run(self) -> int:
         """Mirror each selected repository, updating any already present.
@@ -218,14 +218,13 @@ class CloneGhRepos(GhAction):
         if not (self.org or self.enterprise or self.repo):
             logger.error("give at least one of --org, --enterprise, or --repo")
             return 2
-        selected = self.get_repositories()
-        if isinstance(selected, Err):
-            logger.error("%s", selected.msg)
-            return 1
-
         token = self.read_token()
         if isinstance(token, Err):
             logger.error("%s", token.msg)
+            return 1
+        selected = self.select_repositories(token)
+        if isinstance(selected, Err):
+            logger.error("%s", selected.msg)
             return 1
 
         failed = 0
