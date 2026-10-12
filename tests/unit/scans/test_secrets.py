@@ -12,6 +12,8 @@ from reposcan.execution.process import ExecResult
 from reposcan.scans import sarif
 from reposcan.scans.secrets import SecretsScan
 
+_HEAD = "0123456789abcdef0123456789abcdef01234567"
+
 
 class _FakeContext:
     """A context whose `git rev-parse` reports the given exit code (0 = a git repo)."""
@@ -22,7 +24,8 @@ class _FakeContext:
 
     def run(self, command: list[str], **kwargs: object) -> ExecResult:
         self.commands.append(list(command))
-        return ExecResult(self.git_dir_exit, "", "")
+        stdout = f"{_HEAD}\n" if self.git_dir_exit == 0 else ""
+        return ExecResult(self.git_dir_exit, stdout, "")
 
 
 def _ctx(git_dir_exit: int = 0) -> ExecutionContext:
@@ -56,9 +59,23 @@ _TRUFFLEHOG_OUTPUT = (
 def test_invocations_choose_git_or_filesystem_by_mode() -> None:
     history = SecretsScan(mode="history").invocations(_ctx(), "/scan/acme")[0]
     assert history.tool == "trufflehog"
-    assert history.args == ["git", "file:///scan/acme", "--json", "--no-update"]
+    assert history.args == [
+        "git",
+        "file:///scan/acme",
+        "--json",
+        "--no-update",
+        "--branch",
+        _HEAD,
+    ]
     filesystem = SecretsScan(mode="filesystem").invocations(_ctx(), "/scan/acme")[0]
     assert filesystem.args == ["filesystem", "/scan/acme", "--json", "--no-update"]
+
+
+def test_all_refs_scans_every_ref() -> None:
+    fake = _FakeContext(git_dir_exit=0)
+    scan = SecretsScan(mode="history", all_refs=True)
+    invocation = scan.invocations(cast(ExecutionContext, fake), "/scan/acme")[0]
+    assert invocation.args == ["git", "file:///scan/acme", "--json", "--no-update"]
 
 
 def test_auto_mode_uses_history_for_a_git_repo_else_filesystem() -> None:

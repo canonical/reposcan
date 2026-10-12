@@ -79,8 +79,9 @@ reposcan scan sast ./repo -o out.sarif --db history.db   # emit and record
 ## Pass scan-specific options
 
 Some scans take their own options. The `secrets` scan, for example, chooses
-between git-history and working-tree mode and can limit the history depth. With
-no `--mode`, it scans the git history for a git repository and the working tree
+between git-history and working-tree mode and can limit the history depth. If
+`--mode` is not specified, it scans the git history reachable from HEAD if the
+directory is a git repository, and it scans the directory in file-system mode
 otherwise:
 
 ```
