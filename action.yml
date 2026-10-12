@@ -228,9 +228,39 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         SUMMARY: ${{ steps.scan.outputs.summary-file }}
       run: |
-        set -uo pipefail
-        gh pr comment "${PR_NUMBER}" --body-file "${SUMMARY}" --edit-last --create-if-none \
-          || gh pr comment "${PR_NUMBER}" --body-file "${SUMMARY}"
+        set -euo pipefail
+
+        # --create-if-none needs gh 2.69.0 or later
+        gh_version=2.69.0
+        installed=""
+        if command -v gh > /dev/null; then
+          installed="$(gh --version | head -n 1 | cut -d ' ' -f 3)"
+        fi
+        oldest="$(printf '%s\n' "${gh_version}" "${installed}" | sort -V | head -n 1)"
+        if [ -z "${installed}" ] || [ "${oldest}" != "${gh_version}" ]; then
+          # verify: https://github.com/cli/cli/releases/download/v2.69.0/gh_2.69.0_checksums.txt
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64)
+              arch=amd64
+              sha256=6e3079e1220920eb61b9e8b68093f6e84b6fb0676ac7da3716689421134c7cff ;;
+            Linux-ARM64)
+              arch=arm64
+              sha256=b910b612ad001c2bce19f1cfab6c97af5afb9038abb815bbc667920901281216 ;;
+            *)
+              echo "::warning::gh ${gh_version} or later is needed to comment;" \
+                "found '${installed:-none}' on ${RUNNER_OS}-${RUNNER_ARCH}"
+              exit 1 ;;
+          esac
+          name="gh_${gh_version}_linux_${arch}"
+          tarball="${RUNNER_TEMP}/${name}.tar.gz"
+          curl -fsSL -o "${tarball}" \
+            "https://github.com/cli/cli/releases/download/v${gh_version}/${name}.tar.gz"
+          echo "${sha256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}" -C "${RUNNER_TEMP}"
+          PATH="${RUNNER_TEMP}/${name}/bin:${PATH}"
+        fi
+
+        gh pr comment "${PR_NUMBER}" --body-file "${SUMMARY}" --edit-last --create-if-none
 
     # Write the summary table to job logs and upload the scan artifacts
     - name: Upload results artifact
