@@ -8,7 +8,7 @@ import json
 from typing import cast
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.execution.process import ExecResult
+from reposcan.execution.process import ExecResult, Failure
 from reposcan.scans import sarif
 from reposcan.scans.secrets import SecretsScan
 
@@ -36,7 +36,15 @@ def _ctx(git_dir_exit: int = 0) -> ExecutionContext:
 _TRUFFLEHOG_OUTPUT = (
     json.dumps(
         {
-            "SourceMetadata": {"Data": {"Git": {"file": "src/config.py", "line": 10}}},
+            "SourceMetadata": {
+                "Data": {
+                    "Git": {
+                        "file": "src/config.py",
+                        "line": 10,
+                        "commit": "deadbeef",
+                    }
+                }
+            },
             "DetectorName": "AWS",
             "Verified": True,
             "Raw": "AKIAEXAMPLE",
@@ -117,6 +125,8 @@ def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
     assert aws.line == 10
     assert aws.scanners == ["trufflehog"]  # normalized on ingest
     assert github.rule_id == "GitHub" and github.level == "warning"  # unverified
+    assert aws.commit == "deadbeef"
+    assert github.commit == ""
 
 
 def test_create_run_fingerprints_each_finding_by_its_secret() -> None:
@@ -162,5 +172,47 @@ def test_merge_runs_combines_findings_across_tool_runs() -> None:
             "trufflehog", ExecResult(0, one_finding("GitHub"), ""), "/scan/x"
         ),
     ]
-    merged = sarif.merge_runs(runs)
-    assert len(merged.results()) == 2  # one from each run
+    assert all(not isinstance(run, Failure) for run in runs)
+    merged = sarif.merge_runs([run for run in runs if not isinstance(run, Failure)])
+    assert len(merged.results) == 2  # one from each run
+
+
+def test_create_run_annotates_commit_for_a_finding_in_a_commit_message() -> None:
+    output = (
+        json.dumps(
+            {
+                "SourceMetadata": {"Data": {"Git": {"line": 7, "commit": "7f630c9b"}}},
+                "DetectorName": "GitHub",
+                "Verified": False,
+                "Raw": "ghp_example",
+            }
+        )
+        + "\n"
+    )
+    run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
+    assert not isinstance(run, Failure)
+    (finding,) = run.results
+    assert finding.commit == "7f630c9b"
+    assert finding.line == 7
+    assert finding.uri == ""
+
+
+def test_retain_secrets_keeps_the_raw_value_only_when_enabled() -> None:
+    output = (
+        json.dumps(
+            {
+                "SourceMetadata": {"Data": {"Git": {"file": "a.py", "line": 1}}},
+                "DetectorName": "AWS",
+                "Verified": False,
+                "Raw": "RAWSECRETEXAMPLE",
+            }
+        )
+        + "\n"
+    )
+    off = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
+    on = SecretsScan(retain_secrets=True).create_run(
+        "trufflehog", ExecResult(0, output, ""), "/scan/x"
+    )
+    assert not isinstance(off, Err) and not isinstance(on, Err)
+    assert off.results[0].secret == ""  # off by default
+    assert on.results[0].secret == "RAWSECRETEXAMPLE"  # retained when enabled

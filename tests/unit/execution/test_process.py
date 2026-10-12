@@ -62,3 +62,10 @@ def test_streams_tee_output_live_while_still_capturing_and_reporting_failures() 
     # bad's reason is the captured stderr, even though it was also shown live.
     assert isinstance(bad, Failure) and "no such file" in bad.reason
     assert isinstance(slow, Failure) and slow.timed_out
+
+
+def test_output_that_is_not_utf8_is_captured_with_replacement_characters() -> None:
+    program = "import sys; sys.stdout.buffer.write(b'a\\xcbb\\n')"
+    result = run_process([sys.executable, "-c", program])
+    assert not isinstance(result, Failure)
+    assert result.stdout == "a\ufffdb\n"

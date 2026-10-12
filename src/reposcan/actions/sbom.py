@@ -89,29 +89,27 @@ class SbomCommand(Action):
                 return session.exit_code
             assert session.target is not None  # a source was given, so target is set
 
-            analysis = Analysis.begin(
-                read_repository_state(session.context, session.target)
-            )
-            started_at = utc_now()
+            state = read_repository_state(session.context, session.target)
+            with Analysis.begin(state) as analysis:
+                started_at = utc_now()
 
-            scan = SbomScan(
-                include_dev_dependencies=self.include_dev_dependencies,
-                allow_code_execution=self.allow_code_execution,
-            )
-            artifact = run_sbom_scan(
-                scan,
-                session.context,
-                session.target,
-                session.tool_root,
-                resolved_parent=session.resolved_parent,
-                stream=True,
-            )
-            if isinstance(artifact, Failure):
-                logger.error("sbom failed: %s", artifact.reason)
-                return 1
+                scan = SbomScan(
+                    include_dev_dependencies=self.include_dev_dependencies,
+                    allow_code_execution=self.allow_code_execution,
+                )
+                artifact = run_sbom_scan(
+                    scan,
+                    session.context,
+                    session.target,
+                    session.tool_root,
+                    resolved_parent=session.resolved_parent,
+                    stream=True,
+                )
+                if isinstance(artifact, Failure):
+                    logger.error("sbom failed: %s", artifact.reason)
+                    return 1
 
-            analysis.add(scan.name, artifact, started_at=started_at)
-            analysis.close()
+                analysis.add(scan.name, artifact, started_at=started_at)
             if self.db is not None:
                 failed = db_write.analysis(self.db, analysis)
                 if failed is not None:

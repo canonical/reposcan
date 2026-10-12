@@ -7,6 +7,7 @@ trufflehog  SentryToken  src/*/tools/locks/*.txt
 # test fixtures
 trufflehog AWS tests/scans/fixtures/*
 trufflehog URI tests/unit/scans/test_repo.py
+truffelhog AWS tests/integration/test_undecodable_source.py
 
 # treat the following as verified action creators
 poutine  github_action_from_unverified_creator_used  **  "uses: canonical/"
