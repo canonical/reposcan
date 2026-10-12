@@ -8,8 +8,6 @@ Docker-only: LXD cannot pull, and the local backend has no image.
 
 import logging
 
-import pytest
-
 from reposcan.backends import BACKENDS
 from reposcan.execution.docker import DockerContext
 from reposcan.image.ensure import ensure_pulled
@@ -30,8 +28,9 @@ def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
 
     logger.info("pulling the ghcr image %s", CANONICAL_REF)
     reference = ensure_pulled(CANONICAL_REF)
-    if isinstance(reference, Err):
-        pytest.fail(f"could not pull the ghcr image {CANONICAL_REF}: {reference.msg}")
+    assert not isinstance(reference, Err), (
+        f"could not pull the ghcr image {CANONICAL_REF}: {reference.msg}"
+    )
 
     assert isinstance(reference, str)
     ctx = DockerContext(reference)

@@ -9,7 +9,7 @@ re-runs quick once the image exists. The tests read it with
 `request.config.getoption("--short")`.
 
     tox run -f integration -- --short
-    tox run -e integration-py310 -- --short
+    tox run -e integration-lxd-py310 -- --short
 """
 
 import pytest
