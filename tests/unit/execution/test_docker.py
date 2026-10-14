@@ -111,3 +111,20 @@ def test_mounts_the_source_read_only_keeping_its_name() -> None:
     assert "-v" in run_argv
     mount = run_argv[run_argv.index("-v") + 1]
     assert mount == "/host/acme-api:/scan/acme-api:ro"  # read-only, name preserved
+
+
+def test_a_worktrees_git_dirs_are_mounted_read_only_at_their_own_path() -> None:
+    with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
+        ctx = DockerContext(
+            "reposcan:tools",
+            mount_source="/ws/worktrees/acme-api",
+            git_dirs=["/ws/mirrors/acme-api.git"],
+        )
+        assert not isinstance(ctx.start(), Err)
+    run_argv = calls[-1]
+    mounts = [run_argv[i + 1] for i, arg in enumerate(run_argv) if arg == "-v"]
+    assert mounts == [
+        "/ws/worktrees/acme-api:/scan/acme-api:ro",
+        # same path inside, so the worktree's absolute .git pointer resolves
+        "/ws/mirrors/acme-api.git:/ws/mirrors/acme-api.git:ro",
+    ]

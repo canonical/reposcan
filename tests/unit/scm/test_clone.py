@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 
+from reposcan.execution.context import find_linked_git_dirs
 from reposcan.result import Err
 from reposcan.scm import clone
 
@@ -59,3 +60,19 @@ def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
             f"file://{tmp}/nothing-here", os.path.join(tmp, "work"), "acme/gone"
         )
     assert isinstance(result, Err) and "git clone failed" in result.msg
+
+
+def test_a_worktree_names_the_mirror_a_container_must_mount() -> None:
+    # A worktree's .git is a pointer into the mirror, outside the worktree. A scan
+    # container must mount the mirror too, or git sees no repository at all.
+    with tempfile.TemporaryDirectory() as directory:
+        url = _create_repo(directory)
+        workspace = os.path.join(directory, "workspace")
+        worktree = clone.sync_repository(url, workspace, "acme/api")
+        assert isinstance(worktree, str)
+
+        mirror = os.path.join(workspace, clone.MIRROR_DIR, "acme/api.git")
+        assert find_linked_git_dirs(worktree) == [mirror]
+        # a regular checkout holds its own .git: nothing extra to mount
+        assert find_linked_git_dirs(os.path.join(directory, "origin")) == []
+        assert find_linked_git_dirs(directory) == []  # not a repository at all

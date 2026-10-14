@@ -33,9 +33,11 @@ class DockerContext:
         mount_source: str | None = None,
         user: RunUser | None = None,
         env: Mapping[str, str] | None = None,
+        git_dirs: Sequence[str] = (),
     ) -> None:
         self._image = image
         self._mount_source = mount_source
+        self._git_dirs = list(git_dirs)
         self._user = user  # the default identity for every run (None = root)
         self._env = dict(env or {})
         self._instance_name: str | None = None
@@ -45,6 +47,8 @@ class DockerContext:
         if self._mount_source is not None:
             src = self._mount_source
             argv += ["-v", f"{src}:{locate_mounted_target(src)}:ro"]
+        for git_dir in self._git_dirs:
+            argv += ["-v", f"{git_dir}:{git_dir}:ro"]
         argv += [self._image, "sleep", "infinity"]
         result = run_process(argv)
         if isinstance(result, Err):

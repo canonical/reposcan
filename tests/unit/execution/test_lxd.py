@@ -179,3 +179,20 @@ def test_ensure_project_returns_a_failed_create_as_a_failure() -> None:
     with _patched_responses(respond):
         result = ensure_project()
     assert isinstance(result, Err) and result.msg == "permission denied"
+
+
+def test_a_worktrees_git_dirs_are_mounted_read_only_at_their_own_path() -> None:
+    with _patched_responses(lambda argv: ExecResult(0, "", "")) as calls:
+        ctx = LxdContext(
+            "reposcan-tools",
+            mount_source="/ws/worktrees/acme-api",
+            git_dirs=["/ws/mirrors/acme-api.git"],
+        )
+        assert not isinstance(ctx.start(), Err)
+    adds = [c for c in calls if c[3:6] == ["config", "device", "add"]]
+    assert len(adds) == 2  # the worktree, then its mirror
+    assert "path=/scan/acme-api" in adds[0]
+    mirror = adds[1]
+    assert "source=/ws/mirrors/acme-api.git" in mirror
+    assert "path=/ws/mirrors/acme-api.git" in mirror  # at its own path
+    assert "readonly=true" in mirror

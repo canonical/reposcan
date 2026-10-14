@@ -13,6 +13,7 @@ from reposcan.execution.context import (
     RESOLUTION_WORKDIR,
     ExecutionContext,
     RunUser,
+    find_linked_git_dirs,
     locate_mounted_target,
 )
 from reposcan.execution.docker import DockerContext
@@ -234,6 +235,8 @@ def start_session(
             mount_source=mount_source,
             user=user,
             env=env,
+            # A linked worktree's git data lives outside it, so mount that too
+            git_dirs=find_linked_git_dirs(mount_source) if mount_source else [],
         )
         # A container mounts the source under MOUNT_PARENT.
         target = (

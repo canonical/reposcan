@@ -63,9 +63,11 @@ class LxdContext:
         mount_source: str | None = None,
         user: RunUser | None = None,
         env: Mapping[str, str] | None = None,
+        git_dirs: Sequence[str] = (),
     ) -> None:
         self._image = image
         self._mount_source = mount_source
+        self._git_dirs = list(git_dirs)
         self._user = user  # the default identity for every run (None = root)
         self._env = dict(env or {})
         self._instance_name: str | None = None
@@ -88,16 +90,26 @@ class LxdContext:
         if result.exit_code != 0:
             return Err(result.stderr.strip() or "lxc launch failed")
         self._instance_name = handle
-        if self._mount_source is not None:
-            return self._mount(handle, self._mount_source)
+        if self._mount_source is None:
+            return None
+        if is_err(err := self._mount(handle, "scan", self._mount_source)):
+            return err
+        for index, git_dir in enumerate(self._git_dirs):
+            # at its own path, so a linked worktree's absolute .git pointer resolves
+            if is_err(err := self._mount(handle, f"git{index}", git_dir, git_dir)):
+                return err
         return None
 
-    def _mount(self, handle: str, mount_source: str) -> Result[None]:
-        """Attach `mount_source` read-only at `locate_mounted_target(mount_source)`.
+    def _mount(
+        self, handle: str, device: str, source: str, path: str = ""
+    ) -> Result[None]:
+        """Attach `source` read-only, at `path` or `locate_mounted_target(source)`.
 
         Args:
             handle: The running instance to attach the disk to.
-            mount_source: The host directory to make available for scanning.
+            device: The device name, unique within the instance.
+            source: The host directory to make available for scanning.
+            path: Where it appears in the instance; defaults to the scan mount point.
 
         Returns:
             None on success, or an error if the disk device could not be added.
@@ -108,10 +120,10 @@ class LxdContext:
             "device",
             "add",
             handle,
-            "scan",
+            device,
             "disk",
-            f"source={mount_source}",
-            f"path={locate_mounted_target(mount_source)}",
+            f"source={source}",
+            f"path={path or locate_mounted_target(source)}",
             "readonly=true",
         ]
         return get_err(run_process(argv, check=True))
