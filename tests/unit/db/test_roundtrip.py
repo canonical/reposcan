@@ -567,3 +567,46 @@ def test_an_sca_advisory_is_matched_on_its_rule_alone() -> None:
     assert len(issues) == 2
     assert (issues[0].first_seen_analysis, issues[0].last_seen_analysis) == (1, 2)
     assert (issues[1].first_seen_analysis, issues[1].last_seen_analysis) == (3, 3)
+
+
+def _build_private_key_scan(
+    secret_hash: str, uri: str = "deploy/id_rsa", line: int = 1
+) -> ScanRecord:
+    result = sarif.SarifResult.build("PrivateKey", "leak", uri, line, "trufflehog", "")
+    result.add_fingerprint("secretHash/v1", secret_hash)
+    # every PEM key is reported on its identical "-----BEGIN ...-----" line
+    result.result["partialFingerprints"] = {"primaryLocationLineHash": "5f2c9e1a:1"}
+    run = sarif.SarifRun.from_results("trufflehog", "3.95.8", [result])
+    run.set_automation_id("reposcan/secrets/")
+    return ScanRecord(
+        category="secrets",
+        kind=ArtifactKind.SARIF,
+        started_at="2026-10-14T10:00:00Z",
+        finished_at="2026-10-14T10:00:30Z",
+        status=ScanStatus.COMPLETE,
+        produced=run,
+    )
+
+
+def test_a_key_rotated_in_place_is_a_new_issue_but_a_copied_key_is_not() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        write.write_analysis(
+            path, _add_scans(_build_analysis("u1"), _build_private_key_scan("old"))
+        )
+        write.write_analysis(
+            path, _add_scans(_build_analysis("u2"), _build_private_key_scan("new"))
+        )
+        rotated = read.list_issues(path, project_id=1)
+        write.write_analysis(
+            path,
+            _add_scans(
+                _build_analysis("u3"),
+                _build_private_key_scan("old", uri="backup/id_rsa", line=40),
+            ),
+        )
+        copied = read.list_issues(path, project_id=1)
+    # Same file and line content, different secret: a new leak to triage.
+    assert len(rotated) == 2
+    # The old secret seen again elsewhere is the issue already tracked.
+    assert len(copied) == 2

@@ -119,13 +119,25 @@ EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
 )
 
 
+# A fingerprint that settles identity in both directions for its scan type, ahead of
+# EQUIVALENCE_RULES. A secret's hash is the secret itself: equal hashes are one leak
+# wherever it was seen, and different hashes are different leaks however alike their
+# locations look (two private keys rotated in place share an identical BEGIN line, so
+# their line hashes match).
+DECISIVE_FINGERPRINTS: dict[str, str] = {"secrets": "secretHash/v1"}
+
+
 def is_same_issue(
     known: IssueAttributes, incoming: IssueAttributes, category: str = ""
 ) -> bool:
     """Whether `incoming` is another report of `known`.
 
-    `category` is the category of scan that produced the report.
+    `category` is the category of scan that produced the report. Where both reports
+    carry the category's decisive fingerprint, it alone decides.
     """
+    decisive = DECISIVE_FINGERPRINTS.get(category, "")
+    if decisive in known.fingerprints and decisive in incoming.fingerprints:
+        return known.fingerprints[decisive] == incoming.fingerprints[decisive]
     return any(rule.holds(known, incoming, category) for rule in EQUIVALENCE_RULES)
 
 
