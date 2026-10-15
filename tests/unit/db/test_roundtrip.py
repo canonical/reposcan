@@ -6,9 +6,11 @@
 import os
 import sqlite3
 import tempfile
+import threading
 
 from reposcan.db import read, write
-from reposcan.result import Err
+from reposcan.db import sqlite as db_sqlite
+from reposcan.result import Err, Result
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
@@ -212,6 +214,53 @@ def test_a_second_analysis_appends_and_the_same_one_twice_does_not() -> None:
         assert len(read.list_projects(path)) == 1
         # read_artifacts defaults to the most recent scan.
         assert len(read.list_artifacts(path)) == 1
+
+
+def _record(path: str, uuid: str, outcomes: dict[str, object]) -> None:
+    try:
+        outcome: Result[None] | sqlite3.Error = write.write_analysis(
+            path, _add_scans(_build_analysis(uuid), _build_findings_scan())
+        )
+    except sqlite3.Error as exc:
+        outcome = exc
+    outcomes[uuid] = outcome
+
+
+def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        _record(path, "u0", {})
+        outcomes: dict[str, object] = {}
+        second = threading.Thread(target=_record, args=(path, "u2", outcomes))
+        original = db_sqlite.Session.set_version
+
+        # set_version is the first write of a recording, after its first read: the
+        # moment another writer committing under it has caused "database is locked".
+        # Nested so it can reach `second` and `original`: standing in for a method,
+        # it is called with nothing but `self` and `version`.
+        def set_version_once_another_writer_ran(
+            self: db_sqlite.Session, version: int
+        ) -> None:
+            db_sqlite.Session.set_version = original
+            second.start()
+            second.join(timeout=0.5)  # returns early unless it waits for our lock
+            original(self, version)
+
+        db_sqlite.Session.set_version = set_version_once_another_writer_ran
+        try:
+            _record(path, "u1", outcomes)
+        finally:
+            db_sqlite.Session.set_version = original
+        second.join()
+        connection = sqlite3.connect(path)
+        try:
+            (analysis_count,) = connection.execute(
+                "SELECT COUNT(*) FROM analysis"
+            ).fetchone()
+        finally:
+            connection.close()
+    assert outcomes == {"u1": None, "u2": None}
+    assert analysis_count == 3
 
 
 def test_a_different_repository_becomes_a_second_project() -> None:
