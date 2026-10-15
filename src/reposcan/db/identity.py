@@ -106,25 +106,23 @@ class EquivalenceRule:
 
 
 # Two reports are about the same issue if any rule evaluates true. A full fingerprint
-# identifies a result outright. A partial fp is trusted within a file.
-# Position is the last resort, and only if no fingerprint contradicts it.
+# identifies a result outright: a matching one is the same issue (a secret's hash
+# matches wherever the secret is seen), and a disagreeing one is a different issue.
+# A partial fp is trusted within a file, and position is the last resort, both only
+# if no fingerprint contradicts them.
 EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
     EquivalenceRule(agree_on=("rule",), fp_match=True),
     # An SCA advisory is reported once per vulnerability, so its rule -- usually the
     # CVE -- is the whole identity; where it was found and how it was fingerprinted
     # vary between tools without meaning anything.
     EquivalenceRule(agree_on=("rule",), category="sca"),
-    EquivalenceRule(agree_on=("rule", "uri"), partial_fp_match=True),
+    # Two private keys rotated in place share an identical BEGIN line, so their line
+    # hashes match; only their (disagreeing) secret hashes tell them apart.
+    EquivalenceRule(
+        agree_on=("rule", "uri"), partial_fp_match=True, no_fp_conflict=True
+    ),
     EquivalenceRule(agree_on=("rule", "uri", "line"), no_fp_conflict=True),
 )
-
-
-# A fingerprint that settles identity in both directions for its scan type, ahead of
-# EQUIVALENCE_RULES. A secret's hash is the secret itself: equal hashes are one leak
-# wherever it was seen, and different hashes are different leaks however alike their
-# locations look (two private keys rotated in place share an identical BEGIN line, so
-# their line hashes match).
-DECISIVE_FINGERPRINTS: dict[str, str] = {"secrets": "secretHash/v1"}
 
 
 def is_same_issue(
@@ -132,12 +130,8 @@ def is_same_issue(
 ) -> bool:
     """Whether `incoming` is another report of `known`.
 
-    `category` is the category of scan that produced the report. Where both reports
-    carry the category's decisive fingerprint, it alone decides.
+    `category` is the category of scan that produced the report.
     """
-    decisive = DECISIVE_FINGERPRINTS.get(category, "")
-    if decisive in known.fingerprints and decisive in incoming.fingerprints:
-        return known.fingerprints[decisive] == incoming.fingerprints[decisive]
     return any(rule.holds(known, incoming, category) for rule in EQUIVALENCE_RULES)
 
 

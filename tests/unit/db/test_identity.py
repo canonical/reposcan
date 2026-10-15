@@ -116,7 +116,7 @@ def test_position_alone_loses_to_a_fingerprint_that_disagrees() -> None:
     assert not is_same_issue(known, incoming)
 
 
-def test_a_secrets_hash_decides_its_identity_both_ways() -> None:
+def test_a_disagreeing_secret_hash_beats_a_matching_line_hash() -> None:
     # Two private keys rotated in place are both reported on an identical BEGIN line,
     # so their line hashes match, but they are different secrets.
     begin_line = {"primaryLocationLineHash": "5f2c9e1a:1"}
@@ -132,5 +132,3 @@ def test_a_secrets_hash_decides_its_identity_both_ways() -> None:
         uri="backup/a.env", line="99", fingerprints={"secretHash/v1": "old"}
     )
     assert is_same_issue(old, copied, "secrets")
-    # other scan types keep their rules: a line hash is still trusted within a file
-    assert is_same_issue(old, new, "sast")
