@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from reposcan.backends import BACKENDS
-from reposcan.execution.context import locate_mounted_target
+from reposcan.execution.context import Mount, locate_mounted_target
 from reposcan.execution.docker import DockerContext
 from reposcan.image.spec import BASE_IMAGE
 from reposcan.result import Err
@@ -44,7 +44,7 @@ def test_docker_context_mounts_a_source_read_only() -> None:
         Path(source, "marker.txt").write_text("hello")
         target = locate_mounted_target(source)
         logger.info("[docker] mounting %s at %s", source, target)
-        ctx = DockerContext(BASE_IMAGE, mount_source=source)
+        ctx = DockerContext(BASE_IMAGE, mounts=[Mount(source, target)])
         assert not isinstance(ctx.start(), Err)
         try:
             # The mounted file is visible inside the container at the kept-name path.

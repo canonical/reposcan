@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 
 import reposcan.execution.lxd as lxd
-from reposcan.execution.context import RunUser
+from reposcan.execution.context import Mount, RunUser
 from reposcan.execution.lxd import LxdContext, ensure_project
 from reposcan.execution.process import ExecResult
 from reposcan.result import Err, Result
@@ -136,15 +136,21 @@ def test_start_maps_the_default_user_via_a_per_instance_idmap() -> None:
         assert "--config" not in launch  # no idmap for root / unset
 
 
-def test_mounts_the_source_read_only_keeping_its_name() -> None:
+def test_every_mount_is_a_read_only_disk_at_its_target() -> None:
+    mounts = [
+        Mount("/ws/worktrees/acme-api", "/scan/acme-api"),
+        Mount("/ws/mirrors/acme-api.git", "/ws/mirrors/acme-api.git"),
+    ]
     # respond ok to every lxc call (project present, launch, device add).
     with _patched_responses(lambda argv: ExecResult(0, "", "")) as calls:
-        ctx = LxdContext("reposcan-tools", mount_source="/host/acme-api")
+        ctx = LxdContext("reposcan-tools", mounts=mounts)
         assert not isinstance(ctx.start(), Err)
-    device_add = next(c for c in calls if c[3:6] == ["config", "device", "add"])
-    assert "source=/host/acme-api" in device_add
-    assert "path=/scan/acme-api" in device_add  # name preserved
-    assert "readonly=true" in device_add
+    adds = [c for c in calls if c[3:6] == ["config", "device", "add"]]
+    assert [add[7] for add in adds] == ["mount0", "mount1"]  # unique device names
+    assert "source=/ws/worktrees/acme-api" in adds[0]
+    assert "path=/scan/acme-api" in adds[0]
+    assert "path=/ws/mirrors/acme-api.git" in adds[1]
+    assert all("readonly=true" in add for add in adds)
 
 
 def test_ensure_project_leaves_an_existing_project_alone() -> None:
@@ -179,20 +185,3 @@ def test_ensure_project_returns_a_failed_create_as_a_failure() -> None:
     with _patched_responses(respond):
         result = ensure_project()
     assert isinstance(result, Err) and result.msg == "permission denied"
-
-
-def test_a_worktrees_git_dirs_are_mounted_read_only_at_their_own_path() -> None:
-    with _patched_responses(lambda argv: ExecResult(0, "", "")) as calls:
-        ctx = LxdContext(
-            "reposcan-tools",
-            mount_source="/ws/worktrees/acme-api",
-            git_dirs=["/ws/mirrors/acme-api.git"],
-        )
-        assert not isinstance(ctx.start(), Err)
-    adds = [c for c in calls if c[3:6] == ["config", "device", "add"]]
-    assert len(adds) == 2  # the worktree, then its mirror
-    assert "path=/scan/acme-api" in adds[0]
-    mirror = adds[1]
-    assert "source=/ws/mirrors/acme-api.git" in mirror
-    assert "path=/ws/mirrors/acme-api.git" in mirror  # at its own path
-    assert "readonly=true" in mirror

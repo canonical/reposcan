@@ -3,12 +3,12 @@
 
 """LXD execution context: run commands in an ephemeral container."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from uuid import uuid4
 
 from reposcan.execution.context import (
+    Mount,
     RunUser,
-    locate_mounted_target,
     select_home,
     wrap_with_setpriv,
 )
@@ -60,14 +60,12 @@ class LxdContext:
     def __init__(
         self,
         image: str,
-        mount_source: str | None = None,
+        mounts: Collection[Mount] = (),
         user: RunUser | None = None,
         env: Mapping[str, str] | None = None,
-        git_dirs: Sequence[str] = (),
     ) -> None:
         self._image = image
-        self._mount_source = mount_source
-        self._git_dirs = list(git_dirs)
+        self._mounts = list(mounts)
         self._user = user  # the default identity for every run (None = root)
         self._env = dict(env or {})
         self._instance_name: str | None = None
@@ -90,26 +88,18 @@ class LxdContext:
         if result.exit_code != 0:
             return Err(result.stderr.strip() or "lxc launch failed")
         self._instance_name = handle
-        if self._mount_source is None:
-            return None
-        if is_err(err := self._mount(handle, "scan", self._mount_source)):
-            return err
-        for index, git_dir in enumerate(self._git_dirs):
-            # at its own path, so a linked worktree's absolute .git pointer resolves
-            if is_err(err := self._mount(handle, f"git{index}", git_dir, git_dir)):
+        for index, mount in enumerate(self._mounts):
+            if is_err(err := self._mount(handle, f"mount{index}", mount)):
                 return err
         return None
 
-    def _mount(
-        self, handle: str, device: str, source: str, path: str = ""
-    ) -> Result[None]:
-        """Attach `source` read-only, at `path` or `locate_mounted_target(source)`.
+    def _mount(self, handle: str, device: str, mount: Mount) -> Result[None]:
+        """Attach `mount.source` read-only at `mount.target`.
 
         Args:
             handle: The running instance to attach the disk to.
             device: The device name, unique within the instance.
-            source: The host directory to make available for scanning.
-            path: Where it appears in the instance; defaults to the scan mount point.
+            mount: The host directory and where it appears in the instance.
 
         Returns:
             None on success, or an error if the disk device could not be added.
@@ -122,8 +112,8 @@ class LxdContext:
             handle,
             device,
             "disk",
-            f"source={source}",
-            f"path={path or locate_mounted_target(source)}",
+            f"source={mount.source}",
+            f"path={mount.target}",
             "readonly=true",
         ]
         return get_err(run_process(argv, check=True))

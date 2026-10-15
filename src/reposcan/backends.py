@@ -12,8 +12,9 @@ from reposcan import paths
 from reposcan.execution.context import (
     RESOLUTION_WORKDIR,
     ExecutionContext,
+    Mount,
     RunUser,
-    find_linked_git_dirs,
+    find_git_mounts,
     locate_mounted_target,
 )
 from reposcan.execution.docker import DockerContext
@@ -230,17 +231,19 @@ def start_session(
             logger.error(provisioned.msg)
             yield Session(None, "", 1)
             return
+        # A container mounts the source under MOUNT_PARENT, keeping host paths (and
+        # usernames) out of every report.
+        target: str | None = None
+        mounts: list[Mount] = []
+        if mount_source is not None:
+            target = locate_mounted_target(mount_source)
+            # a linked worktree's git data lives outside it, so mount that too
+            mounts = [
+                Mount(mount_source, target),
+                *find_git_mounts(mount_source, target),
+            ]
         ctx = backend.context(
-            provisioned or BASE_IMAGE,
-            mount_source=mount_source,
-            user=user,
-            env=env,
-            # A linked worktree's git data lives outside it, so mount that too
-            git_dirs=find_linked_git_dirs(mount_source) if mount_source else [],
-        )
-        # A container mounts the source under MOUNT_PARENT.
-        target = (
-            locate_mounted_target(mount_source) if mount_source is not None else None
+            provisioned or BASE_IMAGE, mounts=mounts, user=user, env=env
         )
     else:
         # Local runs on the host: no image, no identity, no mount -- the source path

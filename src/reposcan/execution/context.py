@@ -132,8 +132,16 @@ def locate_mounted_target(mount_source: str) -> str:
     return f"{MOUNT_PARENT}/{os.path.basename(os.path.realpath(mount_source))}"
 
 
-def find_linked_git_dirs(mount_source: str) -> list[str]:
-    """Find the git directories a linked worktree depends on but does not contain.
+@dataclass(frozen=True)
+class Mount:
+    """A host directory made available read-only inside a container at `target`."""
+
+    source: str
+    target: str
+
+
+def find_git_mounts(source: str, target: str) -> list[Mount]:
+    """Find the mounts a linked worktree's git data needs, outside the worktree.
 
     A linked worktree (`git worktree add`, which `gh clone-repos` uses) has a `.git`
     file rather than a directory: `gitdir: <path>` names its private git dir, whose
@@ -142,18 +150,20 @@ def find_linked_git_dirs(mount_source: str) -> list[str]:
     worktree sees a dangling pointer, and git (and trufflehog's history mode) treat the
     target as a plain directory.
 
-    A container mounts each returned directory at its own host path, so the absolute
-    pointer in `.git` resolves unchanged inside it.
+    Each git dir is mounted where the pointer leads inside the container: an absolute
+    pointer at the dir's own path, a relative one (worktree.useRelativePaths) at the
+    same position relative to `target` as the dir has to `source` on the host.
 
     Args:
-        mount_source: The host directory being mounted for scanning.
+        source: The worktree's host directory.
+        target: Where the worktree is mounted inside the container.
 
     Returns:
-        The directories to mount at their own path: the shared git dir, plus the
-        worktree's private git dir when it lies outside the shared one. Empty when
-        `mount_source` is not a linked worktree, or its pointer cannot be followed.
+        The shared git dir's mount, plus the private git dir's when it lies outside
+        the shared one. Empty when `source` is not a linked worktree, or its pointer
+        cannot be followed.
     """
-    pointer = os.path.join(mount_source, ".git")
+    pointer = os.path.join(source, ".git")
     if not os.path.isfile(pointer):
         return []  # a regular checkout (or not a repository): nothing outside it
     try:
@@ -164,27 +174,27 @@ def find_linked_git_dirs(mount_source: str) -> list[str]:
         return []
     if not first_line.startswith("gitdir:"):
         return []
-    private = os.path.normpath(first_line.removeprefix("gitdir:").strip())
-    if not os.path.isabs(private):
-        # A relative pointer (worktree.useRelativePaths) resolves against wherever the
-        # worktree is mounted, not its host path, so mounting at the host path cannot
-        # repair it.
-        logger.warning(
-            "%s is a worktree with a relative gitdir pointer; its git history will "
-            "not be visible inside the scan container",
-            mount_source,
-        )
-        return []
+    written = first_line.removeprefix("gitdir:").strip()
+    # join() keeps an absolute pointer as is, and resolves a relative one against the
+    # worktree: on the host, and wherever the worktree sits inside the container.
+    private = Mount(
+        os.path.normpath(os.path.join(source, written)),
+        os.path.normpath(os.path.join(target, written)),
+    )
     shared = private  # with no `commondir`, the private dir is the whole repository
     try:
-        with open(os.path.join(private, "commondir"), encoding="utf-8") as handle:
-            shared = os.path.normpath(os.path.join(private, handle.read().strip()))
+        with open(os.path.join(private.source, "commondir"), encoding="utf-8") as f:
+            common = f.read().strip()
+        shared = Mount(
+            os.path.normpath(os.path.join(private.source, common)),
+            os.path.normpath(os.path.join(private.target, common)),
+        )
     except OSError:
         pass
-    if not os.path.isdir(shared):
-        logger.warning("%s points at missing git dir %s", mount_source, shared)
+    if not os.path.isdir(shared.source):
+        logger.warning("%s points at missing git dir %s", source, shared.source)
         return []
-    if private == shared or private.startswith(shared + os.sep):
+    if private == shared or private.source.startswith(shared.source + os.sep):
         return [shared]
     return [shared, private]
 

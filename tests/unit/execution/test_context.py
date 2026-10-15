@@ -5,7 +5,12 @@
 
 import os
 
-from reposcan.execution.context import RunUser, resolve_env, wrap_with_setpriv
+from reposcan.execution.context import (
+    RunUser,
+    locate_mounted_target,
+    resolve_env,
+    wrap_with_setpriv,
+)
 
 
 def test_setpriv_with_groups_sets_them_and_drops_init_groups() -> None:
@@ -43,3 +48,8 @@ def test_resolve_env_takes_a_value_inline_or_from_the_host() -> None:
 
 def test_resolve_env_keeps_a_value_containing_an_equals_sign() -> None:
     assert resolve_env(["URL=https://h/?a=1"]) == {"URL": "https://h/?a=1"}
+
+
+def test_a_mounted_source_keeps_its_name_under_scan() -> None:
+    # host paths (and the usernames in them) never reach the container or reports
+    assert locate_mounted_target("/home/someone/ws/acme-api") == "/scan/acme-api"

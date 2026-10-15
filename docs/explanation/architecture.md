@@ -27,10 +27,11 @@ The container backends bind-mount the target repository read-only at
 naturally, and run each tool via `setpriv` as the invoking host user, or as the
 uid given by `--uid`, rather than as the container's root. When the target is a
 linked git worktree (as `gh clone-repos` checks out), its `.git` is a pointer to
-git data outside the worktree, so that git directory is also mounted read-only at
-its own host path; without it, git and the secrets scan's history mode would see
-a plain directory. The local backend runs the tools as the invoking user with 
-no isolation, which is why it is discouraged for untrusted repositories.
+git data outside the worktree, so that git directory is also mounted read-only
+where the pointer leads inside the container; without it, git and the secrets
+scan's history mode would see a plain directory. The local backend
+runs the tools as the invoking user with no isolation, which is why it is
+discouraged for untrusted repositories.
 
 ## The reposcan image
 
