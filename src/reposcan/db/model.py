@@ -42,6 +42,14 @@ class ComponentVersion:
 
 
 @dataclass(frozen=True)
+class ImportCounts:
+    """How many analyses an import recorded, and how many were already held."""
+
+    imported: int
+    skipped: int
+
+
+@dataclass(frozen=True)
 class ProjectSummary:
     """Project identifier."""
 

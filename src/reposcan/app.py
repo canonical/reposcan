@@ -6,6 +6,7 @@
 from reposcan.actions.base import Action
 from reposcan.actions.bootstrap import BootstrapAction
 from reposcan.actions.config import ConfigGroup
+from reposcan.actions.db import DbGroup
 from reposcan.actions.exec import ExecAction
 from reposcan.actions.gh import GhGroup
 from reposcan.actions.image import ImageGroup
@@ -32,6 +33,7 @@ class Reposcan(Group):
         ScanRepos,
         SbomCommand,
         GhGroup,
+        DbGroup,
     )
 
 

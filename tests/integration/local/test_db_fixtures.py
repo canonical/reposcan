@@ -14,6 +14,7 @@ import os
 import tempfile
 
 from reposcan.db import read, write
+from reposcan.result import Err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import Artifact, ArtifactKind
@@ -104,3 +105,48 @@ def test_cyclonedx_round_trip() -> None:
     properties = {p["name"]: p["value"] for p in metadata["properties"]}
     assert json.loads(properties["reposcan:schema"]) == PROPERTY_SCHEMA
     assert json.loads(properties["reposcan:repository"])["commitSha"]
+
+
+def test_an_imported_database_reproduces_both_fixtures() -> None:
+    sast_result = sarif.parse(_read_fixture("sast.sarif"))
+    sbom_result = cyclonedx.parse(_read_fixture("sbom.cyclonedx"))
+    assert sast_result is not None
+    assert sbom_result is not None
+    (run,) = sast_result.runs
+    analysis = Analysis(
+        uuid="fixture-analysis",
+        started_at="2026-08-24T10:00:00Z",
+        finished_at="2026-08-24T10:05:00Z",
+        reposcan_version="0.0.0",
+        repository=RepositoryState(identity=ProjectIdentity("fixtures")),
+    )
+    analysis.add(
+        ScanRecord(
+            category="sast",
+            kind=ArtifactKind.SARIF,
+            started_at="2026-08-24T10:00:00Z",
+            finished_at="2026-08-24T10:01:00Z",
+            status=ScanStatus.COMPLETE,
+            produced=run,
+        )
+    )
+    analysis.add(
+        ScanRecord(
+            category="sbom",
+            kind=ArtifactKind.CYCLONEDX,
+            started_at="2026-08-24T10:02:00Z",
+            finished_at="2026-08-24T10:03:00Z",
+            status=ScanStatus.COMPLETE,
+            produced=sbom_result,
+        )
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        source = os.path.join(directory, "source.db")
+        destination = os.path.join(directory, "destination.db")
+        assert write.write_analysis(source, analysis) is None
+        assert not isinstance(write.import_database(source, destination, "ci"), Err)
+        imported = [artifact.to_dict() for artifact in read.list_artifacts(destination)]
+        original = [artifact.to_dict() for artifact in read.list_artifacts(source)]
+    assert imported == original
+    assert len(imported[0]["runs"][0]["results"]) > 1
+    assert len(imported[1]["components"]) > 1
