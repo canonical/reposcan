@@ -5,6 +5,7 @@
 
 import json
 import logging
+import sqlite3
 from typing import Any
 
 from reposcan.db import schema, sqlite
@@ -15,12 +16,22 @@ from reposcan.db.model import (
     Issue,
     ProjectSummary,
 )
-from reposcan.result import Err
+from reposcan.result import Err, Result
 from reposcan.scans import cyclonedx, sarif
-from reposcan.scans.analysis import ScanStatus
+from reposcan.scans.analysis import Analysis, ScanOutput, ScanRecord, ScanStatus
 from reposcan.scans.model import Artifact, ArtifactKind
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
 
 logger = logging.getLogger(__name__)
+
+MALFORMED_ROW_ERRORS = (
+    sqlite3.Error,
+    ValueError,
+    KeyError,
+    TypeError,
+    AttributeError,
+    RecursionError,
+)
 
 
 def list_artifacts(
@@ -178,6 +189,79 @@ def list_analyses(path: str) -> list[AnalysisSummary]:
                 )
             )
         return summaries
+
+
+def load_analysis(session: sqlite.Session, analysis_id: int) -> Result[Analysis]:
+    """Rebuild one recorded analysis, with its scans, ready to record elsewhere.
+
+    Returns:
+        The analysis, or an Err when it is missing or one of its rows does not parse.
+    """
+    try:
+        rows = session.query(schema.SELECT_ANALYSIS_WITH_PROJECT, (analysis_id,))
+        if not rows:
+            return Err(f"analysis {analysis_id} or its project is missing")
+        (
+            uuid,
+            produced_by,
+            started_at,
+            finished_at,
+            reposcan_version,
+            target_name,
+            branch,
+            commit_sha,
+            dirty,
+            shallow,
+            status,
+            root_commit,
+            origin,
+            label,
+        ) = rows[0]
+        analysis = Analysis(
+            uuid=str(uuid),
+            started_at=str(started_at),
+            reposcan_version=str(reposcan_version),
+            repository=RepositoryState(
+                identity=ProjectIdentity(
+                    str(target_name), str(root_commit), str(origin), str(label)
+                ),
+                commit_sha=str(commit_sha),
+                branch=str(branch),
+                dirty=bool(dirty),
+                shallow=bool(shallow),
+            ),
+            finished_at=str(finished_at),
+            produced_by=str(produced_by),
+            status=ScanStatus(str(status)),
+        )
+        for (
+            scan_id,
+            category,
+            artifact_kind,
+            scan_started_at,
+            scan_finished_at,
+            scan_status,
+            artifact_shell,
+        ) in session.query(schema.SELECT_SCAN_RECORDS_FOR_ANALYSIS, (analysis_id,)):
+            kind = ArtifactKind(str(artifact_kind))
+            shell = json.loads(str(artifact_shell))
+            if kind == ArtifactKind.SARIF:
+                produced: ScanOutput = _rebuild_run(session, int(scan_id), shell)
+            else:
+                produced = _rebuild_cyclonedx(session, int(scan_id), shell)
+            analysis.add(
+                ScanRecord(
+                    category=str(category),
+                    kind=kind,
+                    started_at=str(scan_started_at),
+                    finished_at=str(scan_finished_at),
+                    status=ScanStatus(str(scan_status)),
+                    produced=produced,
+                )
+            )
+    except MALFORMED_ROW_ERRORS as exc:
+        return Err(f"analysis {analysis_id}: {type(exc).__name__}: {exc}")
+    return analysis
 
 
 def _open_session(path: str) -> sqlite.Session | None:

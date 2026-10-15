@@ -13,6 +13,7 @@ from reposcan.db.sqlite import (
     Table,
     TableSchema,
     connect,
+    connect_read_only,
     is_sqlite,
     read_version,
 )
@@ -124,3 +125,24 @@ def test_connect_reports_a_failure_instead_of_raising() -> None:
         # A directory is not a file sqlite can open, so connect must explain itself.
         opened = connect(directory)
     assert is_err(opened) and directory in opened.msg
+
+
+def test_a_read_only_session_reads_its_file_and_writes_nothing() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        # A name that would add URI parameters if it reached sqlite unescaped.
+        path = os.path.join(directory, "items.db?mode=rwc#x")
+        writer_result = connect(path)
+        assert not isinstance(writer_result, Err)
+        with writer_result as writer:
+            writer.create(_ITEMS)
+            writer.set_version(7)
+        reader_result = connect_read_only(path)
+        assert not isinstance(reader_result, Err)
+        with reader_result as reader:
+            version = reader.read_version()
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                reader.insert(Table(_ITEMS, [("1", "x")]))
+        missing = os.path.join(directory, "missing.db")
+        assert is_err(connect_read_only(missing))
+        assert not os.path.exists(missing)
+    assert version == 7  # the file named, not one that its "?" cut short

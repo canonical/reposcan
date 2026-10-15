@@ -207,6 +207,38 @@ scan.
 Exit codes: `0` when every repository and scan succeeded, `1` when any failed,
 `2` when the workspace holds no repositories.
 
+## Databases
+
+### db
+
+A command group for the databases that `--db` records analyses in.
+
+#### import
+
+`reposcan db import <SOURCE> --db <FILE> --produced-by <LABEL>` records every
+analysis of the database at `SOURCE` in the database at `FILE`, creating `FILE`
+if absent. An issue both databases know becomes one issue, matched by the same
+rules that match a new scan's findings to known issues. `SOURCE` is only read.
+See [Import a database](../how-to/import-a-database.md). Options:
+
+- `--db <FILE>`: the receiving database. Env var: `REPOSCAN_DB`.
+- `--produced-by <LABEL>`: who produced the analyses `SOURCE` ran itself, such
+  as a machine or CI job, recorded with each of them. Analyses that `SOURCE`
+  imported from elsewhere keep the label they carry. Env var:
+  `REPOSCAN_PRODUCED_BY`.
+- `--retain-secrets`: keep the raw secret values that `SOURCE`'s findings
+  retained (see [secrets](scans.md#secrets)). Off by default: they are dropped,
+  and each finding keeps its location and the hash it is matched by. Env var:
+  `REPOSCAN_RETAIN_SECRETS`.
+
+Analyses `FILE` already holds are skipped, so importing again changes nothing,
+and an import that failed part-way finishes when run again.
+
+Exit codes: `0` when every analysis was imported or was already there, `2` when
+`--produced-by` is blank or `SOURCE` is not a file or is `FILE` itself, `1` when
+`SOURCE` or `FILE` is not a usable reposcan database of this version or an
+analysis fails to import.
+
 ## Tools and images
 
 What the scans run, and where they run.

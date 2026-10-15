@@ -360,6 +360,24 @@ SELECT scan_id, category, artifact_kind, artifact_shell
  ORDER BY scan_id
 """
 
+SELECT_ANALYSIS_WITH_PROJECT = """
+SELECT a.uuid, a.produced_by, a.started_at, a.finished_at, a.reposcan_version,
+       a.target_name, a.branch, a.commit_sha, a.dirty, a.shallow, a.status,
+       p.root_commit, p.origin, p.label
+  FROM analysis a
+  JOIN project p
+    ON p.project_id = a.project_id
+ WHERE a.analysis_id = ?
+"""
+
+SELECT_SCAN_RECORDS_FOR_ANALYSIS = """
+SELECT scan_id, category, artifact_kind, started_at, finished_at, status,
+       artifact_shell
+  FROM scan
+ WHERE analysis_id = ?
+ ORDER BY scan_id
+"""
+
 
 # Every issue of one project, scan type, and rule, with its most recently reported uri
 # and line, LEFT JOINed with the latest value for every fingerprint ever reported for

@@ -236,6 +236,11 @@ class SarifRun:
         """Replace the run's findings with `results`."""
         self.run["results"] = [finding.result for finding in results]
 
+    def remove_secrets(self) -> None:
+        """Remove the raw secret value from each finding that retains one."""
+        for finding in self.results:
+            finding.result.get("properties", {}).pop(_SECRET_PROPERTY, None)
+
     def record_provenance(
         self,
         repository: RepositoryState,
