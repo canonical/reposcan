@@ -114,3 +114,33 @@ def test_position_alone_loses_to_a_fingerprint_that_disagrees() -> None:
     incoming.partial_fingerprints["primaryLocationLineHash"] = "xyz:1"
     # Same rule, file, and line, but the line's content changed.
     assert not is_same_issue(known, incoming)
+
+
+def test_a_disagreeing_secret_hash_beats_a_matching_line_hash() -> None:
+    # Two private keys rotated in place are both reported on an identical BEGIN line,
+    # so their line hashes match, but they are different secrets.
+    begin_line = {"primaryLocationLineHash": "5f2c9e1a:1"}
+    old = _build_attributes(
+        fingerprints={"secretHash/v1": "old"}, partial_fingerprints=dict(begin_line)
+    )
+    new = _build_attributes(
+        fingerprints={"secretHash/v1": "new"}, partial_fingerprints=dict(begin_line)
+    )
+    assert not is_same_issue(old, new, "secrets")
+    # one secret is one issue wherever it is seen
+    copied = _build_attributes(
+        uri="backup/a.env", line="99", fingerprints={"secretHash/v1": "old"}
+    )
+    assert is_same_issue(old, copied, "secrets")
+
+
+def test_a_secret_hash_matches_across_detectors_when_both_carry_it() -> None:
+    github = _build_attributes(rule="Github", fingerprints={"secretHash/v1": "s"})
+    oauth = _build_attributes(
+        rule="GitHubOauth2", uri="b.py", fingerprints={"secretHash/v1": "s"}
+    )
+    assert is_same_issue(github, oauth, "secrets")
+    # outside secrets scans, a fingerprint match still needs the same rule
+    assert not is_same_issue(github, oauth, "sast")
+    # a report without the hash is never matched on it
+    assert not is_same_issue(github, _build_attributes(rule="GitHubOauth2"), "secrets")
