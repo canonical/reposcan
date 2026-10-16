@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 
 import reposcan.execution.docker as docker
-from reposcan.execution.context import RunUser
+from reposcan.execution.context import Mount, RunUser
 from reposcan.execution.docker import DockerContext
 from reposcan.execution.process import ExecResult
 from reposcan.result import Err, Result
@@ -103,11 +103,17 @@ def test_run_user_override_runs_as_that_identity_for_one_call() -> None:
     assert "HOME=/tmp" in exec_argv  # non-scan uid -> /tmp home
 
 
-def test_mounts_the_source_read_only_keeping_its_name() -> None:
+def test_every_mount_is_read_only_at_its_target() -> None:
+    mounts = [
+        Mount("/ws/worktrees/acme-api", "/scan/acme-api"),
+        Mount("/ws/mirrors/acme-api.git", "/ws/mirrors/acme-api.git"),
+    ]
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
-        ctx = DockerContext("reposcan:tools", mount_source="/host/acme-api")
+        ctx = DockerContext("reposcan:tools", mounts=mounts)
         assert not isinstance(ctx.start(), Err)
     run_argv = calls[-1]  # the `docker run` argv
-    assert "-v" in run_argv
-    mount = run_argv[run_argv.index("-v") + 1]
-    assert mount == "/host/acme-api:/scan/acme-api:ro"  # read-only, name preserved
+    volumes = [run_argv[i + 1] for i, arg in enumerate(run_argv) if arg == "-v"]
+    assert volumes == [
+        "/ws/worktrees/acme-api:/scan/acme-api:ro",
+        "/ws/mirrors/acme-api.git:/ws/mirrors/acme-api.git:ro",
+    ]

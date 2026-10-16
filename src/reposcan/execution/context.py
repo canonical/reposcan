@@ -132,6 +132,73 @@ def locate_mounted_target(mount_source: str) -> str:
     return f"{MOUNT_PARENT}/{os.path.basename(os.path.realpath(mount_source))}"
 
 
+@dataclass(frozen=True)
+class Mount:
+    """A host directory made available read-only inside a container at `target`."""
+
+    source: str
+    target: str
+
+
+def find_git_mounts(source: str, target: str) -> list[Mount]:
+    """Find the mounts a linked worktree's git data needs, outside the worktree.
+
+    A linked worktree (`git worktree add`, which `gh clone-repos` uses) has a `.git`
+    file rather than a directory: `gitdir: <path>` names its private git dir, whose
+    `commondir` names the repository's shared git dir (a main `.git`, or a bare
+    mirror). Neither lies under the worktree, so a container that mounts only the
+    worktree sees a dangling pointer, and git (and trufflehog's history mode) treat the
+    target as a plain directory.
+
+    Each git dir is mounted where the pointer leads inside the container: an absolute
+    pointer at the dir's own path, a relative one (worktree.useRelativePaths) at the
+    same position relative to `target` as the dir has to `source` on the host.
+
+    Args:
+        source: The worktree's host directory.
+        target: Where the worktree is mounted inside the container.
+
+    Returns:
+        The shared git dir's mount, plus the private git dir's when it lies outside
+        the shared one. Empty when `source` is not a linked worktree, or its pointer
+        cannot be followed.
+    """
+    pointer = os.path.join(source, ".git")
+    if not os.path.isfile(pointer):
+        return []  # a regular checkout (or not a repository): nothing outside it
+    try:
+        with open(pointer, encoding="utf-8") as handle:
+            first_line = handle.readline().strip()
+    except OSError as exc:
+        logger.warning("could not read %s: %s", pointer, exc)
+        return []
+    if not first_line.startswith("gitdir:"):
+        return []
+    written = first_line.removeprefix("gitdir:").strip()
+    # join() keeps an absolute pointer as is, and resolves a relative one against the
+    # worktree: on the host, and wherever the worktree sits inside the container.
+    private = Mount(
+        os.path.normpath(os.path.join(source, written)),
+        os.path.normpath(os.path.join(target, written)),
+    )
+    shared = private  # with no `commondir`, the private dir is the whole repository
+    try:
+        with open(os.path.join(private.source, "commondir"), encoding="utf-8") as f:
+            common = f.read().strip()
+        shared = Mount(
+            os.path.normpath(os.path.join(private.source, common)),
+            os.path.normpath(os.path.join(private.target, common)),
+        )
+    except OSError:
+        pass
+    if not os.path.isdir(shared.source):
+        logger.warning("%s points at missing git dir %s", source, shared.source)
+        return []
+    if private == shared or private.source.startswith(shared.source + os.sep):
+        return [shared]
+    return [shared, private]
+
+
 class ExecutionContext(Protocol):
     """A place reposcan can run commands: the local host, or an ephemeral container.
 
