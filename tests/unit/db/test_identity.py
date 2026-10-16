@@ -132,3 +132,15 @@ def test_a_disagreeing_secret_hash_beats_a_matching_line_hash() -> None:
         uri="backup/a.env", line="99", fingerprints={"secretHash/v1": "old"}
     )
     assert is_same_issue(old, copied, "secrets")
+
+
+def test_a_secret_hash_matches_across_detectors_when_both_carry_it() -> None:
+    github = _build_attributes(rule="Github", fingerprints={"secretHash/v1": "s"})
+    oauth = _build_attributes(
+        rule="GitHubOauth2", uri="b.py", fingerprints={"secretHash/v1": "s"}
+    )
+    assert is_same_issue(github, oauth, "secrets")
+    # outside secrets scans, a fingerprint match still needs the same rule
+    assert not is_same_issue(github, oauth, "sast")
+    # a report without the hash is never matched on it
+    assert not is_same_issue(github, _build_attributes(rule="GitHubOauth2"), "secrets")
