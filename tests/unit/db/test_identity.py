@@ -4,6 +4,7 @@
 """Tests for component identity and issue equivalence."""
 
 from reposcan.db.identity import (
+    EquivalenceRule,
     IssueAttributes,
     derive_component_key,
     is_same_issue,
@@ -134,13 +135,20 @@ def test_a_disagreeing_secret_hash_beats_a_matching_line_hash() -> None:
     assert is_same_issue(old, copied, "secrets")
 
 
-def test_a_secret_hash_matches_across_detectors_when_both_carry_it() -> None:
-    github = _build_attributes(rule="Github", fingerprints={"secretHash/v1": "s"})
-    oauth = _build_attributes(
-        rule="GitHubOauth2", uri="b.py", fingerprints={"secretHash/v1": "s"}
-    )
-    assert is_same_issue(github, oauth, "secrets")
-    # outside secrets scans, a fingerprint match still needs the same rule
-    assert not is_same_issue(github, oauth, "sast")
-    # a report without the hash is never matched on it
-    assert not is_same_issue(github, _build_attributes(rule="GitHubOauth2"), "secrets")
+def test_a_full_match_needs_all_known_fingerprints_unlike_no_conflicts() -> None:
+    fully = EquivalenceRule(fingerprints_fully_match=True)
+    no_conflict = EquivalenceRule(no_fingerprint_conflicts=True)
+    known = _build_attributes(fingerprints={"a": "1", "b": "2"})
+
+    everything = _build_attributes(fingerprints={"a": "1", "b": "2", "c": "3"})
+    assert fully.holds(known, everything, "")
+    missing_one = _build_attributes(fingerprints={"a": "1"})
+    assert not fully.holds(known, missing_one, "")  # b was not carried over
+    none_shared = _build_attributes()
+    assert not fully.holds(known, none_shared, "")  # nothing to match on
+
+    # "no conflicts" only rules a match out: sharing nothing contradicts nothing
+    assert no_conflict.holds(known, none_shared, "")
+    assert no_conflict.holds(known, missing_one, "")
+    disagreeing = _build_attributes(fingerprints={"a": "1", "b": "other"})
+    assert not no_conflict.holds(known, disagreeing, "")

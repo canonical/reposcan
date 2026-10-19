@@ -67,17 +67,20 @@ class EquivalenceRule:
     Conditions:
         category: the scan type this rule is written for, if only one.
         same_rule, same_uri, same_line: the reports agree on that field.
-        fingerprints_fully_match: every `fingerprints` entry the two reports share
-            has the same value on both, i.e. no fingerprint contradicts the match.
-            Holds when they share none.
+        fingerprints_fully_match: the known report has `fingerprints`, and the
+            incoming report carries every one of them with the same value.
         fingerprints_partially_match: at least one `fingerprints` entry the reports
             share has the same value on both. Names are compared exactly, so
             `secretHash` and `secretHash/v1` are different computations and one
             says nothing about the other.
         specific_fingerprints_match: each named fingerprint is on both reports, with
             the same value.
+        no_fingerprint_conflicts: no `fingerprints` entry the reports share has
+            different values. Holds when they share none: it rules a match out, it
+            does not establish one.
         partial_fingerprints_fully_match, partial_fingerprints_partially_match,
-        specific_partial_fingerprints_match: the same, over `partialFingerprints`.
+        specific_partial_fingerprints_match, no_partial_fingerprint_conflicts: the
+            same, over `partialFingerprints`.
     """
 
     category: str = ""
@@ -87,9 +90,11 @@ class EquivalenceRule:
     fingerprints_fully_match: bool = False
     fingerprints_partially_match: bool = False
     specific_fingerprints_match: tuple[str, ...] = ()
+    no_fingerprint_conflicts: bool = False
     partial_fingerprints_fully_match: bool = False
     partial_fingerprints_partially_match: bool = False
     specific_partial_fingerprints_match: tuple[str, ...] = ()
+    no_partial_fingerprint_conflicts: bool = False
 
     def holds(
         self, known: IssueAttributes, incoming: IssueAttributes, category: str
@@ -109,12 +114,14 @@ class EquivalenceRule:
             fully=self.fingerprints_fully_match,
             partially=self.fingerprints_partially_match,
             specific=self.specific_fingerprints_match,
+            no_conflicts=self.no_fingerprint_conflicts,
         ) and _check_fingerprints(
             known.partial_fingerprints,
             incoming.partial_fingerprints,
             fully=self.partial_fingerprints_fully_match,
             partially=self.partial_fingerprints_partially_match,
             specific=self.specific_partial_fingerprints_match,
+            no_conflicts=self.no_partial_fingerprint_conflicts,
         )
 
 
@@ -123,8 +130,6 @@ class EquivalenceRule:
 # one is a different issue. A partial fp is trusted within a file, and position is
 # the last resort, both only if no fingerprint contradicts them.
 EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
-    # A secret's hash is the secret itself: one leak, wherever it is seen.
-    EquivalenceRule(category="secrets", specific_fingerprints_match=("secretHash/v1",)),
     EquivalenceRule(same_rule=True, fingerprints_partially_match=True),
     # An SCA advisory is reported once per vulnerability, so its rule -- usually the
     # CVE -- is the whole identity; where it was found and how it was fingerprinted
@@ -136,14 +141,14 @@ EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
         same_rule=True,
         same_uri=True,
         partial_fingerprints_partially_match=True,
-        fingerprints_fully_match=True,
+        no_fingerprint_conflicts=True,
     ),
     EquivalenceRule(
         same_rule=True,
         same_uri=True,
         same_line=True,
-        fingerprints_fully_match=True,
-        partial_fingerprints_fully_match=True,
+        no_fingerprint_conflicts=True,
+        no_partial_fingerprint_conflicts=True,
     ),
 )
 
@@ -159,27 +164,31 @@ def is_same_issue(
 
 
 def _check_fingerprints(
-    recorded: Mapping[str, str],
-    reported: Mapping[str, str],
+    known: Mapping[str, str],
+    incoming: Mapping[str, str],
     *,
     fully: bool,
     partially: bool,
     specific: tuple[str, ...],
+    no_conflicts: bool,
 ) -> bool:
-    """Check one kind of fingerprint against a rule's requested matches.
+    """Check one kind of fingerprint against a rule's requested conditions.
 
     Args:
-        recorded: The known report's fingerprints of this kind.
-        reported: The incoming report's fingerprints of this kind.
-        fully: Require every shared fingerprint to agree.
+        known: The recorded report's fingerprints of this kind.
+        incoming: The new report's fingerprints of this kind.
+        fully: Require `known` to have some, and `incoming` to carry them all, equal.
         partially: Require at least one shared fingerprint to agree.
         specific: Require each named fingerprint on both reports, agreeing.
+        no_conflicts: Require no shared fingerprint to disagree.
     """
-    shared = set(recorded) & set(reported)
-    agreeing = {name for name in shared if recorded[name] == reported[name]}
-    if fully and agreeing != shared:
+    shared = set(known) & set(incoming)
+    agreeing = {name for name in shared if known[name] == incoming[name]}
+    if fully and not (known and agreeing == set(known)):
         return False
     if partially and not agreeing:
+        return False
+    if no_conflicts and agreeing != shared:
         return False
     return all(name in agreeing for name in specific)
 
