@@ -449,7 +449,7 @@ def test_an_issue_whose_line_moves_stays_one_issue() -> None:
     assert (issues[0].first_seen_analysis, issues[0].last_seen_analysis) == (1, 2)
 
 
-def test_a_report_whose_line_content_changed_is_a_different_issue() -> None:
+def test_a_report_whose_line_content_changed_is_the_same_issue() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
         write.write_analysis(
@@ -461,8 +461,8 @@ def test_a_report_whose_line_content_changed_is_a_different_issue() -> None:
             _add_scans(_build_analysis("u2"), _build_finding_scan(line_hash="xyz:1")),
         )
         issues = read.list_issues(path, project_id=1)
-    # Same rule and place, but the line content changed.
-    assert len(issues) == 2
+    # Same rule and place; only the line content changed, e.g. a variable was renamed.
+    assert len(issues) == 1
 
 
 def _build_sca_scan(rule: str, uri: str, line: int, line_hash: str) -> ScanRecord:
