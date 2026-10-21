@@ -87,18 +87,19 @@ pull-request comment will work in this case.
 
 ## Inputs
 
-| Input           | Default        | Meaning                                                       |
-| --------------- | -------------- | ------------------------------------------------------------- |
-| `secrets`       | `true`         | Run the `secrets` scan.                                       |
-| `sast`          | `true`         | Run the `sast` scan.                                          |
-| `iac`           | `true`         | Run the `iac` scan.                                           |
-| `workflow`      | `true`         | Run the `workflow` scan.                                      |
-| `sca`           | `true`         | Run the `sca` scan.                                           |
-| `sbom`          | `false`        | Generate a CycloneDX SBOM (artifact only).                    |
-| `code-scanning` | `true`         | Upload findings SARIF to the code-scanning pane.              |
-| `pr-comment`    | `false`        | Post the results summary as a pull-request comment.           |
-| `path`          | `.`            | Directory to scan (the checked-out repository).               |
-| `image`         | `canonical`    | Tool image: an OCI reference, `canonical`, or `build`.        |
-| `backend`       | `docker`       | Execution backend tools run in.                               |
-| `fail-on`       | `error`        | Fail at/above this level: `error`, `warning`, `note`, `none`. |
-| `token`         | `github.token` | Token for the SARIF upload and PR comment.                    |
+| Input           | Default            | Meaning                                                       |
+| --------------- | ------------------ | ------------------------------------------------------------- |
+| `secrets`       | `true`             | Run the `secrets` scan.                                       |
+| `sast`          | `true`             | Run the `sast` scan.                                          |
+| `iac`           | `true`             | Run the `iac` scan.                                           |
+| `workflow`      | `true`             | Run the `workflow` scan.                                      |
+| `sca`           | `true`             | Run the `sca` scan.                                           |
+| `sbom`          | `false`            | Generate a CycloneDX SBOM (artifact only).                    |
+| `code-scanning` | `true`             | Upload findings SARIF to the code-scanning pane.              |
+| `pr-comment`    | `false`            | Post the results summary as a pull-request comment.           |
+| `artifact-name` | `reposcan-results` | Name of the uploaded results artifact.                        |
+| `path`          | `.`                | Directory to scan (the checked-out repository).               |
+| `image`         | `canonical`        | Tool image: an OCI reference, `canonical`, or `build`.        |
+| `backend`       | `docker`           | Execution backend tools run in.                               |
+| `fail-on`       | `error`            | Fail at/above this level: `error`, `warning`, `note`, `none`. |
+| `token`         | `github.token`     | Token for the SARIF upload and PR comment.                    |
