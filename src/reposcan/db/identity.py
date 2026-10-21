@@ -4,13 +4,13 @@
 """Identities for components, and equivalence for issues.
 
 A component has a derived key. An issue has none, so reports are compared against
-each other by EQUIVALENCE_RULES.
+each other by EQUIVALENCE_RULESET.
 """
 
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import quote, unquote
 
 from reposcan.scans import sarif
@@ -52,103 +52,130 @@ class IssueAttributes:
         )
 
 
-@dataclass(frozen=True)
-class EquivalenceRule:
-    """A rule that evaluates whether two reports are about the same issue.
+class EquivalenceCondition(Protocol):
+    """A test that determines whether two IssueAttributes refer to the same issue."""
 
-    Each rule is an instance of this class, whose attributes are conditions that are
-    and'ed together; an unset condition is not checked. If every set condition holds,
-    the rule matches.
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool: ...
 
-    Rules are tried independently, and a True from any one rule must be sufficient
-    to determine equivalence (i.e., rules are evaluated with
-    `any(rule.holds(k, i) for rule in rules)`).
 
-    Conditions:
-        category: the scan type this rule is written for, if only one.
-        same_rule, same_uri, same_line: the reports agree on that field.
-        fingerprints_fully_match: the known report has `fingerprints`, and the
-            incoming report carries every one of them with the same value.
-        fingerprints_partially_match: at least one `fingerprints` entry the reports
-            share has the same value on both. Names are compared exactly, so
-            `secretHash` and `secretHash/v1` are different computations and one
-            says nothing about the other.
-        specific_fingerprints_match: each named fingerprint is on both reports, with
-            the same value.
-        no_fingerprint_conflicts: no `fingerprints` entry the reports share has
-            different values. Holds when they share none: it rules a match out, it
-            does not establish one.
-        partial_fingerprints_fully_match, partial_fingerprints_partially_match,
-        specific_partial_fingerprints_match, no_partial_fingerprint_conflicts: the
-            same, over `partialFingerprints`.
-    """
-
-    category: str = ""
-    same_rule: bool = False
-    same_uri: bool = False
-    same_line: bool = False
-    fingerprints_fully_match: bool = False
-    fingerprints_partially_match: bool = False
-    specific_fingerprints_match: tuple[str, ...] = ()
-    no_fingerprint_conflicts: bool = False
-    partial_fingerprints_fully_match: bool = False
-    partial_fingerprints_partially_match: bool = False
-    specific_partial_fingerprints_match: tuple[str, ...] = ()
-    no_partial_fingerprint_conflicts: bool = False
+class AnyOf:
+    def __init__(self, *conditions: EquivalenceCondition) -> None:
+        self.conditions = conditions
 
     def holds(
         self, known: IssueAttributes, incoming: IssueAttributes, category: str
     ) -> bool:
-        """Evaluate whether two reports concern the same issue."""
-        if self.category and self.category != category:
-            return False
-        if self.same_rule and known.rule != incoming.rule:
-            return False
-        if self.same_uri and known.uri != incoming.uri:
-            return False
-        if self.same_line and known.line != incoming.line:
-            return False
-        return _check_fingerprints(
-            known.fingerprints,
-            incoming.fingerprints,
-            fully=self.fingerprints_fully_match,
-            partially=self.fingerprints_partially_match,
-            specific=self.specific_fingerprints_match,
-            no_conflicts=self.no_fingerprint_conflicts,
-        ) and _check_fingerprints(
-            known.partial_fingerprints,
-            incoming.partial_fingerprints,
-            fully=self.partial_fingerprints_fully_match,
-            partially=self.partial_fingerprints_partially_match,
-            specific=self.specific_partial_fingerprints_match,
-            no_conflicts=self.no_partial_fingerprint_conflicts,
+        return any(c.holds(known, incoming, category) for c in self.conditions)
+
+
+class AllOf:
+    def __init__(self, *conditions: EquivalenceCondition) -> None:
+        self.conditions = conditions
+
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return all(c.holds(known, incoming, category) for c in self.conditions)
+
+
+class SameRule:
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return known.rule == incoming.rule
+
+
+class SameUri:
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return known.uri == incoming.uri
+
+
+class SameLine:
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return known.line == incoming.line
+
+
+class MatchingFingerprint:
+    def __init__(self, *names: str) -> None:
+        self.names: set[str] = set(names)  # empty: compare every fingerprint
+
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        shared = known.fingerprints.keys() & incoming.fingerprints.keys()
+        if self.names:
+            shared &= self.names
+        return len(shared) > 0 and any(
+            known.fingerprints[name] == incoming.fingerprints[name] for name in shared
         )
 
 
-# Two reports are about the same issue if any rule evaluates true. A full fingerprint
-# identifies a result outright: a matching one is the same issue, and a disagreeing
-# one is a different issue. A partial fp is trusted within a file, and position is
-# the last resort, both only if no fingerprint contradicts them.
-EQUIVALENCE_RULES: tuple[EquivalenceRule, ...] = (
-    EquivalenceRule(same_rule=True, fingerprints_partially_match=True),
-    # An SCA advisory is reported once per vulnerability, so its rule -- usually the
-    # CVE -- is the whole identity; where it was found and how it was fingerprinted
-    # vary between tools without meaning anything.
-    EquivalenceRule(category="sca", same_rule=True),
-    # Two private keys rotated in place share an identical BEGIN line, so their line
-    # hashes match; only their (disagreeing) secret hashes tell them apart.
-    EquivalenceRule(
-        same_rule=True,
-        same_uri=True,
-        partial_fingerprints_partially_match=True,
-        no_fingerprint_conflicts=True,
-    ),
-    EquivalenceRule(
-        same_rule=True,
-        same_uri=True,
-        same_line=True,
-        no_fingerprint_conflicts=True,
-        no_partial_fingerprint_conflicts=True,
+class MatchingPartialFingerprint:
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        shared = (
+            known.partial_fingerprints.keys() & incoming.partial_fingerprints.keys()
+        )
+        return len(shared) > 0 and any(
+            known.partial_fingerprints[name] == incoming.partial_fingerprints[name]
+            for name in shared
+        )
+
+
+class InCategories:
+    def __init__(self, *categories: str) -> None:
+        self.categories: set[str] = set(categories)
+
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return category in self.categories
+
+
+class NoFingerprintConflict:
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        shared = known.fingerprints.keys() & incoming.fingerprints.keys()
+        return all(
+            known.fingerprints[name] == incoming.fingerprints[name] for name in shared
+        )
+
+
+class Not:
+    def __init__(self, condition: EquivalenceCondition) -> None:
+        self.condition = condition
+
+    def holds(
+        self, known: IssueAttributes, incoming: IssueAttributes, category: str
+    ) -> bool:
+        return not self.condition.holds(known, incoming, category)
+
+
+# A full fingerprint identifies a result outright:
+#   matching fp => same issue; disagreeing fp => different issue
+# A partial fp is trusted within a file.
+# Position is trusted only if no fingerprints disagree.
+EQUIVALENCE_RULESET = AllOf(
+    SameRule(),
+    AnyOf(
+        MatchingFingerprint(),
+        # A secret is identified by its hash, regardless of other attributes.
+        AllOf(InCategories("secrets"), MatchingFingerprint("secretHash/v1")),
+        # An SCA advisory is reported once per vulnerability, so its rule -- usually
+        # the CVE -- is the whole identity. Reported location is immaterial.
+        InCategories("sca"),
+        # Two private keys rotated in place share an identical BEGIN line, so their
+        # line hashes match; only their (disagreeing) secret hashes tell them apart.
+        AllOf(SameUri(), MatchingPartialFingerprint(), NoFingerprintConflict()),
+        AllOf(SameUri(), SameLine(), NoFingerprintConflict()),
     ),
 )
 
@@ -160,37 +187,7 @@ def is_same_issue(
 
     `category` is the category of scan that produced the report.
     """
-    return any(rule.holds(known, incoming, category) for rule in EQUIVALENCE_RULES)
-
-
-def _check_fingerprints(
-    known: Mapping[str, str],
-    incoming: Mapping[str, str],
-    *,
-    fully: bool,
-    partially: bool,
-    specific: tuple[str, ...],
-    no_conflicts: bool,
-) -> bool:
-    """Check one kind of fingerprint against a rule's requested conditions.
-
-    Args:
-        known: The recorded report's fingerprints of this kind.
-        incoming: The new report's fingerprints of this kind.
-        fully: Require `known` to have some, and `incoming` to carry them all, equal.
-        partially: Require at least one shared fingerprint to agree.
-        specific: Require each named fingerprint on both reports, agreeing.
-        no_conflicts: Require no shared fingerprint to disagree.
-    """
-    shared = set(known) & set(incoming)
-    agreeing = {name for name in shared if known[name] == incoming[name]}
-    if fully and not (known and agreeing == set(known)):
-        return False
-    if partially and not agreeing:
-        return False
-    if no_conflicts and agreeing != shared:
-        return False
-    return all(name in agreeing for name in specific)
+    return EQUIVALENCE_RULESET.holds(known, incoming, category)
 
 
 def derive_component_key(component: Mapping[str, Any]) -> str:
