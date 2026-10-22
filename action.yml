@@ -29,6 +29,11 @@ inputs:
       Post the results summary as a pull-request comment (on pull_request events
       only). Needs the token's 'pull-requests: write' permission.
     default: "false"
+  artifact-name:
+    description: >-
+      Name for the job artifact holding the SARIF/CycloneDX outputs and per-scan
+      logs.
+    default: reposcan-results
   secrets:
     description: Run the secrets scan.
     default: "true"
@@ -96,6 +101,7 @@ runs:
         INPUT_SCA: ${{ inputs.sca }}
         INPUT_SBOM: ${{ inputs.sbom }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
       run: |
         set +e  # scans with findings exit non-zero
         set -uo pipefail
@@ -185,7 +191,7 @@ runs:
         {
           echo
           echo "Full SARIF/CycloneDX outputs and per-scan logs are attached as the"
-          echo "\`reposcan-results\` artifact."
+          echo "\`${INPUT_ARTIFACT_NAME}\` artifact."
         } >> "${summary}"
         cat "${summary}" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -272,7 +278,7 @@ runs:
       if: always() && steps.scan.outputs.results-path != ''
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
-        name: reposcan-results
+        name: ${{ inputs.artifact-name }}
         path: ${{ steps.scan.outputs.results-path }}
         if-no-files-found: ignore
 
