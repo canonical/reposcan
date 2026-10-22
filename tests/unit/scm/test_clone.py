@@ -54,6 +54,23 @@ def test_a_repository_is_mirrored_then_updated_in_place() -> None:
         assert sorted(os.listdir(worktree)) == [".git", "a.txt", "b.txt"]
 
 
+def test_a_relative_workspace_path_is_made_absolute() -> None:
+    # Regression test: the original implementation ran `worktree add` with the relative
+    # path, creating a worktree dir inside the mirror dir
+    with tempfile.TemporaryDirectory() as tmp:
+        local_repo_url = _create_repo(tmp)
+        previous_cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            workdir = clone.sync_repository(local_repo_url, "work", "acme/demo")
+        finally:
+            os.chdir(previous_cwd)
+
+        expected_workdir = os.path.join(tmp, "work", clone.WORKTREE_DIR, "acme/demo")
+        assert workdir == expected_workdir
+        assert sorted(os.listdir(expected_workdir)) == [".git", "a.txt"]
+
+
 def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         result = clone.sync_repository(

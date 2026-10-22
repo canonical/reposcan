@@ -39,6 +39,7 @@ def sync_repository(
     Returns:
         The worktree path to scan, or an Err naming the git step that failed.
     """
+    workspace = os.path.abspath(workspace)
     mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
     worktree = os.path.join(workspace, WORKTREE_DIR, name)
     env = _build_git_environment(url, token)
