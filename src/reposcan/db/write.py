@@ -9,12 +9,13 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from reposcan.db import schema, sqlite
+from reposcan.db import read, schema, sqlite
 from reposcan.db.identity import (
     IssueAttributes,
     derive_component_key,
     is_same_issue,
 )
+from reposcan.db.model import ImportCounts
 from reposcan.db.sqlite import Session, Table
 from reposcan.result import Err, Result, is_err
 from reposcan.scans import cyclonedx, sarif
@@ -56,6 +57,96 @@ def write_analysis(path: str, record: Analysis) -> Result[None]:
         for scan in record.successful_scans:
             insert_scan(session, analysis_id, project_id, scan)
     return None
+
+
+def import_database(
+    source: str, destination: str, produced_by: str, *, retain_secrets: bool = False
+) -> Result[ImportCounts]:
+    """Record every analysis of the database at `source` into `destination`.
+
+    Args:
+        source: The database to import, which is only ever read.
+        destination: The receiving database, created when absent.
+        produced_by: Recorded on the analyses `source` left without a producer.
+        retain_secrets: Keep the raw secret values that `source`'s findings retained.
+
+    Returns:
+        How many analyses were imported and skipped, or an Err when either database
+        is unusable or an analysis fails to import.
+    """
+    if is_err(err := schema.confirm_usable(destination)):
+        return err
+    known_uuids: set[str] = set()
+    if schema.is_current(destination):
+        known_uuids = {summary.uuid for summary in read.list_analyses(destination)}
+    result = sqlite.connect_read_only(source)
+    if isinstance(result, Err):
+        return result
+    imported = 0
+    skipped = 0
+    with result as session:
+        list_result = _list_importable_analyses(session, source)
+        if isinstance(list_result, Err):
+            return list_result
+        for analysis_id, uuid in list_result:
+            if uuid in known_uuids:
+                skipped += 1
+                continue
+            load_result = read.load_analysis(session, analysis_id)
+            if isinstance(load_result, Err):
+                return Err(
+                    f"could not read analysis {uuid} of {source}: {load_result.msg}"
+                )
+            analysis = load_result
+            if not analysis.produced_by:
+                analysis.produced_by = produced_by
+            # The rows came from elsewhere, and stripping and recording read them again.
+            try:
+                if not retain_secrets:
+                    for run in analysis.sarif_runs:
+                        run.remove_secrets()
+                err = write_analysis(destination, analysis)
+            except read.MALFORMED_ROW_ERRORS as exc:
+                return Err(
+                    f"could not record analysis {uuid} in {destination}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            if is_err(err):
+                return err
+            logger.debug("imported analysis %s", uuid)
+            imported += 1
+    return ImportCounts(imported=imported, skipped=skipped)
+
+
+def _list_importable_analyses(
+    session: Session, source: str
+) -> Result[list[tuple[int, str]]]:
+    """List the id and uuid of every analysis in `source`, oldest-ingested first.
+
+    Returns:
+        The list, or an Err when `source` is not a whole reposcan database of this
+        version.
+    """
+    try:
+        if session.read_version() != schema.SCHEMA_VERSION:
+            return Err(
+                f"{source} is not a version {schema.SCHEMA_VERSION} reposcan database"
+            )
+        # A view standing in for a table could compute rows without end.
+        for table in schema.TABLES:
+            if not session.has_table(table.name):
+                return Err(f"{source} has no {table.name} table")
+        return [
+            (int(row[0]), str(row[2])) for row in session.query(schema.SELECT_ANALYSES)
+        ]
+    except read.MALFORMED_ROW_ERRORS as exc:
+        hint = ""
+        if "readonly" in str(exc):
+            hint = (
+                "; copy it to a writable directory first, because sqlite creates a "
+                "file beside a database to read it"
+            )
+        return Err(f"could not read {source}: {exc}{hint}")
 
 
 def resolve_project(session: Session, identity: ProjectIdentity) -> int:

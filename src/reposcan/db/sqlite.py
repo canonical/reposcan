@@ -89,6 +89,21 @@ def connect(path: str, *, write: bool = False) -> "Result[Session]":
     return Session(connection, immediate=write)
 
 
+def connect_read_only(path: str) -> "Result[Session]":
+    """Open a read-only session on the existing database at `path`."""
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    try:
+        connection = sqlite3.connect(
+            uri, uri=True, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
+        )
+        # A database from elsewhere may define views and triggers; let them call only
+        # the functions sqlite marks innocuous.
+        connection.execute("PRAGMA trusted_schema = OFF")
+    except sqlite3.Error as exc:
+        return Err(f"could not open {path} read-only: {exc}")
+    return Session(connection)
+
+
 def read_version(path: str) -> int | None:
     """Read the database's `PRAGMA user_version`.
 
