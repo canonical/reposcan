@@ -64,13 +64,14 @@ def is_sqlite(data: bytes) -> bool:
     return data[:16] == _MAGIC
 
 
-def connect(path: str) -> "Result[Session]":
+def connect(path: str, *, write: bool = False) -> "Result[Session]":
     """Open a session on the database at `path`.
 
     Creates the file when it is absent. Returns an error rather than raising.
 
     sqlite serializes writers. Write-ahead logging lets readers work while a write is in
-    flight, and the busy timeout makes a second writer wait rather than fail.
+    flight. A session opened to `write` takes the write lock as it begins, so the busy
+    timeout makes a second writer wait for it rather than fail.
     """
     try:
         # isolation_level=None turns off sqlite3's implicit transaction handling, so
@@ -85,7 +86,7 @@ def connect(path: str) -> "Result[Session]":
             logger.debug("%s is journalled as %s, not wal", path, mode)
     except sqlite3.Error as exc:
         return Err(f"could not open {path}: {exc}")
-    return Session(connection)
+    return Session(connection, immediate=write)
 
 
 def read_version(path: str) -> int | None:
@@ -115,14 +116,19 @@ class Session:
     supplied by the caller.
     """
 
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(
+        self, connection: sqlite3.Connection, *, immediate: bool = False
+    ) -> None:
         self._connection = connection
+        self._immediate = immediate
 
     def __enter__(self) -> "Session":
         # Foreign keys are per-connection, off by default, and silently ignored inside
         # a transaction, so this has to happen before the BEGIN.
         self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.execute("BEGIN")
+        # A transaction that reads before it writes can never take the write lock once
+        # another writer has committed (SQLITE_BUSY_SNAPSHOT), however long it waits.
+        self._connection.execute("BEGIN IMMEDIATE" if self._immediate else "BEGIN")
         return self
 
     def __exit__(
