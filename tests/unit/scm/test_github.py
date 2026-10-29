@@ -158,10 +158,12 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
 
 
 def test_a_repository_can_be_fetched_by_name() -> None:
-    with _answering(_Response(body=_build_payload("one"))) as fake:
+    payload = {**_build_payload("one"), "size": 2048}
+    with _answering(_Response(body=payload)) as fake:
         found = fetch_named_repositories(["acme/one"])
     assert not isinstance(found, Err)
     assert [repo.full_name for repo in found] == ["acme/one"]
+    assert found[0].size == 2048  # kept, for the log and the list-repos table
     assert fake.urls == ["https://api.github.com/repos/acme/one"]
 
     # a name that does not exist is an error, not a silent omission

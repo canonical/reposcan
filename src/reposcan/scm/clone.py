@@ -26,8 +26,8 @@ _LOW_SPEED_SECONDS = "60"
 
 
 def sync_repository(
-    url: str, workspace: str, name: str, token: str = ""
-) -> Result[str]:
+    url: str, workspace: str, name: str, token: str = "", size: int = 0
+) -> Result[str | None]:
     """Sync (clone or update) a local copy of `url`.
 
     Args:
@@ -35,9 +35,12 @@ def sync_repository(
         workspace: The local storage directory.
         name: The repository's `owner/name`.
         token: An authentication token, or empty to clone anonymously.
+        size: The repository's size in KB as GitHub reports it, shown in the log so
+            the big ones stand out; 0 when unknown.
 
     Returns:
-        The worktree path to scan, or an Err naming the git step that failed.
+        The worktree path to scan, None when the repository is empty, or an Err
+        naming the git step that failed.
     """
     workspace = os.path.abspath(workspace)
     mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
@@ -54,11 +57,38 @@ def sync_repository(
             cwd=mirror,
         )
     else:
-        logger.info("mirroring %s", name)
+        logger.info("mirroring %s%s", name, f" ({format_size(size)})" if size else "")
         err = _make_parent(mirror)
         if not is_err(err):
             err = _git(["clone", "--mirror", "--quiet", url, mirror], env)
-    return err if is_err(err) else _checkout(mirror, worktree)
+    if is_err(err):
+        return err
+    if not _has_commits(mirror):
+        return None
+    return _checkout(mirror, worktree)
+
+
+def _has_commits(mirror: str) -> bool:
+    """Whether `mirror` holds any commit at all.
+
+    Asks for any ref, not for HEAD: a repository whose default branch was deleted but
+    which has other branches is not empty, and failing its checkout is the right call.
+    """
+    run = get_value(run_process(["git", "for-each-ref", "--count=1"], cwd=mirror))
+    return run is not None and run.exit_code == 0 and bool(run.stdout.strip())
+
+
+_UNIT_STEP = 1024  # KB in an MB, MB in a GB, ...
+
+
+def format_size(kilobytes: int) -> str:
+    """Render a size in KB for people: '512 KB', '3.5 MB', '2.5 GB'."""
+    size, unit = float(kilobytes), "KB"
+    for bigger in ("MB", "GB", "TB"):
+        if size < _UNIT_STEP:
+            break
+        size, unit = size / _UNIT_STEP, bigger
+    return f"{size:.0f} {unit}" if unit == "KB" else f"{size:.1f} {unit}"
 
 
 def _checkout(mirror: str, worktree: str) -> Result[str]:

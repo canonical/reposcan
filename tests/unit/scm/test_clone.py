@@ -36,7 +36,7 @@ def test_a_repository_is_mirrored_then_updated_in_place() -> None:
         work = os.path.join(tmp, "work")
 
         worktree = clone.sync_repository(local_repo_url, work, "acme/demo")
-        assert not isinstance(worktree, Err)
+        assert isinstance(worktree, str)
         assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
         mirror = os.path.join(work, clone.MIRROR_DIR, "acme/demo.git")
         assert os.path.isdir(mirror)
@@ -69,6 +69,23 @@ def test_a_relative_workspace_path_is_made_absolute() -> None:
         expected_workdir = os.path.join(tmp, "work", clone.WORKTREE_DIR, "acme/demo")
         assert workdir == expected_workdir
         assert sorted(os.listdir(expected_workdir)) == [".git", "a.txt"]
+
+
+def test_an_empty_repository_is_mirrored_with_nothing_to_check_out() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        origin = os.path.join(tmp, "origin")
+        subprocess.run(["git", "init", "-q", origin], check=True, capture_output=True)
+        work = os.path.join(tmp, "work")
+
+        assert clone.sync_repository(f"file://{origin}", work, "acme/empty") is None
+        assert not os.path.exists(os.path.join(work, clone.WORKTREE_DIR, "acme/empty"))
+        # a later sync updates the mirror, and it is still empty
+        assert clone.sync_repository(f"file://{origin}", work, "acme/empty") is None
+
+
+def test_a_size_reads_in_the_unit_that_fits() -> None:
+    sizes = [clone.format_size(kb) for kb in (512, 3_600, 2_621_440)]
+    assert sizes == ["512 KB", "3.5 MB", "2.5 GB"]
 
 
 def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
