@@ -16,7 +16,7 @@ from types import ModuleType
 import reposcan.scans as scans_pkg
 from reposcan.backends import BACKENDS, Session, start_session
 from reposcan.execution.context import get_host_user
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans.base import Scan
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def discover_scans() -> dict[str, type[Scan]]:
 def require_docker() -> None:
     """Fail (never skip) when docker is unavailable -- fixtures must run for real."""
     available = BACKENDS["docker"].check_availability()
-    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
+    assert not is_err(available), f"docker unavailable: {available.msg}"
 
 
 @contextmanager

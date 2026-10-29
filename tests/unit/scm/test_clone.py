@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 from reposcan.execution.context import Mount, find_git_mounts
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scm import clone
 
 
@@ -36,7 +36,7 @@ def test_a_repository_is_mirrored_then_updated_in_place() -> None:
         work = os.path.join(tmp, "work")
 
         worktree = clone.sync_repository(local_repo_url, work, "acme/demo")
-        assert not isinstance(worktree, Err)
+        assert not is_err(worktree)
         assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
         mirror = os.path.join(work, clone.MIRROR_DIR, "acme/demo.git")
         assert os.path.isdir(mirror)
@@ -76,7 +76,7 @@ def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
         result = clone.sync_repository(
             f"file://{tmp}/nothing-here", os.path.join(tmp, "work"), "acme/gone"
         )
-    assert isinstance(result, Err) and "git clone failed" in result.msg
+    assert is_err(result) and "git clone failed" in result.msg
 
 
 def test_a_worktree_needs_its_mirror_mounted_where_its_pointer_leads() -> None:

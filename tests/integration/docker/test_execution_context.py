@@ -13,7 +13,7 @@ from reposcan.backends import BACKENDS
 from reposcan.execution.context import Mount, locate_mounted_target
 from reposcan.execution.docker import DockerContext
 from reposcan.image.spec import BASE_IMAGE
-from reposcan.result import Err
+from reposcan.result import is_err
 from tests.integration.shared import exercise_lifecycle
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ _SECRET = (
 def test_docker_context_lifecycle() -> None:
     backend = BACKENDS["docker"]
     available = backend.check_availability()
-    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
+    assert not is_err(available), f"docker unavailable: {available.msg}"
 
     logger.info("[docker] starting ubuntu:26.04 container")
     ctx = DockerContext(BASE_IMAGE)
@@ -40,28 +40,28 @@ def test_docker_context_lifecycle() -> None:
         ctx.stop()
 
     # After stop the context has no running container.
-    assert isinstance(ctx.run(["true"]), Err)
+    assert is_err(ctx.run(["true"]))
 
 
 def test_docker_context_mounts_a_source_read_only() -> None:
     backend = BACKENDS["docker"]
     available = backend.check_availability()
-    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
+    assert not is_err(available), f"docker unavailable: {available.msg}"
 
     with tempfile.TemporaryDirectory() as source:
         Path(source, "marker.txt").write_text("hello")
         target = locate_mounted_target(source)
         logger.info("[docker] mounting %s at %s", source, target)
         ctx = DockerContext(BASE_IMAGE, mounts=[Mount(source, target)])
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         try:
             # The mounted file is visible inside the container at the kept-name path.
             seen = ctx.run(["cat", f"{target}/marker.txt"])
-            assert not isinstance(seen, Err) and seen.exit_code == 0, seen
+            assert not is_err(seen) and seen.exit_code == 0, seen
             assert seen.stdout.strip() == "hello"
             # The mount is read-only: writing into it fails.
             write = ctx.run(["sh", "-c", f"echo x > {target}/new.txt"])
-            assert not isinstance(write, Err) and write.exit_code != 0, write
+            assert not is_err(write) and write.exit_code != 0, write
         finally:
             ctx.stop()
 
@@ -69,7 +69,7 @@ def test_docker_context_mounts_a_source_read_only() -> None:
 def test_docker_scan_of_a_worktree_finds_its_history_without_leaking_paths() -> None:
     backend = BACKENDS["docker"]
     available = backend.check_availability()
-    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
+    assert not is_err(available), f"docker unavailable: {available.msg}"
 
     with tempfile.TemporaryDirectory() as directory:
         # A repo under a stand-in home dir: commit a secret, then delete it.

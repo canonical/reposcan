@@ -9,7 +9,7 @@ from typing import cast
 
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import sarif
 from reposcan.scans.secrets import SecretsScan
 
@@ -113,7 +113,7 @@ def test_create_run_turns_trufflehog_findings_into_sarif() -> None:
     run = SecretsScan().create_run(
         "trufflehog", ExecResult(0, _TRUFFLEHOG_OUTPUT, ""), "/scan/x"
     )
-    assert not isinstance(run, Err)
+    assert not is_err(run)
     findings = run.results
     assert len(findings) == 2  # the log line was skipped
 
@@ -147,7 +147,7 @@ def test_create_run_fingerprints_each_finding_by_its_secret() -> None:
         + "\n"
     )
     run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
-    assert not isinstance(run, Err)
+    assert not is_err(run)
     aws, github = run.results
     aws_hash = hashlib.sha256(b"AKIAEXAMPLE:secretpart").hexdigest()
     assert aws.result["fingerprints"] == {"secretHash/v1": aws_hash}
@@ -170,8 +170,8 @@ def test_merge_runs_combines_findings_across_tool_runs() -> None:
             "trufflehog", ExecResult(0, one_finding("GitHub"), ""), "/scan/x"
         ),
     ]
-    assert all(not isinstance(run, Err) for run in runs)
-    merged = sarif.merge_runs([run for run in runs if not isinstance(run, Err)])
+    assert all(not is_err(run) for run in runs)
+    merged = sarif.merge_runs([run for run in runs if not is_err(run)])
     assert len(merged.results) == 2  # one from each run
 
 
@@ -188,7 +188,7 @@ def test_create_run_annotates_commit_for_a_finding_in_a_commit_message() -> None
         + "\n"
     )
     run = SecretsScan().create_run("trufflehog", ExecResult(0, output, ""), "/scan/x")
-    assert not isinstance(run, Err)
+    assert not is_err(run)
     (finding,) = run.results
     assert finding.commit == "7f630c9b"
     assert finding.line == 7
@@ -211,6 +211,6 @@ def test_retain_secrets_keeps_the_raw_value_only_when_enabled() -> None:
     on = SecretsScan(retain_secrets=True).create_run(
         "trufflehog", ExecResult(0, output, ""), "/scan/x"
     )
-    assert not isinstance(off, Err) and not isinstance(on, Err)
+    assert not is_err(off) and not is_err(on)
     assert off.results[0].secret == ""  # off by default
     assert on.results[0].secret == "RAWSECRETEXAMPLE"  # retained when enabled

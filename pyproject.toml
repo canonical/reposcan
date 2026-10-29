@@ -16,7 +16,7 @@ over a repository, locally or in an ephemeral container.
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
-dependencies = []
+dependencies = ['typing_extensions>=4.10; python_version < "3.13"']
 
 [project.optional-dependencies]
 service = ["requests>=2.31"]

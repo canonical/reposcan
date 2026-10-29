@@ -10,7 +10,7 @@ from reposcan.actions.base import Action
 from reposcan.backends import start_session
 from reposcan.cli_kit import option, remainder
 from reposcan.execution.context import ExecutionContext, resolve_env
-from reposcan.result import Err
+from reposcan.result import is_err
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def execute(
         logger.error("no command given")
         return 2
     result = context.run(command, timeout=timeout)
-    if isinstance(result, Err):
+    if is_err(result):
         logger.error("%s", result.msg)
         return TIMEOUT_EXIT_CODE if result.timed_out else 1
     # Forward the command's own output verbatim; this is program output, not a log.

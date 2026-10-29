@@ -12,7 +12,7 @@ from reposcan.actions.base import Action
 from reposcan.cli_kit import Param, coerce, collect_params
 from reposcan.config import load
 from reposcan.logging import configure_logging
-from reposcan.result import Err
+from reposcan.result import is_err
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def _resolve_one(
         if raw is None:
             continue
         result = coerce(param, raw)
-        if isinstance(result, Err):
+        if is_err(result):
             logger.warning("ignoring invalid %s %s: %s", source, param.name, result.msg)
             continue
         present.append((source, result))

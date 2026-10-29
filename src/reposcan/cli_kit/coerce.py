@@ -10,7 +10,7 @@ single boundary that catches that and returns an `Err`.
 from typing import Any
 
 from reposcan.cli_kit.spec import Param
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 
 def parse_bool(value: str) -> bool:
@@ -35,7 +35,7 @@ def coerce(param: Param, raw: Any) -> Result[Any]:
     values: list[Any] = []
     for item in raw if isinstance(raw, list) else [raw]:
         coerced = _coerce_one(param, item)
-        if isinstance(coerced, Err):
+        if is_err(coerced):
             return coerced
         values.append(coerced)
     return values
@@ -50,7 +50,7 @@ def _coerce_one(param: Param, raw: Any) -> Result[Any]:
     value: Any = raw
     if param.convert is not None:
         value = _run(param.convert, str(raw), param)
-        if isinstance(value, Err):
+        if is_err(value):
             return value
     if param.choices is not None and value not in param.choices:
         allowed = ", ".join(str(c) for c in param.choices)

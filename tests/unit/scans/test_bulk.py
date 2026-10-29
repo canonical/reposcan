@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from reposcan.actions.scan_repos import find_worktrees
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import bulk
 from reposcan.scans.analysis import Analysis
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
@@ -57,7 +57,7 @@ def test_one_failing_repository_does_not_abandon_the_rest() -> None:
         )
     assert sorted(scanned) == ["a", "b", "c"]  # it kept going
     assert sorted(recorded) == ["a", "c"]
-    assert sorted(p for p, r in results.items() if not isinstance(r, Err)) == [
+    assert sorted(p for p, r in results.items() if not is_err(r)) == [
         "a",
         "c",
     ]
@@ -74,7 +74,7 @@ def test_an_unresolvable_image_fails_every_repository_without_scanning() -> None
     finally:
         bulk.ensure_image = saved
     assert scanned == []
-    reasons = [r.msg for r in results.values() if isinstance(r, Err)]
+    reasons = [r.msg for r in results.values() if is_err(r)]
     assert reasons == ["no such image"] * 2
 
 
