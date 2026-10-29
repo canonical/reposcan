@@ -134,8 +134,32 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
     finally:
         gh.clone.sync_repository = saved
 
-    assert synced == ["acme/one", "acme/two", "acme/three"]  # it kept going
+    assert synced[:3] == ["acme/one", "acme/two", "acme/three"]  # it kept going
+    assert synced[3:] == ["acme/two", "acme/two"]  # retried after the rest
     assert code == 1  # but the run reports that something failed
+
+
+def test_a_repository_that_fails_once_is_retried_after_the_rest() -> None:
+    synced: list[str] = []
+
+    def fake_sync(url: str, workspace: str, name: str, token: str = "") -> Any:
+        synced.append(name)
+        if name == "acme/two" and synced.count(name) == 1:
+            return Err("Could not resolve host: github.com")
+        return f"{workspace}/{name}"
+
+    saved = gh.clone.sync_repository
+    gh.clone.sync_repository = fake_sync
+    try:
+        with _client(
+            [_build_repo("one"), _build_repo("two"), _build_repo("three")], {}
+        ):
+            code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x", threads=1))
+    finally:
+        gh.clone.sync_repository = saved
+
+    assert synced == ["acme/one", "acme/two", "acme/three", "acme/two"]
+    assert code == 0  # the blip cleared, so nothing was missed
 
 
 def test_naming_repositories_replaces_discovery() -> None:
