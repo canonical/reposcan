@@ -10,10 +10,15 @@ import base64
 import logging
 import os
 import shutil
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from reposcan.execution.process import run_process
+from reposcan.output import format_size
 from reposcan.result import Err, Result, get_value, is_err
+
+if TYPE_CHECKING:  # github needs the service extra; the annotation does not
+    from reposcan.scm.github import Repository
 
 logger = logging.getLogger(__name__)
 
@@ -27,22 +32,21 @@ _LOW_SPEED_SECONDS = "60"
 
 
 def sync_repository(
-    url: str, workspace: str, name: str, token: str = "", size: int = 0
+    repository: "Repository", workspace: str, token: str = ""
 ) -> Result[str | None]:
-    """Sync (clone or update) a local copy of `url`.
+    """Sync (clone or update) a local copy of `repository`.
 
     Args:
-        url: The repository's clone url.
+        repository: The repository to sync. Its size, as GitHub reports it, is shown
+            in the log so the big ones stand out.
         workspace: The local storage directory.
-        name: The repository's `owner/name`.
         token: An authentication token, or empty to clone anonymously.
-        size: The repository's size in KB as GitHub reports it, shown in the log so
-            the big ones stand out; 0 when unknown.
 
     Returns:
         The worktree path to scan, None when the repository is empty, or an Err
         naming the git step that failed.
     """
+    url, name, size = repository.clone_url, repository.full_name, repository.size
     workspace = os.path.abspath(workspace)
     mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
     worktree = os.path.join(workspace, WORKTREE_DIR, name)
@@ -51,15 +55,19 @@ def sync_repository(
     # A clone cut off hard (power loss, kill -9) leaves behind whatever it had, since
     # git gets no chance to clean up. The fetch below heals most of these, but not one
     # cut off before git saved where it was cloning from: that has no commits, and
-    # would pass for an empty repository. GitHub reporting content gives it away.
-    if size and os.path.isdir(mirror) and not _has_commits(mirror):
-        logger.warning(
-            "%s: local mirror has no commits but GitHub reports %s; cloning it again",
-            name,
-            format_size(size),
-        )
-        if is_err(err := _remove_local_copy(mirror, worktree)):
-            return err
+    # would pass for an empty repository. GitHub reporting content gives it away. A
+    # mirror git can't read at all is just as broken, so it's cloned again too.
+    if size and os.path.isdir(mirror):
+        has_commits = _has_commits(mirror)
+        if is_err(has_commits) or not has_commits:
+            logger.warning(
+                "%s: local mirror has no commits but GitHub reports %s; "
+                "cloning it again",
+                name,
+                format_size(size),
+            )
+            if is_err(err := _remove_local_copy(mirror, worktree)):
+                return err
 
     if os.path.isdir(mirror):
         logger.info("updating %s", name)
@@ -77,7 +85,10 @@ def sync_repository(
             err = _git(["clone", "--mirror", "--quiet", url, mirror], env)
     if is_err(err):
         return err
-    if not _has_commits(mirror):
+    has_commits = _has_commits(mirror)
+    if is_err(has_commits):
+        return has_commits
+    if not has_commits:
         return None
     return _checkout(mirror, worktree)
 
@@ -94,27 +105,22 @@ def _remove_local_copy(mirror: str, worktree: str) -> Result[None]:
     return None
 
 
-def _has_commits(mirror: str) -> bool:
+def _has_commits(mirror: str) -> Result[bool]:
     """Whether `mirror` holds any commit at all.
 
     Asks for any ref, not for HEAD: a repository whose default branch was deleted but
     which has other branches is not empty, and failing its checkout is the right call.
+
+    Returns:
+        Whether it has one, or an Err when git can't read the mirror, so a broken
+        mirror is reported as a failure rather than passed off as an empty repository.
     """
-    run = get_value(run_process(["git", "for-each-ref", "--count=1"], cwd=mirror))
-    return run is not None and run.exit_code == 0 and bool(run.stdout.strip())
-
-
-_UNIT_STEP = 1024  # KB in an MB, MB in a GB, ...
-
-
-def format_size(kilobytes: int) -> str:
-    """Render a size in KB for people: '512 KB', '3.5 MB', '2.5 GB'."""
-    size, unit = float(kilobytes), "KB"
-    for bigger in ("MB", "GB", "TB"):
-        if size < _UNIT_STEP:
-            break
-        size, unit = size / _UNIT_STEP, bigger
-    return f"{size:.0f} {unit}" if unit == "KB" else f"{size:.1f} {unit}"
+    run = run_process(["git", "for-each-ref", "--count=1"], cwd=mirror)
+    if isinstance(run, Err):
+        return run
+    if run.exit_code != 0:
+        return Err(f"git for-each-ref failed: {run.stderr.strip()}")
+    return bool(run.stdout.strip())
 
 
 def _checkout(mirror: str, worktree: str) -> Result[str]:

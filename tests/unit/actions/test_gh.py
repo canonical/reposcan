@@ -120,9 +120,8 @@ def test_the_exclude_globs_are_split_and_the_filters_forwarded() -> None:
 def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
     synced: list[str] = []
 
-    def fake_sync(
-        url: str, workspace: str, name: str, token: str = "", size: int = 0
-    ) -> Any:
+    def fake_sync(repository: Repository, workspace: str, token: str = "") -> Any:
+        name = repository.full_name
         synced.append(name)
         return Err("no route") if name == "acme/two" else f"{workspace}/{name}"
 
@@ -144,9 +143,8 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
 def test_an_empty_repository_is_skipped_not_failed() -> None:
     synced: list[str] = []
 
-    def fake_sync(
-        url: str, workspace: str, name: str, token: str = "", size: int = 0
-    ) -> Any:
+    def fake_sync(repository: Repository, workspace: str, token: str = "") -> Any:
+        name = repository.full_name
         synced.append(name)
         return None if name == "acme/two" else f"{workspace}/{name}"
 
@@ -167,9 +165,8 @@ def test_an_empty_repository_is_skipped_not_failed() -> None:
 def test_a_repository_that_fails_once_is_retried_after_the_rest() -> None:
     synced: list[str] = []
 
-    def fake_sync(
-        url: str, workspace: str, name: str, token: str = "", size: int = 0
-    ) -> Any:
+    def fake_sync(repository: Repository, workspace: str, token: str = "") -> Any:
+        name = repository.full_name
         synced.append(name)
         if name == "acme/two" and synced.count(name) == 1:
             return Err("Could not resolve host: github.com")
@@ -194,8 +191,8 @@ def test_naming_repositories_replaces_discovery() -> None:
     # adding to it: given one, --org is not resolved at all.
     seen: dict[str, Any] = {}
     saved = gh.clone.sync_repository
-    gh.clone.sync_repository = lambda url, workspace, name, token="", size=0: (
-        f"{workspace}/{name}"
+    gh.clone.sync_repository = lambda repository, workspace, token="": (
+        f"{workspace}/{repository.full_name}"
     )
     try:
         with _client([_build_repo("discovered")], seen):

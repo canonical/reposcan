@@ -10,6 +10,7 @@ import tempfile
 from reposcan.execution.context import Mount, find_git_mounts
 from reposcan.result import Err
 from reposcan.scm import clone
+from reposcan.scm.github import Repository
 
 
 def _git(*args: str, cwd: str) -> None:
@@ -30,12 +31,18 @@ def _create_repo(directory: str) -> str:
     return f"file://{path}"
 
 
+def _build_repository(url: str, name: str = "acme/demo", size: int = 0) -> Repository:
+    return Repository(name, url, "main", size=size)
+
+
 def test_a_repository_is_mirrored_then_updated_in_place() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         local_repo_url = _create_repo(tmp)
         work = os.path.join(tmp, "work")
 
-        worktree = clone.sync_repository(local_repo_url, work, "acme/demo")
+        demo = _build_repository(local_repo_url)
+
+        worktree = clone.sync_repository(demo, work)
         assert isinstance(worktree, str)
         assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
         mirror = os.path.join(work, clone.MIRROR_DIR, "acme/demo.git")
@@ -50,7 +57,7 @@ def test_a_repository_is_mirrored_then_updated_in_place() -> None:
         with open(os.path.join(worktree, "stray.tmp"), "w", encoding="utf-8") as handle:
             handle.write("left over\n")
 
-        assert clone.sync_repository(local_repo_url, work, "acme/demo") == worktree
+        assert clone.sync_repository(demo, work) == worktree
         assert sorted(os.listdir(worktree)) == [".git", "a.txt", "b.txt"]
 
 
@@ -62,7 +69,7 @@ def test_a_relative_workspace_path_is_made_absolute() -> None:
         previous_cwd = os.getcwd()
         os.chdir(tmp)
         try:
-            workdir = clone.sync_repository(local_repo_url, "work", "acme/demo")
+            workdir = clone.sync_repository(_build_repository(local_repo_url), "work")
         finally:
             os.chdir(previous_cwd)
 
@@ -76,11 +83,12 @@ def test_an_empty_repository_is_mirrored_with_nothing_to_check_out() -> None:
         origin = os.path.join(tmp, "origin")
         subprocess.run(["git", "init", "-q", origin], check=True, capture_output=True)
         work = os.path.join(tmp, "work")
+        empty = _build_repository(f"file://{origin}", "acme/empty")
 
-        assert clone.sync_repository(f"file://{origin}", work, "acme/empty") is None
+        assert clone.sync_repository(empty, work) is None
         assert not os.path.exists(os.path.join(work, clone.WORKTREE_DIR, "acme/empty"))
         # a later sync updates the mirror, and it is still empty
-        assert clone.sync_repository(f"file://{origin}", work, "acme/empty") is None
+        assert clone.sync_repository(empty, work) is None
 
 
 def test_a_mirror_left_without_commits_is_cloned_again_if_github_has_content() -> None:
@@ -95,22 +103,30 @@ def test_a_mirror_left_without_commits_is_cloned_again_if_github_has_content() -
         )
 
         # with no size from GitHub, it can't be told apart from an empty repository
-        assert clone.sync_repository(url, work, "acme/demo") is None
+        assert clone.sync_repository(_build_repository(url), work) is None
         # but GitHub reporting content gives it away, so it is cloned again
-        worktree = clone.sync_repository(url, work, "acme/demo", size=1)
+        worktree = clone.sync_repository(_build_repository(url, size=1), work)
         assert isinstance(worktree, str)
         assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
 
 
-def test_a_size_reads_in_the_unit_that_fits() -> None:
-    sizes = [clone.format_size(kb) for kb in (512, 3_600, 2_621_440)]
-    assert sizes == ["512 KB", "3.5 MB", "2.5 GB"]
+def test_a_mirror_git_cannot_read_is_cloned_again_if_github_has_content() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        url = _create_repo(tmp)
+        work = os.path.join(tmp, "work")
+        # a folder where the mirror should be, but not a repository git can read
+        os.makedirs(os.path.join(work, clone.MIRROR_DIR, "acme/demo.git"))
+
+        worktree = clone.sync_repository(_build_repository(url, size=1), work)
+        assert isinstance(worktree, str)
+        assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
 
 
 def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         result = clone.sync_repository(
-            f"file://{tmp}/nothing-here", os.path.join(tmp, "work"), "acme/gone"
+            _build_repository(f"file://{tmp}/nothing-here", "acme/gone"),
+            os.path.join(tmp, "work"),
         )
     assert isinstance(result, Err) and "git clone failed" in result.msg
 
@@ -121,7 +137,7 @@ def test_a_worktree_needs_its_mirror_mounted_where_its_pointer_leads() -> None:
     with tempfile.TemporaryDirectory() as directory:
         url = _create_repo(directory)
         workspace = os.path.join(directory, "workspace")
-        worktree = clone.sync_repository(url, workspace, "acme/api")
+        worktree = clone.sync_repository(_build_repository(url, "acme/api"), workspace)
         assert isinstance(worktree, str)
         mirror = os.path.join(workspace, clone.MIRROR_DIR, "acme/api.git")
 
