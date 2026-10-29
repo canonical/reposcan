@@ -179,7 +179,9 @@ selected repository under `DIR`. Each repository is cloned as a bare mirror in
 `DIR/mirrors` and its default branch is checked out as a worktree in
 `DIR/worktrees/`. An empty repository (one with no commits) is mirrored but
 skipped: it has nothing to check out or scan, and it is not counted as a failure.
-Options:
+An existing mirror with no commits, for a repository GitHub reports as having
+content, is left over from a clone that was cut off (e.g. by a power loss): it is
+deleted and cloned again. Options:
 
 - `--workspace <DIR>`: the directory holding the mirrors and worktrees. Env var:
   `REPOSCAN_WORKSPACE`.

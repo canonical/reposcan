@@ -9,6 +9,7 @@ Each repository is stored as a bare mirror and checked out as a worktree.
 import base64
 import logging
 import os
+import shutil
 from urllib.parse import urlsplit
 
 from reposcan.execution.process import run_process
@@ -47,6 +48,19 @@ def sync_repository(
     worktree = os.path.join(workspace, WORKTREE_DIR, name)
     env = _build_git_environment(url, token)
 
+    # A clone cut off hard (power loss, kill -9) leaves behind whatever it had, since
+    # git gets no chance to clean up. The fetch below heals most of these, but not one
+    # cut off before git saved where it was cloning from: that has no commits, and
+    # would pass for an empty repository. GitHub reporting content gives it away.
+    if size and os.path.isdir(mirror) and not _has_commits(mirror):
+        logger.warning(
+            "%s: local mirror has no commits but GitHub reports %s; cloning it again",
+            name,
+            format_size(size),
+        )
+        if is_err(err := _remove_local_copy(mirror, worktree)):
+            return err
+
     if os.path.isdir(mirror):
         logger.info("updating %s", name)
         # A mirror's refspec is already forced, so this follows a rewritten history
@@ -66,6 +80,18 @@ def sync_repository(
     if not _has_commits(mirror):
         return None
     return _checkout(mirror, worktree)
+
+
+def _remove_local_copy(mirror: str, worktree: str) -> Result[None]:
+    """Delete a repository's mirror, and its worktree if it has one."""
+    for path in (worktree, mirror):
+        try:
+            shutil.rmtree(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return Err(f"could not remove {path}: {exc}")
+    return None
 
 
 def _has_commits(mirror: str) -> bool:

@@ -83,6 +83,25 @@ def test_an_empty_repository_is_mirrored_with_nothing_to_check_out() -> None:
         assert clone.sync_repository(f"file://{origin}", work, "acme/empty") is None
 
 
+def test_a_mirror_left_without_commits_is_cloned_again_if_github_has_content() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        url = _create_repo(tmp)
+        work = os.path.join(tmp, "work")
+        mirror = os.path.join(work, clone.MIRROR_DIR, "acme/demo.git")
+        # what a clone killed before it saved its remote leaves behind
+        os.makedirs(os.path.dirname(mirror))
+        subprocess.run(
+            ["git", "init", "-q", "--bare", mirror], check=True, capture_output=True
+        )
+
+        # with no size from GitHub, it can't be told apart from an empty repository
+        assert clone.sync_repository(url, work, "acme/demo") is None
+        # but GitHub reporting content gives it away, so it is cloned again
+        worktree = clone.sync_repository(url, work, "acme/demo", size=1)
+        assert isinstance(worktree, str)
+        assert sorted(os.listdir(worktree)) == [".git", "a.txt"]
+
+
 def test_a_size_reads_in_the_unit_that_fits() -> None:
     sizes = [clone.format_size(kb) for kb in (512, 3_600, 2_621_440)]
     assert sizes == ["512 KB", "3.5 MB", "2.5 GB"]
