@@ -16,7 +16,7 @@ from reposcan.db.identity import (
     is_same_issue,
 )
 from reposcan.db.sqlite import Session, Table
-from reposcan.result import Err, Result, is_err
+from reposcan.result import Result, is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanOutput, ScanRecord
 from reposcan.scans.model import ToolInvocationRecord
@@ -44,7 +44,7 @@ def write_analysis(path: str, record: Analysis) -> Result[None]:
     if is_err(err := schema.confirm_usable(path)):
         return err
     session = sqlite.connect(path)
-    if isinstance(session, Err):
+    if is_err(session):
         return session
     with session:
         schema.create_all(session)

@@ -13,7 +13,7 @@ import reposcan.execution.docker as docker
 from reposcan.execution.context import Mount, RunUser
 from reposcan.execution.docker import DockerContext
 from reposcan.execution.process import ExecResult
-from reposcan.result import Err, Result
+from reposcan.result import Result, is_err
 
 
 @contextmanager
@@ -45,7 +45,7 @@ def _patched_run(result: Result[ExecResult]):
 def test_starts_the_given_image_and_execs_commands_in_it() -> None:
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         assert ctx._instance_name == "abc123"  # container id from `docker run`
         assert "reposcan:tools" in calls[-1]  # started from the given image
         ctx.run(["ls", "-a"], cwd="/src", env={"K": "V"})
@@ -57,7 +57,7 @@ def test_stdin_keeps_the_exec_interactive() -> None:
     # docker exec discards stdin unless -i is passed; the context adds it only then.
     with _patched_run(ExecResult(0, "", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         ctx.run(["cp", "/dev/stdin", "out.txt"], cwd="/scan", stdin="data")
     assert calls[-1][:3] == ["docker", "exec", "-i"]
 
@@ -69,7 +69,7 @@ def test_a_user_drops_privileges_via_setpriv() -> None:
     # to the dropped user).
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools", user=RunUser(10000, 10000, ()))
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         ctx.run(["trivy", "fs", "."], cwd="/scan/acme")
     exec_argv = calls[-1]
     assert "HOME=/home/reposcan" in exec_argv  # the scan user's home for tool caches
@@ -84,7 +84,7 @@ def test_run_without_a_default_user_runs_as_root() -> None:
     # A context built with no user runs as root: no setpriv, no HOME override.
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         ctx.run(["ls"])
     exec_argv = calls[-1]
     assert "setpriv" not in exec_argv
@@ -95,7 +95,7 @@ def test_run_user_override_runs_as_that_identity_for_one_call() -> None:
     # An explicit `user` on .run overrides the context's default for that call only.
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools")  # default: root
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
         ctx.run(["ls"], user=RunUser(1000, 1000, (42,)))
     exec_argv = calls[-1]
     assert "--reuid=1000" in exec_argv and "--regid=1000" in exec_argv
@@ -110,7 +110,7 @@ def test_every_mount_is_read_only_at_its_target() -> None:
     ]
     with _patched_run(ExecResult(0, "abc123\n", "")) as calls:
         ctx = DockerContext("reposcan:tools", mounts=mounts)
-        assert not isinstance(ctx.start(), Err)
+        assert not is_err(ctx.start())
     run_argv = calls[-1]  # the `docker run` argv
     volumes = [run_argv[i + 1] for i, arg in enumerate(run_argv) if arg == "-v"]
     assert volumes == [

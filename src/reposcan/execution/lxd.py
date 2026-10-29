@@ -83,7 +83,7 @@ class LxdContext:
             # so each scan maps exactly the invoking user.
             argv += ["--config", f"raw.idmap={idmap}"]
         result = run_process(argv)
-        if isinstance(result, Err):
+        if is_err(result):
             return result
         if result.exit_code != 0:
             return Err(result.stderr.strip() or "lxc launch failed")

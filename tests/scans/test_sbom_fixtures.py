@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx
 from reposcan.scans.run import run_sbom_scan
 from reposcan.scans.sbom import SbomScan
@@ -43,7 +43,7 @@ def _run() -> None:
             session.install_dir,
             stream=True,
         )
-        assert not isinstance(sbom, Err), f"sbom: {sbom.msg}"
+        assert not is_err(sbom), f"sbom: {sbom.msg}"
         fixture.verify(sbom)
 
 

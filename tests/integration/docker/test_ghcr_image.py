@@ -12,7 +12,7 @@ from reposcan.backends import BACKENDS
 from reposcan.execution.docker import DockerContext
 from reposcan.image.ensure import ensure_pulled
 from reposcan.image.spec import CANONICAL_REF
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.tools.registry import TOOLS
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,11 @@ _TEST_CMD = "trivy"
 def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
     backend = BACKENDS["docker"]
     available = backend.check_availability()
-    assert not isinstance(available, Err), f"docker unavailable: {available.msg}"
+    assert not is_err(available), f"docker unavailable: {available.msg}"
 
     logger.info("pulling the ghcr image %s", CANONICAL_REF)
     reference = ensure_pulled(CANONICAL_REF)
-    assert not isinstance(reference, Err), (
+    assert not is_err(reference), (
         f"could not pull the ghcr image {CANONICAL_REF}: {reference.msg}"
     )
 
@@ -41,7 +41,7 @@ def test_ghcr_image_is_pullable_and_runs_its_tools() -> None:
         executable = tool.locate_executable("/opt/reposcan")
         logger.info("[%s] checking %s --version", _TEST_CMD, executable)
         result = ctx.run([executable, "--version"])
-        assert not isinstance(result, Err)
+        assert not is_err(result)
         assert result.exit_code == 0, (
             f"{_TEST_CMD} exited {result.exit_code}: {result.stderr}"
         )

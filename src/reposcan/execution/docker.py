@@ -15,7 +15,7 @@ from reposcan.execution.context import (
     wrap_with_setpriv,
 )
 from reposcan.execution.process import ExecResult, run_process
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 
 class DockerContext:
@@ -46,7 +46,7 @@ class DockerContext:
             argv += ["-v", f"{mount.source}:{mount.target}:ro"]
         argv += [self._image, "sleep", "infinity"]
         result = run_process(argv)
-        if isinstance(result, Err):
+        if is_err(result):
             return result
         if result.exit_code != 0:
             return Err(result.stderr.strip() or "docker run failed")

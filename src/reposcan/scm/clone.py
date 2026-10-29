@@ -98,7 +98,7 @@ def _git(
 ) -> Result[None]:
     """Run a git command."""
     result = run_process(["git", *args], cwd=cwd, env=env)
-    if isinstance(result, Err):
+    if is_err(result):
         return result
     if result.exit_code != 0:
         return Err(f"git {args[0]} failed: {result.stderr.strip()}")

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from reposcan.execution.context import ExecutionContext, read_file
 from reposcan.execution.process import ExecResult
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import cyclonedx, ignore, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.gitignore import GitIgnore
@@ -88,7 +88,7 @@ def _run_tools(
             working_directory=invocation.cwd or target,
             environment=dict(invocation.env or {}),
         )
-        if isinstance(result, Err):
+        if is_err(result):
             if invocation.optional:
                 logger.warning("%s did not run: %s", invocation.tool, result.msg)
                 provenance.append(recorded(exit_code=-1, successful=False))
@@ -145,13 +145,13 @@ def run_scan(
         )
     ignored = GitIgnore.from_context(ctx, target)
     outcome = _run_tools(scan, ctx, target, install_dir, ignored, stream=stream)
-    if isinstance(outcome, Err):
+    if is_err(outcome):
         return outcome
     outputs, provenance = outcome
     runs: list[sarif.SarifRun] = []
     for invocation, output in outputs:
         created = scan.create_run(invocation.tool, output, target)
-        if isinstance(created, Err):
+        if is_err(created):
             if invocation.optional:
                 logger.warning("skipping %s: %s", invocation.tool, created.msg)
                 continue
@@ -191,7 +191,7 @@ def run_sbom_scan(
     )
     ignored = GitIgnore.from_context(ctx, target)
     outcome = _run_tools(sbom, ctx, target, install_dir, ignored, stream=stream)
-    if isinstance(outcome, Err):
+    if is_err(outcome):
         return outcome
     outputs, provenance = outcome
     documents: list[cyclonedx.CycloneDxDocument] = []
@@ -244,7 +244,7 @@ def run_analysis(
                 resolution_workdir=session.resolution_workdir,
                 stream=stream,
             )
-            if isinstance(run, Err):
+            if is_err(run):
                 logger.error("%s scan failed: %s", scan.name, run.msg)
                 analysis.fail(scan.name)
                 continue

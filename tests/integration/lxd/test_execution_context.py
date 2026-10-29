@@ -11,7 +11,7 @@ import logging
 from reposcan.backends import BACKENDS
 from reposcan.execution.lxd import LxdContext
 from reposcan.image.spec import BASE_IMAGE
-from reposcan.result import Err
+from reposcan.result import is_err
 from tests.integration.shared import exercise_lifecycle
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def test_lxd_context_lifecycle() -> None:
     backend = BACKENDS["lxd"]
     available = backend.check_availability()
-    assert not isinstance(available, Err), f"lxd unavailable: {available.msg}"
+    assert not is_err(available), f"lxd unavailable: {available.msg}"
 
     logger.info("[lxd] launching ubuntu:26.04 container (may download the image)")
     ctx = LxdContext(BASE_IMAGE)
@@ -34,4 +34,4 @@ def test_lxd_context_lifecycle() -> None:
         ctx.stop()
 
     # After stop the context has no running container.
-    assert isinstance(ctx.run(["true"]), Err)
+    assert is_err(ctx.run(["true"]))

@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 
 from reposcan.db import read, write
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
@@ -110,7 +110,7 @@ def test_an_analysis_round_trips_every_artifact_it_recorded() -> None:
         written = write.write_analysis(
             path, _add_scans(_build_analysis(), findings, sbom)
         )
-        assert not isinstance(written, Err)
+        assert not is_err(written)
         restored = read.list_artifacts(path)
     produced = findings.produced
     assert isinstance(produced, sarif.SarifRun)  # a findings run, not an inventory
@@ -234,7 +234,7 @@ def test_a_database_of_another_schema_version_is_refused_not_misread() -> None:
         failure = write.write_analysis(
             path, _add_scans(_build_analysis(), _build_findings_scan())
         )
-        assert isinstance(failure, Err)
+        assert is_err(failure)
         assert "version 99" in failure.msg
         assert read.list_artifacts(path) == []
         assert read.list_analyses(path) == []
@@ -249,7 +249,7 @@ def test_a_file_that_is_not_a_database_is_refused_before_anything_is_written() -
         failure = write.write_analysis(
             path, _add_scans(_build_analysis(), _build_findings_scan())
         )
-        assert isinstance(failure, Err)
+        assert is_err(failure)
         assert "not a sqlite database" in failure.msg
         # Refused whole: the file is left exactly as it was.
         with open(path) as handle:
@@ -264,7 +264,7 @@ def test_an_empty_file_reserved_by_the_caller_becomes_a_new_database() -> None:
         written = write.write_analysis(
             path, _add_scans(_build_analysis(), _build_findings_scan())
         )
-        assert not isinstance(written, Err)
+        assert not is_err(written)
         assert len(read.list_artifacts(path)) == 1
 
 

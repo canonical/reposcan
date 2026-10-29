@@ -16,7 +16,7 @@ from reposcan.db.sqlite import (
     is_sqlite,
     read_version,
 )
-from reposcan.result import Err, is_err
+from reposcan.result import is_err
 
 _ITEMS = TableSchema(
     name="items",
@@ -51,19 +51,19 @@ def test_a_session_commits_on_a_clean_exit_and_rolls_back_on_an_error() -> None:
         path = os.path.join(directory, "x.db")
 
         session = connect(path)
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with session:
             session.create(_ITEMS)
             session.insert(Table(_ITEMS, [("1", "kept")]))
 
         session = connect(path)
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with pytest.raises(RuntimeError), session:
             session.insert(Table(_ITEMS, [("2", "discarded")]))
             raise RuntimeError("the caller failed mid-transaction")
 
         session = connect(path)
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with session:
             assert session.query(_ITEMS.select or "") == [("1", "kept")]
 
@@ -71,7 +71,7 @@ def test_a_session_commits_on_a_clean_exit_and_rolls_back_on_an_error() -> None:
 def test_a_session_binds_parameters_and_reports_the_inserted_row_id() -> None:
     with tempfile.TemporaryDirectory() as directory:
         session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with session:
             session.create(_ITEMS)
             first = session.insert_row(_ITEMS.insert, ("1", "a"))
@@ -84,7 +84,7 @@ def test_a_session_binds_parameters_and_reports_the_inserted_row_id() -> None:
 def test_has_table_reports_whether_a_table_is_there() -> None:
     with tempfile.TemporaryDirectory() as directory:
         session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with session:
             assert not session.has_table("items")
             session.create(_ITEMS)
@@ -94,7 +94,7 @@ def test_has_table_reports_whether_a_table_is_there() -> None:
 def test_a_session_enforces_foreign_keys() -> None:
     with tempfile.TemporaryDirectory() as directory:
         session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with pytest.raises(sqlite3.IntegrityError), session:
             session.create(_PARENT)
             session.create(_CHILD)
@@ -105,7 +105,7 @@ def test_the_schema_version_round_trips_and_is_absent_for_a_non_database() -> No
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "x.db")
         session = connect(path)
-        assert not isinstance(session, Err)
+        assert not is_err(session)
         with session:
             assert session.read_version() == 0  # a new database starts at zero
             session.set_version(3)
