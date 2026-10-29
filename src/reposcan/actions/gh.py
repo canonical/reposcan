@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 # concurrency benefit is derived from threads blocking on I/O, so thread count is
 # decoupled from CPU count.
 _DEFAULT_CLONE_THREADS = 5
+# pickup attempts for a dropped connection or DNS blip mid-run
+_DEFAULT_CLONE_RETRIES = 2
 
 
 FORMATS = tuple(f.value for f in Format)
@@ -193,6 +195,12 @@ class CloneGhRepos(GhAction):
         convert=int,
         help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREADS}).",
     )
+    retries: int = option(
+        default=_DEFAULT_CLONE_RETRIES,
+        convert=int,
+        help="Times to retry the repositories that failed, after the rest are done "
+        f"(default {_DEFAULT_CLONE_RETRIES}).",
+    )
 
     def select_repositories(self, token: str) -> "Result[list[Repository]]":
         """List the repositories named by `--repo`, or by `--org` and `--enterprise`."""
@@ -227,7 +235,36 @@ class CloneGhRepos(GhAction):
             logger.error("%s", selected.msg)
             return 1
 
-        failed = 0
+        failed = self.sync_repositories(selected, token)
+        # The failures get another go once everything else is done, rather than
+        # straight away, so a blip has had time to pass.
+        for attempt in range(1, self.retries + 1):
+            if not failed:
+                break
+            logger.info(
+                "retrying %d failed repositories (attempt %d of %d)",
+                len(failed),
+                attempt,
+                self.retries,
+            )
+            failed = self.sync_repositories(
+                [repo for repo in selected if repo.full_name in failed], token
+            )
+        # Listed together at the end, so a long run's failures can't scroll out of view
+        for name, msg in sorted(failed.items()):
+            logger.error("not mirrored: %s: %s", name, msg)
+        logger.info("mirrored %d of %d", len(selected) - len(failed), len(selected))
+        return 1 if failed else 0
+
+    def sync_repositories(
+        self, repositories: "Sequence[Repository]", token: str
+    ) -> dict[str, str]:
+        """Mirror each of `repositories`.
+
+        Returns:
+            The `owner/name` of each repository that failed, with why.
+        """
+        failed: dict[str, str] = {}
         with ThreadPoolExecutor(max_workers=self.threads) as pool:
             running = {
                 pool.submit(
@@ -237,19 +274,22 @@ class CloneGhRepos(GhAction):
                     repo.full_name,
                     token,
                 ): repo
-                for repo in selected
+                for repo in repositories
             }
             for done, future in enumerate(as_completed(running), start=1):
                 repo = running[future]
                 logger.info(
-                    "[%d/%d] %s", done, len(selected), repo.full_name, extra=TRANSIENT
+                    "[%d/%d] %s",
+                    done,
+                    len(repositories),
+                    repo.full_name,
+                    extra=TRANSIENT,
                 )
                 # Don't crash the entire task for one failed repo
                 if is_err(err := future.result()):
-                    logger.error("%s: %s", repo.full_name, err.msg)
-                    failed += 1
-        logger.info("mirrored %d of %d", len(selected) - failed, len(selected))
-        return 1 if failed else 0
+                    logger.warning("%s: %s", repo.full_name, err.msg)
+                    failed[repo.full_name] = err.msg
+        return failed
 
 
 class GhGroup(Group):
