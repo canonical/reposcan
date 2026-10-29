@@ -157,6 +157,13 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
     assert len(f.urls) == 2  # the graphql query, then one repo listing
 
 
+def test_github_counts_as_reachable_if_it_answers_at_all() -> None:
+    with _answering(_Response(403)):  # an error status still means the network works
+        assert github.can_reach_github()
+    with _answering(requests.ConnectionError("no route to host")):
+        assert not github.can_reach_github()
+
+
 def test_a_repository_can_be_fetched_by_name() -> None:
     payload = {**_build_payload("one"), "size": 2048}
     with _answering(_Response(body=payload)) as fake:

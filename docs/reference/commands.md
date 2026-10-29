@@ -193,6 +193,15 @@ deleted and cloned again. Options:
 - `--threads <N>`: repositories to clone at once (default 5).
 - `--retries <N>`: times to retry the repositories that failed, once the rest are
   done (default 2). Any still failing are listed together at the end.
+- `--network-wait <SECONDS>`: before each retry round, clone-repos checks that GitHub
+  is reachable, so an outage doesn't use up the retries. While it isn't, it waits this
+  long between checks (default 15).
+- `--network-checks <N>`: how many times to check before giving up (default 10). If
+  GitHub stays unreachable, clone-repos stops cleanly with a message to check the
+  connection and rerun.
+
+Any repositories left unmirrored are listed, one per line, in
+`DIR/not-mirrored.txt`; a run that mirrors everything removes the file.
 
 ### scan-repos
 
