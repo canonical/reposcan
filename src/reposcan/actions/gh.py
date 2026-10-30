@@ -5,6 +5,7 @@
 
 import logging
 import os
+import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
@@ -16,7 +17,7 @@ from reposcan.actions.base import Action
 from reposcan.cli_kit import Group, flag, option
 from reposcan.logging import TRANSIENT
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
-from reposcan.result import Err, Result, is_err
+from reposcan.result import Err, Result, get_value, is_err
 from reposcan.scm import clone
 from reposcan.table import DEFAULT_WRAP_LINES
 
@@ -30,6 +31,11 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CLONE_THREADS = 5
 # pickup attempts for a dropped connection or DNS blip mid-run
 _DEFAULT_CLONE_RETRIES = 2
+# before a retry round, how often and how many times to check GitHub is reachable
+_DEFAULT_NETWORK_WAIT = 15
+_DEFAULT_NETWORK_CHECKS = 10
+# written to the workspace when a run leaves repositories unmirrored, one per line
+NOT_MIRRORED_FILE = "not-mirrored.txt"
 
 
 FORMATS = tuple(f.value for f in Format)
@@ -206,6 +212,18 @@ class CloneGhRepos(GhAction):
         help="Times to retry the repositories that failed, after the rest are done "
         f"(default {_DEFAULT_CLONE_RETRIES}).",
     )
+    network_wait: int = option(
+        default=_DEFAULT_NETWORK_WAIT,
+        convert=int,
+        help="Seconds between checks that GitHub is reachable, before a retry round "
+        f"(default {_DEFAULT_NETWORK_WAIT}).",
+    )
+    network_checks: int = option(
+        default=_DEFAULT_NETWORK_CHECKS,
+        convert=int,
+        help="Times to check GitHub is reachable before giving up "
+        f"(default {_DEFAULT_NETWORK_CHECKS}).",
+    )
 
     def select_repositories(self, token: str) -> "Result[list[Repository]]":
         """List the repositories named by `--repo`, or by `--org` and `--enterprise`."""
@@ -247,6 +265,14 @@ class CloneGhRepos(GhAction):
             failed = [repo for repo, outcome in outcomes.items() if is_err(outcome)]
             if not failed:
                 break
+            # An outage fails every clone in an instant, so retrying straight away would
+            # use up the retries during the outage itself: wait for GitHub first.
+            if not self.ensure_github_reachable():
+                logger.error(
+                    "reposcan can't connect to GitHub. Please check your connection "
+                    "and rerun to continue."
+                )
+                break
             logger.info(
                 "retrying %d failed repositories (attempt %d of %d)",
                 len(failed),
@@ -264,6 +290,7 @@ class CloneGhRepos(GhAction):
         # Listed together at the end, so a long run's failures can't scroll out of view
         for name, msg in sorted(errors.items()):
             logger.error("not mirrored: %s: %s", name, msg)
+        self.record_not_mirrored(errors)
         logger.info(
             "mirrored %d of %d%s",
             len(selected) - len(errors) - empty,
@@ -271,6 +298,49 @@ class CloneGhRepos(GhAction):
             f", skipped {empty} empty" if empty else "",
         )
         return 1 if errors else 0
+
+    def ensure_github_reachable(self) -> bool:
+        """Wait for GitHub to answer, checking up to --network-checks times.
+
+        Nothing is being cloned while this waits, so Ctrl+C here loses nothing.
+
+        Returns:
+            Whether GitHub answered.
+        """
+        github = get_value(self.load_github())
+        if github is None:
+            return True  # can't check, so carry on as before
+        for check in range(1, self.network_checks + 1):
+            if github.can_reach_github():
+                return True
+            if check < self.network_checks:
+                logger.warning(
+                    "can't reach GitHub, checking again in %ds "
+                    "(%d of %d, Ctrl+C to stop safely)",
+                    self.network_wait,
+                    check,
+                    self.network_checks,
+                )
+                time.sleep(self.network_wait)
+        return False
+
+    def record_not_mirrored(self, errors: "dict[str, str]") -> None:
+        """Write the repositories left unmirrored to the workspace, one per line.
+
+        A run that mirrors everything removes the file, so it never lists stale
+        failures from an earlier run.
+        """
+        path = os.path.join(self.workspace, NOT_MIRRORED_FILE)
+        try:
+            if errors:
+                os.makedirs(self.workspace, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.writelines(f"{name}\n" for name in sorted(errors))
+                logger.info("repositories not mirrored are listed in %s", path)
+            elif os.path.exists(path):
+                os.remove(path)
+        except OSError as exc:
+            logger.warning("could not update %s: %s", path, exc)
 
     def sync_repositories(
         self, repositories: "Sequence[Repository]", token: str

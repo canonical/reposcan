@@ -39,6 +39,7 @@ _GITHUB_GRAPHQL = "https://api.github.com/graphql"
 _API_VERSION = "2022-11-28"
 _PER_PAGE = 100
 _TIMEOUT = 30.0
+_REACH_TIMEOUT = 10.0  # for "is GitHub there at all?", which should answer fast
 _MAX_PAGES = 250  # A ceiling on pagination
 
 # GitHub sends secondary rate limit notifications with a Retry-After (usually <= 60s).
@@ -323,6 +324,20 @@ def get_enterprise_organizations(
             "stopping after %d pages of %s organizations", _MAX_PAGES, enterprise
         )
     return orgs
+
+
+def can_reach_github() -> bool:
+    """Whether GitHub answers at all.
+
+    Any response counts, even an error status: getting one back means the network is
+    up, so a failing clone is about that repository, not the connection.
+    """
+    try:
+        with requests.Session() as session:
+            session.request("HEAD", _GITHUB_API, headers={}, timeout=_REACH_TIMEOUT)
+    except requests.RequestException:
+        return False
+    return True
 
 
 def _request(

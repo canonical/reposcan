@@ -43,10 +43,12 @@ def _client(listed: Any, seen: dict[str, Any]) -> Iterator[None]:
         github.list_repositories,
         github.fetch_named_repositories,
         github.filter_repositories,
+        github.can_reach_github,
     )
     github.list_repositories = fake_list
     github.fetch_named_repositories = fake_get
     github.filter_repositories = fake_select
+    github.can_reach_github = lambda: True  # no network needed for passing test
     try:
         yield
     finally:
@@ -54,6 +56,7 @@ def _client(listed: Any, seen: dict[str, Any]) -> Iterator[None]:
             github.list_repositories,
             github.fetch_named_repositories,
             github.filter_repositories,
+            github.can_reach_github,
         ) = saved
 
 
@@ -128,16 +131,20 @@ def test_one_unreachable_repository_does_not_abandon_the_rest() -> None:
     saved = gh.clone.sync_repository
     gh.clone.sync_repository = fake_sync
     try:
-        with _client(
-            [_build_repo("one"), _build_repo("two"), _build_repo("three")], {}
+        with (
+            tempfile.TemporaryDirectory() as workspace,
+            _client([_build_repo("one"), _build_repo("two"), _build_repo("three")], {}),
         ):
-            code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x", threads=1))
+            code, _ = _run(gh.CloneGhRepos(org="acme", workspace=workspace, threads=1))
+            with open(os.path.join(workspace, gh.NOT_MIRRORED_FILE)) as handle:
+                listed = handle.read()
     finally:
         gh.clone.sync_repository = saved
 
     assert synced[:3] == ["acme/one", "acme/two", "acme/three"]  # it kept going
     assert synced[3:] == ["acme/two", "acme/two"]  # retried after the rest
     assert code == 1  # but the run reports that something failed
+    assert listed == "acme/two\n"  # and lists what's missing for a rerun
 
 
 def test_an_empty_repository_is_skipped_not_failed() -> None:
@@ -184,6 +191,82 @@ def test_a_repository_that_fails_once_is_retried_after_the_rest() -> None:
 
     assert synced == ["acme/one", "acme/two", "acme/three", "acme/two"]
     assert code == 0  # the blip cleared, so nothing was missed
+
+
+def test_retries_wait_until_github_can_be_reached_again() -> None:
+    synced: list[str] = []
+    slept: list[float] = []
+    reachable = [False, False, True]  # an outage, then it comes back
+
+    def fake_sync(repository: Repository, workspace: str, token: str = "") -> Any:
+        name = repository.full_name
+        synced.append(name)
+        if name == "acme/two" and synced.count(name) == 1:
+            return Err("Could not resolve host: github.com")
+        return f"{workspace}/{name}"
+
+    saved = gh.clone.sync_repository, gh.time.sleep
+    gh.clone.sync_repository = fake_sync
+    gh.time.sleep = slept.append
+    try:
+        with _client(
+            [_build_repo("one"), _build_repo("two"), _build_repo("three")], {}
+        ):
+            github.can_reach_github = lambda: reachable.pop(0)
+            code, _ = _run(gh.CloneGhRepos(org="acme", workspace="/tmp/x", threads=1))
+    finally:
+        gh.clone.sync_repository, gh.time.sleep = saved
+
+    assert slept == [15, 15]  # waited out the outage before retrying
+    assert synced == ["acme/one", "acme/two", "acme/three", "acme/two"]
+    assert code == 0
+
+
+def test_a_lasting_outage_stops_cleanly_and_lists_what_was_missed() -> None:
+    synced: list[str] = []
+    slept: list[float] = []
+
+    def fake_sync(repository: Repository, workspace: str, token: str = "") -> Any:
+        name = repository.full_name
+        synced.append(name)
+        if name == "acme/two":
+            return Err("Could not resolve host: github.com")
+        return f"{workspace}/{name}"
+
+    repos = [_build_repo("one"), _build_repo("two"), _build_repo("three")]
+    saved = gh.clone.sync_repository, gh.time.sleep
+    gh.clone.sync_repository = fake_sync
+    gh.time.sleep = slept.append
+    try:
+        with tempfile.TemporaryDirectory() as workspace, _client(repos, {}):
+            github.can_reach_github = lambda: False
+            code, _ = _run(
+                gh.CloneGhRepos(
+                    org="acme",
+                    workspace=workspace,
+                    threads=1,
+                    network_checks=3,
+                    network_wait=1,
+                )
+            )
+            listed_file = os.path.join(workspace, gh.NOT_MIRRORED_FILE)
+            with open(listed_file) as handle:
+                listed = handle.read()
+
+            # once the connection is back, a rerun clears the list
+            gh.clone.sync_repository = lambda repository, workspace, token="": (
+                f"{workspace}/{repository.full_name}"
+            )
+            github.can_reach_github = lambda: True
+            assert _run(gh.CloneGhRepos(org="acme", workspace=workspace))[0] == 0
+            assert not os.path.exists(listed_file)
+    finally:
+        gh.clone.sync_repository, gh.time.sleep = saved
+
+    assert synced == ["acme/one", "acme/two", "acme/three"]  # no hopeless retries
+    assert slept == [1, 1]  # checked 3 times, waiting between them
+    assert code == 1
+    assert listed == "acme/two\n"
 
 
 def test_naming_repositories_replaces_discovery() -> None:
