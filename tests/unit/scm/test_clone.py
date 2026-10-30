@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 from reposcan.execution.context import Mount, find_git_mounts
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scm import clone
 from reposcan.scm.github import Repository
 
@@ -128,7 +128,7 @@ def test_an_unreachable_remote_is_a_failure_not_a_raise() -> None:
             _build_repository(f"file://{tmp}/nothing-here", "acme/gone"),
             os.path.join(tmp, "work"),
         )
-    assert isinstance(result, Err) and "git clone failed" in result.msg
+    assert is_err(result) and "git clone failed" in result.msg
 
 
 def test_a_worktree_needs_its_mirror_mounted_where_its_pointer_leads() -> None:

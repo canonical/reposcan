@@ -12,7 +12,7 @@ from contextlib import redirect_stdout
 
 from reposcan import table
 from reposcan.output import format_size, write_json, write_table
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 
 
@@ -143,7 +143,7 @@ def test_writing_refuses_to_overwrite_an_existing_file() -> None:
             handle.write("existing")
         doc = _build_sarif("warning")
         result = write_json(doc.to_dict(), path)
-        assert isinstance(result, Err) and "already exists" in result.msg
+        assert is_err(result) and "already exists" in result.msg
         with open(path) as handle:
             assert handle.read() == "existing"  # left untouched
 
