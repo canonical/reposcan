@@ -8,7 +8,7 @@ from typing import cast
 
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import sarif
 from reposcan.scans.sca import ScaScan
 
@@ -35,7 +35,7 @@ def test_govulncheck_stream_becomes_sarif() -> None:
         ]
     )
     run = ScaScan().create_run("govulncheck", ExecResult(3, stream, ""), "/scan/acme")
-    assert not isinstance(run, Err)
+    assert not is_err(run)
     findings = run.results
     assert len(findings) == 1  # only the source-reaching finding
     finding = findings[0]
@@ -85,8 +85,8 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
     govulncheck_run = scan.create_run(
         "govulncheck", ExecResult(3, govulncheck, ""), "/scan/acme"
     )
-    assert not isinstance(trivy_run, Err)
-    assert not isinstance(govulncheck_run, Err)
+    assert not is_err(trivy_run)
+    assert not is_err(govulncheck_run)
     merged = sarif.merge_runs([trivy_run, govulncheck_run])
     rules = {finding.rule_id for finding in merged.results}
     assert rules == {"CVE-1", "GO-1"}
@@ -94,4 +94,4 @@ def test_consolidate_merges_sarif_tools_with_converted_govulncheck() -> None:
 
 def test_create_run_fails_when_a_sarif_tool_output_is_unusable() -> None:
     result = ScaScan().create_run("grype", ExecResult(0, "not sarif", ""), "/scan/acme")
-    assert isinstance(result, Err)
+    assert is_err(result)

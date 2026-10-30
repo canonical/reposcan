@@ -76,7 +76,7 @@ def scan_repositories(
             path = running[future]
             result = future.result()
             logger.info("[%d/%d] %s", done, len(paths), path, extra=TRANSIENT)
-            if isinstance(result, Err):
+            if is_err(result):
                 logger.error("%s: %s", path, result.msg)
             results[path] = result
     return results

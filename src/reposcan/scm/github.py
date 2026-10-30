@@ -138,7 +138,7 @@ def list_repositories(
         if enterprise:
             logger.info("resolving the organizations in %s", enterprise)
             found = get_enterprise_organizations(session, headers, enterprise)
-            if isinstance(found, Err):
+            if is_err(found):
                 return found
             orgs.extend(found)
         if org:
@@ -148,7 +148,7 @@ def list_repositories(
         for found_org in dict.fromkeys(orgs):  # an org may be named twice
             logger.info("listing repositories in %s", found_org)
             listed = get_org_repositories(session, headers, found_org)
-            if isinstance(listed, Err):
+            if is_err(listed):
                 return listed
             for repository in listed:
                 repositories.setdefault(repository.full_name, repository)
@@ -172,7 +172,7 @@ def fetch_named_repositories(
     with _open_session() as session:
         for full_name in dict.fromkeys(names):
             found = get_repository(session, headers, full_name)
-            if isinstance(found, Err):
+            if is_err(found):
                 return found
             repositories.setdefault(found.full_name, found)
     return list(repositories.values())
@@ -214,7 +214,7 @@ def get_repository(
 ) -> Result[Repository]:
     """Fetch `owner/name`."""
     response = _request(session, "GET", f"{_GITHUB_API}/repos/{full_name}", headers)
-    if isinstance(response, Err):
+    if is_err(response):
         return response
     if response.status_code == HTTPStatus.NOT_FOUND:
         return Err(f"no such repository: {full_name}")
@@ -241,7 +241,7 @@ def get_org_repositories(
     url = f"{_GITHUB_API}/orgs/{org}/repos?per_page={_PER_PAGE}"
     for _ in range(_MAX_PAGES):
         response = _request(session, "GET", url, headers)
-        if isinstance(response, Err):
+        if is_err(response):
             return response
         if response.status_code == HTTPStatus.NOT_FOUND:
             return Err(f"no such organization: {org}")
@@ -291,7 +291,7 @@ def get_enterprise_organizations(
             "variables": {"slug": enterprise, "after": cursor},
         }
         response = _request(session, "POST", _GITHUB_GRAPHQL, headers, body)
-        if isinstance(response, Err):
+        if is_err(response):
             return response
         if response.status_code == HTTPStatus.NOT_FOUND:
             return Err(f"no such enterprise: {enterprise}")

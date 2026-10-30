@@ -12,7 +12,7 @@ from contextlib import contextmanager
 import reposcan.image.docker as docker
 from reposcan.execution.process import ExecResult
 from reposcan.image.spec import BuildSpec
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = docker.DockerImageBuilder()
@@ -46,7 +46,7 @@ def _patched(result: Result[ExecResult]):
 def test_build_runs_docker_build_for_the_tag_and_propagates_failure() -> None:
     with _patched(ExecResult(0, "", "")) as calls:
         built = _BUILDER.build(_SPEC)
-    assert not isinstance(built, Err)
+    assert not is_err(built)
     assert built == f"reposcan:{_SPEC.short_digest}"
     assert calls[-1][:4] == ["docker", "build", "-t", built]
     with _patched(Err("docker build failed")):

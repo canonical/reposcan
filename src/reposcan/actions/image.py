@@ -10,7 +10,7 @@ from reposcan.actions.base import Action
 from reposcan.backends import select_backend
 from reposcan.cli_kit import Group, flag, positional
 from reposcan.image import cache as image_cache
-from reposcan.result import Err, is_err
+from reposcan.result import is_err
 from reposcan.table import render_table
 
 logger = logging.getLogger(__name__)
@@ -25,14 +25,14 @@ class ImageBuild(Action):
     def run(self) -> int:
         """Build (or reuse) the reposcan image and print its reference."""
         backend = select_backend(self.backend)
-        if isinstance(backend, Err):
+        if is_err(backend):
             logger.error(backend.msg)
             return 2
         if not backend.containerized:
             logger.error("the %s backend cannot build images", backend.name)
             return 2
         built = backend.build_image(force=self.force)
-        if isinstance(built, Err):
+        if is_err(built):
             logger.error(built.msg)
             return 1
         sys.stdout.write(f"{built}\n")
@@ -68,7 +68,7 @@ class CacheRemove(Action):
             written.
         """
         removed = image_cache.remove(self.reference)
-        if isinstance(removed, Err):
+        if is_err(removed):
             logger.error(removed.msg)
             return 1
         if not removed:

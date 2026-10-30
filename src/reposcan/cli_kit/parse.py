@@ -127,7 +127,7 @@ def parse(  # noqa: PLR0912,PLR0915  (too many branches, too many statements)
     if remainder is not None:
         raw.setdefault(remainder.name, [])  # an absent remainder is the empty list
     coerced = _coerce_all(raw, scope)
-    if isinstance(coerced, Err):
+    if is_err(coerced):
         return fail(coerced.msg)
     return result(command=command, values=coerced)
 
@@ -173,7 +173,7 @@ def _coerce_all(raw: dict[str, Any], scope: dict[str, Param]) -> Result[dict[str
     values: dict[str, Any] = {}
     for name, value in raw.items():
         coerced = coerce(scope[name], value)
-        if isinstance(coerced, Err):
+        if is_err(coerced):
             return coerced
         values[name] = coerced
     return values

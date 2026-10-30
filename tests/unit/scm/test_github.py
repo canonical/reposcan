@@ -10,7 +10,7 @@ from typing import Any
 
 import requests
 
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scm import github
 from reposcan.scm.github import fetch_named_repositories, list_repositories
 
@@ -95,7 +95,7 @@ def test_pagination_follows_the_link_header_and_skips_unusable_entries() -> None
     )
     with _answering(first, _Response(body=[_build_payload("two")])) as fake:
         listed = list_repositories(org="acme")
-    assert not isinstance(listed, Err)
+    assert not is_err(listed)
     assert [repo.full_name for repo in listed] == ["acme/one", "acme/two"]
     assert fake.urls[1] == "https://api.github.com/x?a=1,2&page=2"
 
@@ -112,7 +112,7 @@ def test_every_failure_becomes_a_failure_naming_its_cause() -> None:
     for answer, expected in cases:
         with _answering(answer) as fake:
             listed = list_repositories(org="acme")
-        assert isinstance(listed, Err) and expected in listed.msg
+        assert is_err(listed) and expected in listed.msg
         assert fake.slept == []  # none of these is worth waiting out
 
     # the graphql half fails the same way, for an unknown slug or a rejected query
@@ -122,7 +122,7 @@ def test_every_failure_becomes_a_failure_naming_its_cause() -> None:
     ):
         with _answering(_Response(body=body)):
             listed = list_repositories(enterprise="acme-inc")
-        assert isinstance(listed, Err) and expected in listed.msg
+        assert is_err(listed) and expected in listed.msg
 
 
 def test_a_secondary_rate_limit_is_waited_out_then_eventually_given_up_on() -> None:
@@ -131,7 +131,7 @@ def test_a_secondary_rate_limit_is_waited_out_then_eventually_given_up_on() -> N
     with _answering(slow, _Response(body=[_build_payload("one")])) as fake:
         listed = list_repositories(org="acme")
     assert fake.slept == [5.0]
-    assert not isinstance(listed, Err)
+    assert not is_err(listed)
 
     with _answering(_Response(403, headers={"Retry-After": "86400"}), _Response()) as f:
         list_repositories(org="acme")
@@ -139,7 +139,7 @@ def test_a_secondary_rate_limit_is_waited_out_then_eventually_given_up_on() -> N
 
     with _answering(slow, slow, slow) as fake:
         listed = list_repositories(org="acme")
-    assert isinstance(listed, Err) and "times in a row" in listed.msg
+    assert is_err(listed) and "times in a row" in listed.msg
 
 
 def test_an_enterprise_is_read_through_its_organizations() -> None:
@@ -151,7 +151,7 @@ def test_an_enterprise_is_read_through_its_organizations() -> None:
         _Response(body=enterprise), _Response(body=[_build_payload("a")])
     ) as f:
         listed = list_repositories(org="one", enterprise="acme-inc", token="s3cret")
-    assert not isinstance(listed, Err)
+    assert not is_err(listed)
     assert [repo.full_name for repo in listed] == ["acme/a"]
     assert f.bodies[0]["variables"] == {"slug": "acme-inc", "after": None}
     assert len(f.urls) == 2  # the graphql query, then one repo listing
@@ -161,11 +161,11 @@ def test_a_repository_can_be_fetched_by_name() -> None:
     payload = {**_build_payload("one"), "size": 2048}
     with _answering(_Response(body=payload)) as fake:
         found = fetch_named_repositories(["acme/one"])
-    assert not isinstance(found, Err)
+    assert not is_err(found)
     assert [repo.full_name for repo in found] == ["acme/one"]
     assert found[0].size == 2048  # kept, for the log and the list-repos table
     assert fake.urls == ["https://api.github.com/repos/acme/one"]
 
     # a name that does not exist is an error, not a silent omission
     with _answering(_Response(404)):
-        assert isinstance(fetch_named_repositories(["acme/gone"]), Err)
+        assert is_err(fetch_named_repositories(["acme/gone"]))

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 import reposcan.image.lxd as lxd
 from reposcan.execution.process import ExecResult
 from reposcan.image.spec import BuildSpec
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 _BUILDER = lxd.LxdImageBuilder()
@@ -62,7 +62,7 @@ _LXC = ["lxc", "--project", "reposcan"]
 def test_build_launches_provisions_publishes_and_cleans_up() -> None:
     with _patched(lambda argv: _OK) as calls:
         alias = _BUILDER.build(_SPEC)
-    assert not isinstance(alias, Err)
+    assert not is_err(alias)
     assert alias == f"reposcan-{_SPEC.short_digest}"
     assert ":" not in alias  # LXD aliases cannot use a colon
     assert calls[0][:5] == [*_LXC, "image", "delete"]  # clear any stale alias first
@@ -81,7 +81,7 @@ def test_build_deletes_the_builder_even_when_a_step_fails() -> None:
 
     with _patched(respond) as calls:
         failed = _BUILDER.build(_SPEC)
-    assert isinstance(failed, Err) and failed.msg == "install failed"
+    assert is_err(failed) and failed.msg == "install failed"
     assert calls[-1][:4] == [*_LXC, "delete"]
 
 
@@ -116,7 +116,7 @@ def test_build_aborts_early_and_warns_when_the_container_has_no_network() -> Non
     finally:
         logger.removeHandler(handler)
 
-    assert isinstance(offline, Err) and "network" in offline.msg.lower()
+    assert is_err(offline) and "network" in offline.msg.lower()
     assert not any("/root/install.sh" in argv for argv in calls)  # install never ran
     assert calls[-1][:4] == [*_LXC, "delete"]  # builder still cleaned up
     # The firewall warning is emitted (the diagnostic that was previously never shown).

@@ -137,7 +137,7 @@ def _provision_image(backend: Backend, image: str | None) -> Result[str]:
     # Unset and the `canonical` shorthand both mean the pinned published image.
     ref = CANONICAL_REF if not image or image == CANONICAL_SHORTHAND else image
     pulled = backend.puller(ref)
-    if isinstance(pulled, Err) and image is None:
+    if is_err(pulled) and image is None:
         return Err(
             f"could not pull the image {ref}: {pulled.msg}. "
             f"Pass --image build to build the reposcan image locally."
@@ -185,7 +185,7 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Result[Non
         error that prevented it.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Err):
+    if is_err(backend):
         return backend
     if not backend.containerized:
         return None
@@ -221,13 +221,13 @@ def start_session(
         env: Variables to add to every command.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Err):
+    if is_err(backend):
         logger.error(backend.msg)
         yield Session(None, "", 2)
         return
     if backend.context is not None:
         provisioned = _provision_image(backend, image)
-        if isinstance(provisioned, Err):
+        if is_err(provisioned):
             logger.error(provisioned.msg)
             yield Session(None, "", 1)
             return

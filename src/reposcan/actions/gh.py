@@ -76,12 +76,12 @@ class GhAction(Action):
     def discover_repositories(self, token: str) -> "Result[list[Repository]]":
         """Fetch the repositories from `--org` and `--enterprise`, and apply filters."""
         github = self.load_github()
-        if isinstance(github, Err):
+        if is_err(github):
             return github
         discovered = github.list_repositories(
             org=self.org, enterprise=self.enterprise, token=token
         )
-        if isinstance(discovered, Err):
+        if is_err(discovered):
             return discovered
         selected = github.filter_repositories(
             discovered,
@@ -147,11 +147,11 @@ class ListGhRepos(GhAction):
             logger.error("requires --org or --enterprise")
             return 2
         token = self.read_token()
-        if isinstance(token, Err):
+        if is_err(token):
             logger.error("%s", token.msg)
             return 1
         selected = self.discover_repositories(token)
-        if isinstance(selected, Err):
+        if is_err(selected):
             logger.error("%s", selected.msg)
             return 1
 
@@ -214,7 +214,7 @@ class CloneGhRepos(GhAction):
         if self.org or self.enterprise:
             logger.warning("--repo was provided, ignoring --org and --enterprise")
         github = self.load_github()
-        if isinstance(github, Err):
+        if is_err(github):
             return github
         # Repositories named explicitly are cloned as named: the archived, fork, and
         # --exclude filters apply only to discovery.
@@ -232,11 +232,11 @@ class CloneGhRepos(GhAction):
             logger.error("give at least one of --org, --enterprise, or --repo")
             return 2
         token = self.read_token()
-        if isinstance(token, Err):
+        if is_err(token):
             logger.error("%s", token.msg)
             return 1
         selected = self.select_repositories(token)
-        if isinstance(selected, Err):
+        if is_err(selected):
             logger.error("%s", selected.msg)
             return 1
 

@@ -56,18 +56,16 @@ def sync_repository(
     # git gets no chance to clean up. The fetch below heals most of these, but not one
     # cut off before git saved where it was cloning from: that has no commits, and
     # would pass for an empty repository. GitHub reporting content gives it away. A
-    # mirror git can't read at all is just as broken, so it's cloned again too.
-    if size and os.path.isdir(mirror):
-        has_commits = _has_commits(mirror)
-        if is_err(has_commits) or not has_commits:
-            logger.warning(
-                "%s: local mirror has no commits but GitHub reports %s; "
-                "cloning it again",
-                name,
-                format_size(size),
-            )
-            if is_err(err := _remove_local_copy(mirror, worktree)):
-                return err
+    # mirror git can't read at all is just as broken, so it's cloned again too: its
+    # Err reads as None through get_value, the same as having no commits.
+    if size and os.path.isdir(mirror) and not get_value(_has_commits(mirror)):
+        logger.warning(
+            "%s: local mirror has no commits but GitHub reports %s; cloning it again",
+            name,
+            format_size(size),
+        )
+        if is_err(err := _remove_local_copy(mirror, worktree)):
+            return err
 
     if os.path.isdir(mirror):
         logger.info("updating %s", name)
@@ -116,7 +114,7 @@ def _has_commits(mirror: str) -> Result[bool]:
         mirror is reported as a failure rather than passed off as an empty repository.
     """
     run = run_process(["git", "for-each-ref", "--count=1"], cwd=mirror)
-    if isinstance(run, Err):
+    if is_err(run):
         return run
     if run.exit_code != 0:
         return Err(f"git for-each-ref failed: {run.stderr.strip()}")
@@ -160,7 +158,7 @@ def _git(
 ) -> Result[None]:
     """Run a git command."""
     result = run_process(["git", *args], cwd=cwd, env=env)
-    if isinstance(result, Err):
+    if is_err(result):
         return result
     if result.exit_code != 0:
         return Err(f"git {args[0]} failed: {result.stderr.strip()}")
