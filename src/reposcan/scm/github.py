@@ -69,6 +69,7 @@ class Repository:
     archived: bool = False
     fork: bool = False
     disabled: bool = False
+    size: int = 0
 
     @classmethod
     def from_dict(cls, dict: Mapping[str, Any]) -> "Repository | None":
@@ -77,6 +78,7 @@ class Repository:
         clone_url = str(dict.get("clone_url") or "")
         if not full_name or not clone_url:
             return None
+        size = dict.get("size")
         return cls(
             full_name=full_name,
             clone_url=clone_url,
@@ -84,6 +86,7 @@ class Repository:
             archived=bool(dict.get("archived")),
             fork=bool(dict.get("fork")),
             disabled=bool(dict.get("disabled")),
+            size=size if isinstance(size, int) else 0,
         )
 
 

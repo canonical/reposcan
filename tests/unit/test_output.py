@@ -11,7 +11,7 @@ import tempfile
 from contextlib import redirect_stdout
 
 from reposcan import table
-from reposcan.output import write_json, write_table
+from reposcan.output import format_size, write_json, write_table
 from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 
@@ -146,3 +146,8 @@ def test_writing_refuses_to_overwrite_an_existing_file() -> None:
         assert is_err(result) and "already exists" in result.msg
         with open(path) as handle:
             assert handle.read() == "existing"  # left untouched
+
+
+def test_a_size_reads_in_the_unit_that_fits() -> None:
+    sizes = [format_size(kb) for kb in (512, 3_600, 2_621_440)]
+    assert sizes == ["512 KB", "3.5 MB", "2.5 GB"]

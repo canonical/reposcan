@@ -39,7 +39,9 @@ class GhAction(Action):
     """Container for shared `gh` methods and options."""
 
     org: str | None = option(
-        env_var="REPOSCAN_GH_ORG", help="The GitHub organization to read."
+        env_var="REPOSCAN_GH_ORG",
+        help="The GitHub organization to read. The token is optional: without one, "
+        "only public repositories are read; with one, whatever the token can see.",
     )
     enterprise: str | None = option(
         env_var="REPOSCAN_GH_ENTERPRISE",
@@ -163,9 +165,14 @@ class ListGhRepos(GhAction):
                 return 1
         else:
             output.write_table(
-                ["repository", "branch", "clone url"],
+                ["repository", "branch", "size", "clone url"],
                 [
-                    [repo.full_name, repo.default_branch, repo.clone_url]
+                    [
+                        repo.full_name,
+                        repo.default_branch,
+                        output.format_size(repo.size),
+                        repo.clone_url,
+                    ]
                     for repo in selected
                 ],
                 limit=self.limit,
@@ -235,10 +242,11 @@ class CloneGhRepos(GhAction):
             logger.error("%s", selected.msg)
             return 1
 
-        failed = self.sync_repositories(selected, token)
+        outcomes = self.sync_repositories(selected, token)
         # The failures get another go once everything else is done, rather than
         # straight away, so a blip has had time to pass.
         for attempt in range(1, self.retries + 1):
+            failed = [repo for repo, outcome in outcomes.items() if is_err(outcome)]
             if not failed:
                 break
             logger.info(
@@ -247,33 +255,39 @@ class CloneGhRepos(GhAction):
                 attempt,
                 self.retries,
             )
-            failed = self.sync_repositories(
-                [repo for repo in selected if repo.full_name in failed], token
-            )
+            outcomes.update(self.sync_repositories(failed, token))
+
+        errors = {
+            repo.full_name: outcome.msg
+            for repo, outcome in outcomes.items()
+            if is_err(outcome)
+        }
+        empty = sum(1 for outcome in outcomes.values() if outcome is None)
         # Listed together at the end, so a long run's failures can't scroll out of view
-        for name, msg in sorted(failed.items()):
+        for name, msg in sorted(errors.items()):
             logger.error("not mirrored: %s: %s", name, msg)
-        logger.info("mirrored %d of %d", len(selected) - len(failed), len(selected))
-        return 1 if failed else 0
+        logger.info(
+            "mirrored %d of %d%s",
+            len(selected) - len(errors) - empty,
+            len(selected),
+            f", skipped {empty} empty" if empty else "",
+        )
+        return 1 if errors else 0
 
     def sync_repositories(
         self, repositories: "Sequence[Repository]", token: str
-    ) -> dict[str, str]:
+    ) -> "dict[Repository, Result[str | None]]":
         """Mirror each of `repositories`.
 
         Returns:
-            The `owner/name` of each repository that failed, with why.
+            Each repository's outcome, as `clone.sync_repository` gives it: the path
+            of its worktree, None when it is empty (nothing to scan, not a failure),
+            or an Err saying why it failed.
         """
-        failed: dict[str, str] = {}
+        outcomes: dict[Repository, Result[str | None]] = {}
         with ThreadPoolExecutor(max_workers=self.threads) as pool:
             running = {
-                pool.submit(
-                    clone.sync_repository,
-                    repo.clone_url,
-                    self.workspace,
-                    repo.full_name,
-                    token,
-                ): repo
+                pool.submit(clone.sync_repository, repo, self.workspace, token): repo
                 for repo in repositories
             }
             for done, future in enumerate(as_completed(running), start=1):
@@ -286,10 +300,13 @@ class CloneGhRepos(GhAction):
                     extra=TRANSIENT,
                 )
                 # Don't crash the entire task for one failed repo
-                if is_err(err := future.result()):
-                    logger.warning("%s: %s", repo.full_name, err.msg)
-                    failed[repo.full_name] = err.msg
-        return failed
+                outcome = future.result()
+                if is_err(outcome):
+                    logger.warning("%s: %s", repo.full_name, outcome.msg)
+                elif outcome is None:
+                    logger.info("%s: empty repository, nothing to scan", repo.full_name)
+                outcomes[repo] = outcome
+        return outcomes
 
 
 class GhGroup(Group):
