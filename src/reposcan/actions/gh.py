@@ -39,7 +39,7 @@ class GhAction(Action):
     """Container for shared `gh` methods and options."""
 
     org: str | None = option(
-        env_var="REPOSCAN_GH_ORG", help="The GitHub organization to read."
+        env_var="REPOSCAN_GH_ORG", help="The GitHub organization to read (Public Repos). Token is optional, will read to token's scope"
     )
     enterprise: str | None = option(
         env_var="REPOSCAN_GH_ENTERPRISE",
