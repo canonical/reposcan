@@ -21,7 +21,9 @@ def _create_repo(directory: str) -> str:
     """Create a one-commit repository to clone, returning its file:// url."""
     path = os.path.join(directory, "origin")
     os.makedirs(path)
-    subprocess.run(["git", "init", "-q", path], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", path], check=True, capture_output=True
+    )
     _git("config", "user.email", "t@example.com", cwd=path)
     _git("config", "user.name", "t", cwd=path)
     with open(os.path.join(path, "a.txt"), "w", encoding="utf-8") as handle:
@@ -81,7 +83,9 @@ def test_a_relative_workspace_path_is_made_absolute() -> None:
 def test_an_empty_repository_is_mirrored_with_nothing_to_check_out() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         origin = os.path.join(tmp, "origin")
-        subprocess.run(["git", "init", "-q", origin], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init", "-q", "-b", "main", origin], check=True, capture_output=True
+        )
         work = os.path.join(tmp, "work")
         empty = _build_repository(f"file://{origin}", "acme/empty")
 
