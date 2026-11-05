@@ -60,8 +60,8 @@ _RATE_LIMIT_STATUSES = (HTTPStatus.FORBIDDEN, HTTPStatus.TOO_MANY_REQUESTS)
 
 
 @dataclass(frozen=True)
-class Repository:
-    """A repository as GitHub describes it."""
+class GithubRepository:
+    """Metadata for a GitHub repository."""
 
     full_name: str  # "canonical/reposcan"
     clone_url: str  # https, must never includes credentials
@@ -72,7 +72,7 @@ class Repository:
     size: int = 0
 
     @classmethod
-    def from_dict(cls, dict: Mapping[str, Any]) -> "Repository | None":
+    def from_dict(cls, dict: Mapping[str, Any]) -> "GithubRepository | None":
         """Parse repository metadata from `dict`."""
         full_name = str(dict.get("full_name") or "")
         clone_url = str(dict.get("clone_url") or "")
@@ -91,19 +91,19 @@ class Repository:
 
 
 def filter_repositories(
-    repositories: Sequence[Repository],
+    repositories: Sequence[GithubRepository],
     *,
     include_archived: bool = False,
     include_forks: bool = True,
     exclude: Sequence[str] = (),
-) -> list[Repository]:
+) -> list[GithubRepository]:
     """Filter repositories based on provided criteria.
 
     A disabled repository is never scanned: it cannot be cloned. An archived one is
     skipped unless asked for; a fork is kept unless excluded. `exclude` holds globs
     matched against the full name.
     """
-    selected: list[Repository] = []
+    selected: list[GithubRepository] = []
     for repository in repositories:
         if repository.disabled:
             continue
@@ -119,7 +119,7 @@ def filter_repositories(
 
 def list_repositories(
     *, org: str | None = None, enterprise: str | None = None, token: str = ""
-) -> Result[list[Repository]]:
+) -> Result[list[GithubRepository]]:
     """List the repositories in `org`, `enterprise`, or both.
 
     Args:
@@ -144,7 +144,7 @@ def list_repositories(
         if org:
             orgs.append(org)
 
-        repositories: dict[str, Repository] = {}
+        repositories: dict[str, GithubRepository] = {}
         for found_org in dict.fromkeys(orgs):  # an org may be named twice
             logger.info("listing repositories in %s", found_org)
             listed = get_org_repositories(session, headers, found_org)
@@ -157,7 +157,7 @@ def list_repositories(
 
 def fetch_named_repositories(
     names: Sequence[str], token: str = ""
-) -> Result[list[Repository]]:
+) -> Result[list[GithubRepository]]:
     """Fetch each repository named `owner/name`.
 
     Args:
@@ -168,7 +168,7 @@ def fetch_named_repositories(
         The repositories, or an Err  on first fetch failure.
     """
     headers = _build_headers(token)
-    repositories: dict[str, Repository] = {}
+    repositories: dict[str, GithubRepository] = {}
     with _open_session() as session:
         for full_name in dict.fromkeys(names):
             found = get_repository(session, headers, full_name)
@@ -211,7 +211,7 @@ def _open_session() -> "requests.Session":
 
 def get_repository(
     session: "requests.Session", headers: dict[str, str], full_name: str
-) -> Result[Repository]:
+) -> Result[GithubRepository]:
     """Fetch `owner/name`."""
     response = _request(session, "GET", f"{_GITHUB_API}/repos/{full_name}", headers)
     if is_err(response):
@@ -224,7 +224,7 @@ def get_repository(
         payload = response.json()
     except ValueError as exc:
         return Err(f"{full_name} did not return JSON: {exc}")
-    repository = Repository.from_dict(payload)
+    repository = GithubRepository.from_dict(payload)
     if repository is None:
         return Err(f"{full_name} named no clone url")
     return repository
@@ -232,12 +232,12 @@ def get_repository(
 
 def get_org_repositories(
     session: "requests.Session", headers: dict[str, str], org: str
-) -> Result[list[Repository]]:
+) -> Result[list[GithubRepository]]:
     """Fetch every repository in `org`.
 
     Stops after `_MAX_PAGES` pages, warning that the listing is incomplete.
     """
-    repositories: list[Repository] = []
+    repositories: list[GithubRepository] = []
     url = f"{_GITHUB_API}/orgs/{org}/repos?per_page={_PER_PAGE}"
     for _ in range(_MAX_PAGES):
         response = _request(session, "GET", url, headers)
@@ -254,7 +254,7 @@ def get_org_repositories(
         if not isinstance(payloads, list):
             return Err(f"{url} did not return a list of repositories")
         for payload in payloads:
-            repository = Repository.from_dict(payload)
+            repository = GithubRepository.from_dict(payload)
             if repository is not None:
                 repositories.append(repository)
         next_url = _find_next_page(response.headers.get("Link", ""))
