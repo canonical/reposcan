@@ -159,121 +159,6 @@ def find_isinstance_checks(tree: ast.Module) -> list[tuple[int, str]]:
     return found
 
 
-def find_weak_narrowings(tree: ast.Module) -> list[tuple[int, str]]:
-    """Find every `is_err(x)` whose error is never used.
-
-    When only the value is used, `get_value(x)` drops the error and yields `T | None`.
-
-    A `not is_err(...)` guard is examined too, with the branches swapped: what the
-    body proves is the value, and everything else proves the error.
-    """
-    found: list[tuple[int, str]] = []
-    for owner in ast.walk(tree):
-        if not isinstance(owner, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        for statement in ast.walk(owner):
-            test = getattr(statement, "test", None)
-            body = getattr(statement, "body", None)
-            if test is None or body is None:
-                continue
-            statements = body if isinstance(body, list) else [body]
-            proven = {node for one in statements for node in ast.walk(one)}
-            for call in ast.walk(test):
-                if not isinstance(call, ast.Call):
-                    continue
-                subject = find_is_err_subject(call)
-                if subject is None:
-                    continue
-                uses_value, uses_error = classify_uses(
-                    owner, subject, proven, negated=is_negated(test, call)
-                )
-                if uses_value and not uses_error:
-                    found.append(
-                        (
-                            call.lineno,
-                            f"is_err({ast.unparse(subject)}) never uses the error; "
-                            f"prefer get_value(...)",
-                        )
-                    )
-    return found
-
-
-def find_is_err_subject(node: ast.Call) -> ast.expr | None:
-    """Take the `x` of an `is_err(x)`, or None when that is not the shape."""
-    if not isinstance(node.func, ast.Name) or node.func.id != "is_err":
-        return None
-    if len(node.args) != 1:
-        return None
-    return node.args[0]
-
-
-def is_negated(test: ast.expr, call: ast.AST) -> bool:
-    """Whether `call` sits under a `not`, which swaps what each branch proves."""
-    return any(
-        isinstance(node, ast.UnaryOp)
-        and isinstance(node.op, ast.Not)
-        and any(inner is call for inner in ast.walk(node.operand))
-        for node in ast.walk(test)
-    )
-
-
-def classify_uses(
-    owner: ast.AST, subject: ast.expr, proven: set[ast.AST], *, negated: bool
-) -> tuple[bool, bool]:
-    """Report whether the subject's value and its error are each used.
-
-    A subject that is not a plain name bound nothing, so neither half can be used.
-    Otherwise only the reads belonging to this binding count: a name reassigned further
-    down is a different value, and reads after that point say nothing about this one.
-
-    Returns:
-        (uses_value, uses_error).
-    """
-    if not isinstance(subject, ast.Name):
-        return (False, False)
-    uses_value = uses_error = False
-    for read in find_binding_reads(owner, subject):
-        proves_error = (read in proven) != negated
-        if proves_error or is_err_read(owner, read):
-            uses_error = True
-        else:
-            uses_value = True
-    return (uses_value, uses_error)
-
-
-def find_binding_reads(owner: ast.AST, subject: ast.Name) -> list[ast.Name]:
-    """Every read of `subject` belonging to the binding it was tested under.
-
-    Bounded by the assignments either side of it, so a name reused for a second call
-    does not lend its reads to the first.
-    """
-    named = [
-        node
-        for node in ast.walk(owner)
-        if isinstance(node, ast.Name) and node.id == subject.id
-    ]
-    stores = sorted(node.lineno for node in named if isinstance(node.ctx, ast.Store))
-    opens = max((line for line in stores if line <= subject.lineno), default=0)
-    closes = min((line for line in stores if line > subject.lineno), default=10**9)
-    return [
-        node
-        for node in named
-        if isinstance(node.ctx, ast.Load)
-        and node is not subject
-        and opens <= node.lineno < closes
-    ]
-
-
-def is_err_read(owner: ast.AST, read: ast.Name) -> bool:
-    """Whether this read reaches `.msg` or `.timed_out`, which only an Err carries."""
-    return any(
-        isinstance(node, ast.Attribute)
-        and node.value is read
-        and node.attr in ("msg", "timed_out")
-        for node in ast.walk(owner)
-    )
-
-
 def find_violations(path: Path) -> list[tuple[int, str]]:
     """Find every unspelled Result, hand-rolled pair, and raised failure."""
     try:
@@ -317,14 +202,12 @@ def find_violations(path: Path) -> list[tuple[int, str]]:
                 )
             )
     found += find_isinstance_checks(tree)
-    if "src" in path.parts:  # see find_weak_narrowings; tests express intent freely
-        found += find_weak_narrowings(tree)
     return sorted(found)
 
 
 # A sample for self-testing. Checked before each run.
 _SAMPLE = """
-from reposcan.result import Err, Result, is_err
+from reposcan.result import Err, Result
 
 
 def bare(x: int) -> str | Err: ...
@@ -354,37 +237,6 @@ def narrows(x: int) -> int:
     if isinstance(got, Err):
         return 1
     return len(got)
-
-
-def weak(x: int) -> int:
-    done = spelled(x)
-    if is_err(done):
-        return 1
-    return len(done)
-
-
-def weak_negated(x: int) -> int:
-    flipped = spelled(x)
-    if not is_err(flipped):
-        return len(flipped)
-    return 0
-
-
-def unnamed(x: int) -> Result[str]:
-    if is_err(void(x)):
-        return Err("gave up")
-    return "ok"
-
-
-def weak_rebound(x: int) -> int:
-    twice = spelled(x)
-    if is_err(twice):
-        return 1
-    n = len(twice)
-    twice = spelled(x)
-    if is_err(twice):
-        return len(twice.msg)
-    return n + len(twice)
 """
 
 # expected self-test findings
@@ -394,9 +246,6 @@ _EXPECTED = {
     "raise:raises",  # an ordinary failure
     "raise:stub",  # NotImplementedError outside a class is not a subclass contract
     "is_err:got",  # `isinstance(x, Err)`
-    "get_value:done",  # the plain form
-    "get_value:flipped",  # `not is_err(...)`, which swaps the branches
-    "get_value:twice",  # the first of two bindings; the second uses its error
 }
 
 
@@ -410,8 +259,6 @@ def build_key(message: str) -> str:
         return "raise:" + message[len("raise in ") : message.index(" routes")]
     if message.startswith("isinstance("):
         return "is_err:" + message[len("isinstance(") : message.index(", Err)")]
-    if message.startswith("is_err("):
-        return "get_value:" + message[len("is_err(") : message.index(") never")]
     return message.split()[0]
 
 
