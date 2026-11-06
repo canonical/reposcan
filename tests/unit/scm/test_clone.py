@@ -169,3 +169,22 @@ def test_a_worktree_needs_its_mirror_mounted_where_its_pointer_leads() -> None:
         # a regular checkout holds its own .git: nothing extra to mount
         assert find_git_mounts(os.path.join(directory, "origin"), "/scan/x") == []
         assert find_git_mounts(directory, "/scan/x") == []  # not a repository
+
+
+def test_an_update_works_with_a_path_named_like_the_branch() -> None:
+    """An update succeeds when the repository has a path named like its branch."""
+    # Regression test: `git reset --hard main` failed with "ambiguous argument" when
+    # the worktree had a directory called main
+    with tempfile.TemporaryDirectory() as tmp:
+        local_repo_url = _create_repo(tmp)
+        origin = local_repo_url.removeprefix("file://")
+        os.makedirs(os.path.join(origin, "main"))
+        with open(os.path.join(origin, "main", "c.txt"), "w", encoding="utf-8") as f:
+            f.write("three\n")
+        _git("add", "-A", cwd=origin)
+        _git("commit", "-qm", "add main/", cwd=origin)
+        demo = _build_repository(local_repo_url)
+        work = os.path.join(tmp, "work")
+
+        assert not is_err(clone.sync_repository(demo, work))  # test worktree creation
+        assert not is_err(clone.sync_repository(demo, work))  # test worktree update
