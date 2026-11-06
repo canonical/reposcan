@@ -139,9 +139,11 @@ def _has_commits(mirror: str) -> Result[bool]:
     return bool(run.stdout.strip())
 
 
-def _checkout(mirror: str, worktree: str, ref: str) -> Result[None]:
+def _checkout(mirror: str, worktree: str, branch: str) -> Result[None]:
     """Check out `mirror`'s worktree, or reset and clean the existing checkout."""
     if os.path.isdir(worktree):
+        # A short branch name can also match a path in the worktree, or a tag
+        ref = f"refs/heads/{branch}"
         if is_err(err := _git(["reset", "--hard", ref, "--quiet"], cwd=worktree)):
             return err
         return _git(["clean", "-ffdxq"], cwd=worktree)
@@ -149,7 +151,7 @@ def _checkout(mirror: str, worktree: str, ref: str) -> Result[None]:
     if is_err(err := _make_parent(worktree)):
         return err
 
-    return _git(["worktree", "add", "--quiet", worktree, ref], cwd=mirror)
+    return _git(["worktree", "add", "--quiet", worktree, branch], cwd=mirror)
 
 
 def _make_parent(path: str) -> Result[None]:
