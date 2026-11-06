@@ -191,8 +191,8 @@ deleted and cloned again. Options:
 - `--repo <OWNER/NAME>`: a repository to clone. Repeatable. Env var:
   `REPOSCAN_GH_REPO`.
 - `--threads <N>`: repositories to clone at once (default 5).
-- `--retries <N>`: times to retry the repositories that failed, once the rest are
-  done (default 2). Any still failing are listed together at the end.
+- `--retries <N>`: times to retry the repositories that failed (default 2). Any
+  still failing are listed together at the end.
 
 ### scan-repos
 

@@ -6,7 +6,7 @@
 import logging
 import os
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -14,22 +14,20 @@ from typing import TYPE_CHECKING
 from reposcan import output
 from reposcan.actions.base import Action
 from reposcan.cli_kit import Group, flag, option
-from reposcan.logging import TRANSIENT
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.result import Err, Result, is_err
 from reposcan.scm import clone
 from reposcan.table import DEFAULT_WRAP_LINES
 
 if TYPE_CHECKING:  # the module needs the service extra; the annotation does not
-    from reposcan.scm.github import Repository
+    from reposcan.scm.github import GithubRepository
 
 logger = logging.getLogger(__name__)
 
 # concurrency benefit is derived from threads blocking on I/O, so thread count is
 # decoupled from CPU count.
-_DEFAULT_CLONE_THREADS = 5
-# pickup attempts for a dropped connection or DNS blip mid-run
-_DEFAULT_CLONE_RETRIES = 2
+_DEFAULT_CLONE_THREAD_COUNT = 5
+_DEFAULT_CLONE_RETRY_COUNT = 2
 
 
 FORMATS = tuple(f.value for f in Format)
@@ -75,7 +73,7 @@ class GhAction(Action):
             )
         return github
 
-    def discover_repositories(self, token: str) -> "Result[list[Repository]]":
+    def discover_repositories(self, token: str) -> "Result[list[GithubRepository]]":
         """Fetch the repositories from `--org` and `--enterprise`, and apply filters."""
         github = self.load_github()
         if is_err(github):
@@ -146,7 +144,7 @@ class ListGhRepos(GhAction):
             2 when neither --org nor --enterprise was given
         """
         if not (self.org or self.enterprise):
-            logger.error("requires --org or --enterprise")
+            logger.error("Requires --org or --enterprise")
             return 2
         token = self.read_token()
         if is_err(token):
@@ -198,18 +196,18 @@ class CloneGhRepos(GhAction):
         help="Working directory to hold mirrors and worktrees.",
     )
     threads: int = option(
-        default=_DEFAULT_CLONE_THREADS,
+        default=_DEFAULT_CLONE_THREAD_COUNT,
         convert=int,
-        help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREADS}).",
+        help=f"Repositories to clone at once (default {_DEFAULT_CLONE_THREAD_COUNT}).",
     )
     retries: int = option(
-        default=_DEFAULT_CLONE_RETRIES,
+        default=_DEFAULT_CLONE_RETRY_COUNT,
         convert=int,
-        help="Times to retry the repositories that failed, after the rest are done "
-        f"(default {_DEFAULT_CLONE_RETRIES}).",
+        help="Times to retry the repositories that failed "
+        f"(default {_DEFAULT_CLONE_RETRY_COUNT}).",
     )
 
-    def select_repositories(self, token: str) -> "Result[list[Repository]]":
+    def select_repositories(self, token: str) -> "Result[list[GithubRepository]]":
         """List the repositories named by `--repo`, or by `--org` and `--enterprise`."""
         if not self.repo:
             return self.discover_repositories(token)
@@ -231,7 +229,7 @@ class CloneGhRepos(GhAction):
             2 when no entity was named
         """
         if not (self.org or self.enterprise or self.repo):
-            logger.error("give at least one of --org, --enterprise, or --repo")
+            logger.error("Give at least one of --org, --enterprise, or --repo")
             return 2
         token = self.read_token()
         if is_err(token):
@@ -242,74 +240,88 @@ class CloneGhRepos(GhAction):
             logger.error("%s", selected.msg)
             return 1
 
-        outcomes = self.sync_repositories(selected, token)
-        # The failures get another go once everything else is done, rather than
-        # straight away, so a blip has had time to pass.
-        for attempt in range(1, self.retries + 1):
-            failed = [repo for repo, outcome in outcomes.items() if is_err(outcome)]
-            if not failed:
-                break
-            logger.info(
-                "retrying %d failed repositories (attempt %d of %d)",
-                len(failed),
-                attempt,
-                self.retries,
-            )
-            outcomes.update(self.sync_repositories(failed, token))
-
-        errors = {
-            repo.full_name: outcome.msg
-            for repo, outcome in outcomes.items()
-            if is_err(outcome)
-        }
-        empty = sum(1 for outcome in outcomes.values() if outcome is None)
-        # Listed together at the end, so a long run's failures can't scroll out of view
-        for name, msg in sorted(errors.items()):
-            logger.error("not mirrored: %s: %s", name, msg)
-        logger.info(
-            "mirrored %d of %d%s",
-            len(selected) - len(errors) - empty,
-            len(selected),
-            f", skipped {empty} empty" if empty else "",
+        outcomes = sync_repositories(
+            selected, self.workspace, token, threads=self.threads, retries=self.retries
         )
-        return 1 if errors else 0
 
-    def sync_repositories(
-        self, repositories: "Sequence[Repository]", token: str
-    ) -> "dict[Repository, Result[str | None]]":
-        """Mirror each of `repositories`.
+        failed = set()
+        empty = 0
+        for repo, result in outcomes.items():
+            if is_err(result):
+                failed.add(repo.full_name)
+            elif result.empty:
+                empty += 1
 
-        Returns:
-            Each repository's outcome, as `clone.sync_repository` gives it: the path
-            of its worktree, None when it is empty (nothing to scan, not a failure),
-            or an Err saying why it failed.
-        """
-        outcomes: dict[Repository, Result[str | None]] = {}
-        with ThreadPoolExecutor(max_workers=self.threads) as pool:
-            running = {
-                pool.submit(clone.sync_repository, repo, self.workspace, token): repo
-                for repo in repositories
-            }
-            for done, future in enumerate(as_completed(running), start=1):
-                repo = running[future]
-                logger.info(
-                    "[%d/%d] %s",
-                    done,
-                    len(repositories),
-                    repo.full_name,
-                    extra=TRANSIENT,
-                )
-                # Don't crash the entire task for one failed repo
-                outcome = future.result()
-                if is_err(outcome):
-                    logger.warning("%s: %s", repo.full_name, outcome.msg)
-                elif outcome is None:
-                    logger.info("%s: empty repository, nothing to scan", repo.full_name)
-                outcomes[repo] = outcome
-        return outcomes
+        if failed:
+            logger.error("Mirror failed for %s", ", ".join(failed))
+        logger.info(
+            "Successfully mirrored %d of %d, %d of which were empty",
+            len(selected) - len(failed),
+            len(selected),
+            empty,
+        )
+
+        return 1 if failed else 0
 
 
 class GhGroup(Group):
     name = "gh"
     help = "Interact with GitHub repositories."
     subcommands = (ListGhRepos, CloneGhRepos)
+
+
+def sync_repositories(
+    repos: "Sequence[GithubRepository]",
+    workspace: str,
+    token: str,
+    *,
+    threads: int = _DEFAULT_CLONE_THREAD_COUNT,
+    retries: int = _DEFAULT_CLONE_RETRY_COUNT,
+) -> "dict[GithubRepository, Result[clone.LocalRepository]]":
+    """Mirror (or sync) each of `repos`.
+
+    Returns:
+        a mapping of every requested GithubRepository to a LocalRepository or Err.
+    """
+    outcomes: dict[GithubRepository, Result[clone.LocalRepository]] = {}
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        pending = {
+            pool.submit(clone.sync_repository, repo, workspace, token): (repo, 0)
+            for repo in repos
+        }
+        while pending:
+            done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED)
+            for completed_job in done:
+                repo, num_attempts = pending.pop(completed_job)
+                num_attempts += 1
+                result = completed_job.result()
+
+                if is_err(result):
+                    if num_attempts < 1 + retries:
+                        logger.warning(
+                            "Failed to sync %s (attempt %s of %s): %s",
+                            repo.full_name,
+                            num_attempts,
+                            1 + retries,
+                            result.msg,
+                        )
+                        pending[
+                            pool.submit(clone.sync_repository, repo, workspace, token)
+                        ] = (repo, num_attempts)
+                        continue
+                    logger.error(
+                        "%s, failed final attempt: %s",
+                        repo.full_name,
+                        result.msg,
+                    )
+
+                outcomes[repo] = result
+                if (num_synced := len(outcomes)) % 25 == 0:
+                    logger.info(
+                        "Sync progress: %s of %s repositories complete",
+                        num_synced,
+                        len(repos),
+                    )
+
+    logger.info("Sync progress: %s repositories complete", len(outcomes))
+    return outcomes

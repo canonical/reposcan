@@ -10,6 +10,7 @@ import base64
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -18,7 +19,7 @@ from reposcan.output import format_size
 from reposcan.result import Err, Result, get_value, is_err
 
 if TYPE_CHECKING:  # github needs the service extra; the annotation does not
-    from reposcan.scm.github import Repository
+    from reposcan.scm.github import GithubRepository
 
 logger = logging.getLogger(__name__)
 
@@ -31,69 +32,86 @@ _LOW_SPEED_BYTES = "1000"
 _LOW_SPEED_SECONDS = "60"
 
 
+@dataclass
+class LocalRepository:
+    """Metadata for a locally-mirrored repository."""
+
+    mirror_path: str
+    worktree_paths: dict[str, str]  # ref -> path
+    empty: bool
+
+
 def sync_repository(
-    repository: "Repository", workspace: str, token: str = ""
-) -> Result[str | None]:
-    """Sync (clone or update) a local copy of `repository`.
+    repo: "GithubRepository", workspace: str, token: str = ""
+) -> Result[LocalRepository]:
+    """Sync (clone or update) a local copy of `repo`.
 
     Args:
-        repository: The repository to sync. Its size, as GitHub reports it, is shown
-            in the log so the big ones stand out.
+        repo: The repository to sync.
         workspace: The local storage directory.
         token: An authentication token, or empty to clone anonymously.
 
     Returns:
-        The worktree path to scan, None when the repository is empty, or an Err
-        naming the git step that failed.
+        LocalRepository, or an Err representing a git failure.
     """
-    url, name, size = repository.clone_url, repository.full_name, repository.size
+    url, name, size = repo.clone_url, repo.full_name, repo.size
     workspace = os.path.abspath(workspace)
-    mirror = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
-    worktree = os.path.join(workspace, WORKTREE_DIR, name)
+    mirror_dir = os.path.join(workspace, MIRROR_DIR, f"{name}.git")
+    worktree_dir = os.path.join(workspace, WORKTREE_DIR, name)
     env = _build_git_environment(url, token)
 
-    # A clone cut off hard (power loss, kill -9) leaves behind whatever it had, since
-    # git gets no chance to clean up. The fetch below heals most of these, but not one
-    # cut off before git saved where it was cloning from: that has no commits, and
-    # would pass for an empty repository. GitHub reporting content gives it away. A
-    # mirror git can't read at all is just as broken, so it's cloned again too: its
-    # Err reads as None through get_value, the same as having no commits.
-    if size and os.path.isdir(mirror) and not get_value(_has_commits(mirror)):
+    # If a previous clone attempt failed non-atomically (e.g., power loss, kill -9),
+    # the local mirror path may exist in an invalid state. If the `git` CLI reports
+    # no commits (or fails to read the repo at all) but GitHub reports a non-empty repo
+    # the local copy is removed and a new mirror is created from scratch.
+    if (
+        repo.size
+        and os.path.isdir(mirror_dir)
+        and not get_value(_has_commits(mirror_dir))
+    ):
         logger.warning(
-            "%s: local mirror has no commits but GitHub reports %s; cloning it again",
+            "%s: local mirror is empty or broken, removing it before re-cloning",
             name,
-            format_size(size),
         )
-        if is_err(err := _remove_local_copy(mirror, worktree)):
+        if is_err(err := _remove_dirs(mirror_dir, worktree_dir)):
             return err
 
-    if os.path.isdir(mirror):
-        logger.info("updating %s", name)
+    if os.path.isdir(mirror_dir):
+        logger.info("Updating %s", name)
         # A mirror's refspec is already forced, so this follows a rewritten history
         # instead of failing on it, and --prune drops branches deleted upstream.
         err = _git(
             ["fetch", "--all", "--prune", "--update-head-ok", "--quiet"],
             env,
-            cwd=mirror,
+            cwd=mirror_dir,
         )
     else:
-        logger.info("mirroring %s%s", name, f" ({format_size(size)})" if size else "")
-        err = _make_parent(mirror)
+        logger.info("Mirroring %s%s", name, f" ({format_size(size)})" if size else "")
+        err = _make_parent(mirror_dir)
         if not is_err(err):
-            err = _git(["clone", "--mirror", "--quiet", url, mirror], env)
+            err = _git(["clone", "--mirror", "--quiet", url, mirror_dir], env)
+
     if is_err(err):
         return err
-    has_commits = _has_commits(mirror)
+
+    has_commits = _has_commits(mirror_dir)
     if is_err(has_commits):
         return has_commits
-    if not has_commits:
-        return None
-    return _checkout(mirror, worktree)
+
+    worktrees: dict[str, str] = {}
+    if repo.default_branch and has_commits:
+        if is_err(err := _checkout(mirror_dir, worktree_dir, repo.default_branch)):
+            return err
+        worktrees[repo.default_branch] = worktree_dir
+    else:
+        logger.debug("%s: synced repository is empty or has no default branch", name)
+
+    return LocalRepository(mirror_dir, worktrees, empty=(not has_commits))
 
 
-def _remove_local_copy(mirror: str, worktree: str) -> Result[None]:
-    """Delete a repository's mirror, and its worktree if it has one."""
-    for path in (worktree, mirror):
+def _remove_dirs(*directories: str) -> Result[None]:
+    """Delete `directories`, ignoring any that do not exist."""
+    for path in directories:
         try:
             shutil.rmtree(path)
         except FileNotFoundError:
@@ -104,10 +122,10 @@ def _remove_local_copy(mirror: str, worktree: str) -> Result[None]:
 
 
 def _has_commits(mirror: str) -> Result[bool]:
-    """Whether `mirror` holds any commit at all.
+    """Whether the `git` CLI detects commits within `mirror` (a directory path).
 
-    Asks for any ref, not for HEAD: a repository whose default branch was deleted but
-    which has other branches is not empty, and failing its checkout is the right call.
+    Commits are _not_ filtered to HEAD or the default branch. Any commit in any ref
+    is accepted.
 
     Returns:
         Whether it has one, or an Err when git can't read the mirror, so a broken
@@ -121,27 +139,17 @@ def _has_commits(mirror: str) -> Result[bool]:
     return bool(run.stdout.strip())
 
 
-def _checkout(mirror: str, worktree: str) -> Result[str]:
+def _checkout(mirror: str, worktree: str, ref: str) -> Result[None]:
     """Check out `mirror`'s worktree, or reset and clean the existing checkout."""
     if os.path.isdir(worktree):
-        # HEAD already points at the updated ref, since the worktree shares the
-        # mirror's refs; this is what moves the files to match it.
-        if is_err(err := _git(["reset", "--hard", "--quiet"], cwd=worktree)):
+        if is_err(err := _git(["reset", "--hard", ref, "--quiet"], cwd=worktree)):
             return err
-        err = _git(["clean", "-ffdxq"], cwd=worktree)
-        return err if is_err(err) else worktree
+        return _git(["clean", "-ffdxq"], cwd=worktree)
 
-    head = get_value(
-        run_process(["git", "symbolic-ref", "--short", "HEAD"], cwd=mirror)
-    )
-    if head is None or head.exit_code != 0:
-        return Err(f"could not read the default branch of {mirror}")
     if is_err(err := _make_parent(worktree)):
         return err
-    err = _git(
-        ["worktree", "add", "--quiet", worktree, head.stdout.strip()], cwd=mirror
-    )
-    return err if is_err(err) else worktree
+
+    return _git(["worktree", "add", "--quiet", worktree, ref], cwd=mirror)
 
 
 def _make_parent(path: str) -> Result[None]:
