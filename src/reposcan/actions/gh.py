@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # decoupled from CPU count.
 _DEFAULT_CLONE_THREAD_COUNT = 5
 _DEFAULT_CLONE_RETRY_COUNT = 2
+# check for SIGINT/SIGTERM in the main thread at least this often during long-running,
+# multi-threaded process (clone-repos)
+_INTERRUPT_POLLING_INTERVAL = 0.2
 
 
 FORMATS = tuple(f.value for f in Format)
@@ -284,31 +287,37 @@ def sync_repositories(
         a mapping of every requested GithubRepository to a LocalRepository or Err.
     """
     outcomes: dict[GithubRepository, Result[clone.LocalRepository]] = {}
-    with ThreadPoolExecutor(max_workers=threads) as pool:
+    pool = ThreadPoolExecutor(max_workers=threads)
+    try:
         pending = {
             pool.submit(clone.sync_repository, repo, workspace, token): (repo, 0)
             for repo in repos
         }
         while pending:
-            done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED)
+            done, _ = wait(
+                pending.keys(),
+                timeout=_INTERRUPT_POLLING_INTERVAL,
+                return_when=FIRST_COMPLETED,
+            )
             for completed_job in done:
                 repo, num_attempts = pending.pop(completed_job)
                 num_attempts += 1
                 result = completed_job.result()
 
+                if is_err(result) and num_attempts < 1 + retries:
+                    logger.warning(
+                        "Failed to sync %s (attempt %s of %s): %s",
+                        repo.full_name,
+                        num_attempts,
+                        1 + retries,
+                        result.msg,
+                    )
+                    retry_job = pool.submit(
+                        clone.sync_repository, repo, workspace, token
+                    )
+                    pending[retry_job] = (repo, num_attempts)
+                    continue
                 if is_err(result):
-                    if num_attempts < 1 + retries:
-                        logger.warning(
-                            "Failed to sync %s (attempt %s of %s): %s",
-                            repo.full_name,
-                            num_attempts,
-                            1 + retries,
-                            result.msg,
-                        )
-                        pending[
-                            pool.submit(clone.sync_repository, repo, workspace, token)
-                        ] = (repo, num_attempts)
-                        continue
                     logger.error(
                         "%s, failed final attempt: %s",
                         repo.full_name,
@@ -322,6 +331,10 @@ def sync_repositories(
                         num_synced,
                         len(repos),
                     )
+    finally:
+        # cancel_futures=True to ensure we cancel queued jobs in the event of a SIGINT,
+        # SIGTERM, or crash
+        pool.shutdown(cancel_futures=True)
 
     logger.info("Sync progress: %s repositories complete", len(outcomes))
     return outcomes

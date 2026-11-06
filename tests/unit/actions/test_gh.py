@@ -4,12 +4,17 @@
 """Tests for reposcan gh actions."""
 
 import os
+import signal
 import tempfile
+import threading
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
 from typing import Any
 from unittest.mock import MagicMock
+
+import pytest
 
 from reposcan.actions import gh
 from reposcan.result import Err
@@ -138,6 +143,30 @@ def test_a_failed_sync_is_retried_until_it_succeeds() -> None:
 
     assert outcomes == {repo: synced}
     assert sync.call_count == 2
+
+
+def test_queued_syncs_are_canceled_on_interrupt() -> None:
+    """sync_repositories cancels queued tasks when interrupted."""
+    repos = [
+        GithubRepository("acme/one", "https://h/acme/one.git", "main"),
+        GithubRepository("acme/two", "https://h/acme/two.git", "main"),
+        GithubRepository("acme/three", "https://h/acme/three.git", "main"),
+    ]
+    # The first sync is still running when the interrupt arrives 0.1s in, and when the
+    # main thread next wakes to handle it
+    sync = MagicMock(side_effect=lambda repo, workspace, token: time.sleep(0.6))
+    interrupt = threading.Timer(0.1, signal.raise_signal, (signal.SIGINT,))
+
+    saved = clone.sync_repository
+    clone.sync_repository = sync
+    try:
+        interrupt.start()
+        with pytest.raises(KeyboardInterrupt):
+            gh.sync_repositories(repos, "/w", "", threads=1)
+    finally:
+        clone.sync_repository = saved
+
+    assert sync.call_count == 1
 
 
 def test_a_failed_repository_fails_the_run() -> None:
