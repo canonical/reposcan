@@ -15,7 +15,6 @@ from reposcan.actions.image import ImageGroup
 from reposcan.actions.render import RenderAction
 from reposcan.actions.sbom import SbomCommand
 from reposcan.actions.scan import ScanCommand
-from reposcan.actions.scan_repos import ScanRepos
 from reposcan.actions.tools import ToolsAction
 from reposcan.cli_kit import Cli, Group
 from reposcan.settings import resolve
@@ -37,7 +36,6 @@ class Reposcan(Group):
         ImageGroup,
         ConfigGroup,
         ScanCommand,
-        ScanRepos,
         SbomCommand,
         GhGroup,
     )

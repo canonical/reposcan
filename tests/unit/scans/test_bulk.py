@@ -5,6 +5,7 @@
 
 import os
 import signal
+import subprocess
 import tempfile
 import threading
 import time
@@ -15,7 +16,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reposcan.actions.scan_repos import find_worktrees
 from reposcan.db import write as db_write
 from reposcan.result import Err, Result, is_err
 from reposcan.scans import bulk
@@ -125,6 +125,7 @@ def test_a_cancelled_analysis_is_not_recorded() -> None:
             user=None,
             env=None,
             options={},
+            use_ignore_files=True,
             cancelled=cancelled,
         )
     finally:
@@ -134,12 +135,49 @@ def test_a_cancelled_analysis_is_not_recorded() -> None:
     write_analysis.assert_not_called()
 
 
-def test_a_worktree_layout_is_discovered_and_anything_else_ignored() -> None:
+def test_repositories_are_found_at_any_depth() -> None:
+    """Every repository under the directory is found, however deep it is."""
     with tempfile.TemporaryDirectory() as tmp:
-        for owner, name, is_repo in (("acme", "one", True), ("acme", "two", False)):
-            path = os.path.join(tmp, "worktrees", owner, name)
-            os.makedirs(path)
-            if is_repo:
-                os.makedirs(os.path.join(path, ".git"))
-        assert find_worktrees(tmp) == [os.path.join(tmp, "worktrees/acme/one")]
-        assert find_worktrees(os.path.join(tmp, "nothing-here")) == []
+        os.makedirs(os.path.join(tmp, "one", ".git"))
+        os.makedirs(os.path.join(tmp, "acme", "two"))
+        # a worktree has a .git file
+        with open(os.path.join(tmp, "acme", "two", ".git"), "w") as handle:
+            handle.write("gitdir: /elsewhere\n")
+        os.makedirs(os.path.join(tmp, "notes"))
+
+        found = bulk.find_repositories(tmp)
+
+    assert found == [os.path.join(tmp, "acme", "two"), os.path.join(tmp, "one")]
+
+
+def test_a_nested_repository_counts_as_part_of_its_parent() -> None:
+    """Nested repositories are not returned as distinct repos."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "one", ".git"))
+        os.makedirs(os.path.join(tmp, "one", "vendor", "two", ".git"))
+
+        found = bulk.find_repositories(tmp)
+
+    assert found == [os.path.join(tmp, "one")]
+
+
+def test_hidden_directories_are_skipped() -> None:
+    """Hidden directories, like .cache, aren't searched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, ".cache", "one", ".git"))
+
+        found = bulk.find_repositories(tmp)
+
+    assert found == []
+
+
+def test_a_bare_repository_is_recognised() -> None:
+    """A directory made by `git init --bare` counts as a bare repository."""
+    with tempfile.TemporaryDirectory() as tmp:
+        bare = os.path.join(tmp, "one.git")
+        working = os.path.join(tmp, "two")
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        subprocess.run(["git", "init", "-q", working], check=True)
+
+        assert bulk._is_bare_repository(bare)
+        assert not bulk._is_bare_repository(working)
