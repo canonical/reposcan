@@ -4,12 +4,19 @@
 """Tests for the bulk scan driver (reposcan.scans.bulk)."""
 
 import os
+import signal
 import tempfile
+import threading
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
 
 from reposcan.actions.scan_repos import find_worktrees
+from reposcan.db import write as db_write
 from reposcan.result import Err, Result, is_err
 from reposcan.scans import bulk
 from reposcan.scans.analysis import Analysis
@@ -76,6 +83,55 @@ def test_an_unresolvable_image_fails_every_repository_without_scanning() -> None
     assert scanned == []
     reasons = [r.msg for r in results.values() if is_err(r)]
     assert reasons == ["no such image"] * 2
+
+
+def test_an_interrupt_skips_the_queued_repositories() -> None:
+    """An interrupt cancels the scan in progress and any that haven't started."""
+    # interrupt at 0.1s, while the first scan (0.6s) is still running
+    scan_one = MagicMock(side_effect=lambda *args, **kwargs: time.sleep(0.6))
+    interrupt = threading.Timer(0.1, signal.raise_signal, (signal.SIGINT,))
+
+    saved = (bulk.ensure_image, bulk._scan_one)
+    bulk.ensure_image = MagicMock(return_value=None)
+    bulk._scan_one = scan_one
+    try:
+        interrupt.start()
+        with pytest.raises(KeyboardInterrupt):
+            bulk.scan_repositories(["a", "b", "c"], ["secrets"], db="x.db", threads=1)
+    finally:
+        bulk.ensure_image, bulk._scan_one = saved
+
+    assert scan_one.call_count == 1
+    assert scan_one.call_args.kwargs["cancelled"].is_set()
+
+
+def test_a_cancelled_analysis_is_not_recorded() -> None:
+    """A cancelled analysis isn't written to the database."""
+    cancelled = threading.Event()
+    cancelled.set()
+    write_analysis = MagicMock(return_value=None)
+
+    saved = (bulk.start_session, bulk.run_analysis, db_write.write_analysis)
+    bulk.start_session = MagicMock()
+    bulk.run_analysis = MagicMock(return_value=_build_analysis())
+    db_write.write_analysis = write_analysis
+    try:
+        result = bulk._scan_one(
+            "/w/acme/one",
+            ["secrets"],
+            db="x.db",
+            backend=None,
+            image=None,
+            user=None,
+            env=None,
+            options={},
+            cancelled=cancelled,
+        )
+    finally:
+        bulk.start_session, bulk.run_analysis, db_write.write_analysis = saved
+
+    assert is_err(result)
+    write_analysis.assert_not_called()
 
 
 def test_a_worktree_layout_is_discovered_and_anything_else_ignored() -> None:

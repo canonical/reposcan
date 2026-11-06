@@ -5,8 +5,9 @@
 
 import logging
 import os
+import threading
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any
 
 from reposcan.backends import ensure_image, start_session
@@ -20,6 +21,10 @@ from reposcan.scans.registry import SCANS
 from reposcan.scans.run import run_analysis
 
 logger = logging.getLogger(__name__)
+
+# check for SIGINT/SIGTERM in the main thread at least this often while repositories
+# are being scanned
+_INTERRUPT_POLLING_INTERVAL = 0.2
 
 
 def scan_repositories(
@@ -57,8 +62,10 @@ def scan_repositories(
         return dict.fromkeys(paths, err)
 
     results: dict[str, Result[Analysis]] = {}
-    with ThreadPoolExecutor(max_workers=max(1, threads)) as pool:
-        running = {
+    cancelled = threading.Event()
+    pool = ThreadPoolExecutor(max_workers=max(1, threads))
+    try:
+        pending = {
             pool.submit(
                 _scan_one,
                 path,
@@ -69,16 +76,29 @@ def scan_repositories(
                 user=user,
                 env=env,
                 options=options or {},
+                cancelled=cancelled,
             ): path
             for path in paths
         }
-        for done, future in enumerate(as_completed(running), start=1):
-            path = running[future]
-            result = future.result()
-            logger.info("[%d/%d] %s", done, len(paths), path, extra=TRANSIENT)
-            if is_err(result):
-                logger.error("%s: %s", path, result.msg)
-            results[path] = result
+        while pending:
+            done, _ = wait(
+                pending.keys(),
+                timeout=_INTERRUPT_POLLING_INTERVAL,
+                return_when=FIRST_COMPLETED,
+            )
+            for completed_job in done:
+                path = pending.pop(completed_job)
+                result = completed_job.result()
+                results[path] = result
+                logger.info(
+                    "[%d/%d] %s", len(results), len(paths), path, extra=TRANSIENT
+                )
+                if is_err(result):
+                    logger.error("%s: %s", path, result.msg)
+    finally:
+        # On SIGINT, SIGTERM, or a crash, skip all remaining scans
+        cancelled.set()
+        pool.shutdown(cancel_futures=True)
     return results
 
 
@@ -92,6 +112,7 @@ def _scan_one(
     user: RunUser | None,
     env: Mapping[str, str] | None,
     options: Mapping[str, Any],
+    cancelled: threading.Event,
 ) -> Result[Analysis]:
     """Scan one repository and record it in the database."""
     scans = [SCANS[name](**_filter_options(name, options)) for name in scan_names]
@@ -110,7 +131,12 @@ def _scan_one(
     ) as session:
         if not session.ok:
             return Err("could not start a session")
-        analysis = run_analysis(session, scans, ignore_rules=rules, stream=False)
+        analysis = run_analysis(
+            session, scans, ignore_rules=rules, stream=False, cancelled=cancelled
+        )
+    if cancelled.is_set():
+        # don't record a cancelled analysis, so the next run scans this repository again
+        return Err("cancelled")
     err = db_write.write_analysis(db, analysis)
     return err if is_err(err) else analysis
 

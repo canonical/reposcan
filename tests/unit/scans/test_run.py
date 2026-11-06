@@ -1,19 +1,24 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Tests for the scan driver (reposcan.scans.run.run_scan)."""
+"""Tests for the scan driver (reposcan.scans.run)."""
 
 import hashlib
+import threading
 from collections.abc import Mapping, Sequence
+from typing import Any
+from unittest.mock import MagicMock
 
 from reposcan.execution.context import ExecutionContext
 from reposcan.execution.process import ExecResult
 from reposcan.result import Err, Result, is_err
+from reposcan.scans import run as run_module
 from reposcan.scans import sarif
 from reposcan.scans.analysis import ScanStatus, scan_status
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.model import ToolInvocation
-from reposcan.scans.run import run_scan
+from reposcan.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.scans.run import run_analysis, run_scan
 
 
 class _FakeContext:
@@ -206,3 +211,29 @@ def test_a_scan_whose_tools_all_succeeded_is_complete() -> None:
     run = run_scan(scan, ctx, "/scan/acme", "/opt/reposcan")
     assert not is_err(run)
     assert scan_status(run) is ScanStatus.COMPLETE
+
+
+def test_cancelling_an_analysis_skips_the_remaining_scans() -> None:
+    """Cancelling an analysis skips the scans that haven't started."""
+    cancelled = threading.Event()
+
+    def cancel_during_scan(*args: Any, **kwargs: Any) -> Result[sarif.SarifRun]:
+        cancelled.set()
+        return Err("killed")
+
+    session = MagicMock(target="/scan/acme")
+    first, second = MagicMock(), MagicMock()
+    first.name, second.name = "secrets", "sast"
+    scan_runner = MagicMock(side_effect=cancel_during_scan)
+
+    saved = (run_module.read_repository_state, run_module.run_scan)
+    run_module.read_repository_state = MagicMock(
+        return_value=RepositoryState(identity=ProjectIdentity("acme"))
+    )
+    run_module.run_scan = scan_runner
+    try:
+        run_analysis(session, [first, second], cancelled=cancelled)
+    finally:
+        run_module.read_repository_state, run_module.run_scan = saved
+
+    assert scan_runner.call_count == 1

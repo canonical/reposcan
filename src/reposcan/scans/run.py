@@ -22,6 +22,7 @@ from reposcan.scans.resolve import resolve_dependencies
 from reposcan.tools.registry import TOOLS
 
 if TYPE_CHECKING:
+    import threading
     from collections.abc import Sequence
 
     from reposcan.backends import Session
@@ -214,6 +215,7 @@ def run_analysis(
     *,
     ignore_rules: Sequence[ignore.IgnoreRule] = (),
     stream: bool = True,
+    cancelled: threading.Event | None = None,
 ) -> Analysis:
     """Run `scans` against `session`'s target.
 
@@ -227,6 +229,7 @@ def run_analysis(
         ignore_rules: reposcan ignorefile rules to suppress findings with.
         stream: Echo each tool's progress to the console. A bulk run passes False,
             so several repositories do not interleave their output.
+        cancelled: Once set, the remaining scans are skipped.
 
     Returns:
         The closed analysis.
@@ -235,6 +238,8 @@ def run_analysis(
     state = read_repository_state(session.context, session.target)
     with Analysis.begin(state) as analysis:
         for scan in scans:
+            if cancelled is not None and cancelled.is_set():
+                break
             started_at = utc_now()
             run = run_scan(
                 scan,
