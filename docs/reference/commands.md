@@ -112,6 +112,8 @@ Common options:
   not resolved at all.
 - `--mode <history|filesystem>`, `--depth <N>`: for `secrets` only; see the
   [scans reference](scans.md).
+- `-r, --recursive`: find and scan every git repository in the directory at
+  `<path>`; see below.
 
 A scan-specific option applies only when its scan is among the requested types;
 passing one otherwise (for example `--depth` without `secrets`) is a usage
@@ -119,6 +121,25 @@ error.
 
 Exit codes: `0` nothing at or above `--fail-on`, `3` a finding at or above
 `--fail-on`, `1` scan or tool error, `2` usage error.
+
+#### Find and scan repositories in a directory
+
+`reposcan scan -r <types> <path> --db <FILE>` finds and scans every git
+repository in the directory at `<path>` and records each analysis in `--db`. A
+nested repository, such as a submodule, is scanned as part of the outer
+directory. Hidden directories and bare repositories are skipped. To scan the
+repositories cloned by `reposcan gh clone-repos`, set `<path>` to the same
+directory as the `workspace` used for `clone-repos`.
+
+- `--db <FILE>` is required.
+- `--threads <N>`: repositories to scan at once (default: one per processor).
+- Each repository's own `.reposcan-ignore` is read, unless `--no-ignore-file` is
+  given.
+- `-o`, `-f`, `-n`, `--wrap`, and `--ignore-file` only make sense for one
+  repository, so they return a usage error if used with `-r`.
+
+A repository that cannot be scanned is reported without crashing the overall
+scan. The exit codes are the same as for a single scan.
 
 ### sbom
 
@@ -140,7 +161,8 @@ table, without re-running the scan. Options: `-n/--limit` and `--wrap`, as for
 
 ## Work with SCM
 
-Discover, clone, and scan repositories.
+Discover and clone repositories. To scan them, see
+[`scan -r`](#find-and-scan-repositories-in-a-directory).
 
 ### gh
 
@@ -193,27 +215,6 @@ loss): it is deleted and cloned again. Options:
 - `--threads <N>`: repositories to clone at once (default 5).
 - `--retries <N>`: times to retry the repositories that failed (default 2). Any
   still failing are listed together at the end.
-
-### scan-repos
-
-`reposcan scan-repos <path> --db <FILE>` finds and scans every git repository
-under `<path>` (a directory), and records each analysis into the database
-indicated by `db`. A nested repository, such as a submodule, is scanned as part
-of the outer directory. Hidden directories and bare repositories are skipped. To
-scan the repositories cloned by `reposcan gh clone-repos`, set `<path>` to the
-same directory as the `workspace` used for `clone-repos`. Options:
-
-- `--db <FILE>`: the database to record every analysis in. Env var:
-  `REPOSCAN_DB`.
-- `--scans <types>`: comma-separated scan types, as for [`scan`](#scan). Every
-  type by default.
-- `--threads <N>`: repositories to scan at once (default: one per processor).
-
-A repository that cannot be scanned is reported without crashing the overall
-scan.
-
-Exit codes: `0` when every repository and scan succeeded, `1` when any failed,
-`2` when no repositories were found.
 
 ## Tools and images
 

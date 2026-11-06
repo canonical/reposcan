@@ -1,7 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Scan many repositories into one database."""
+"""Find and scan repositories in bulk."""
 
 import logging
 import os
@@ -38,6 +38,7 @@ def scan_repositories(
     env: Mapping[str, str] | None = None,
     threads: int = 1,
     options: Mapping[str, Any] | None = None,
+    use_ignore_files: bool = True,
 ) -> dict[str, Result[Analysis]]:
     """Scan every repository in `paths`, recording each analysis in the database.
 
@@ -51,6 +52,7 @@ def scan_repositories(
         env: Extra environment variables for in-container processes.
         threads: How many repositories to scan at once.
         options: Scan-specific options, as the scan classes declare them.
+        use_ignore_files: Read each repository's reposcan ignorefile.
 
     Returns:
         The analysis of each repository, keyed by its path, in completion order. A
@@ -76,6 +78,7 @@ def scan_repositories(
                 user=user,
                 env=env,
                 options=options or {},
+                use_ignore_files=use_ignore_files,
                 cancelled=cancelled,
             ): path
             for path in paths
@@ -112,13 +115,14 @@ def _scan_one(
     user: RunUser | None,
     env: Mapping[str, str] | None,
     options: Mapping[str, Any],
+    use_ignore_files: bool,
     cancelled: threading.Event,
 ) -> Result[Analysis]:
     """Scan one repository and record it in the database."""
     scans = [SCANS[name](**_filter_options(name, options)) for name in scan_names]
     rules: list[ignore.IgnoreRule] = []
     ignore_path = os.path.join(path, ignore.DEFAULT_IGNORE_FILE)
-    if os.path.isfile(ignore_path):
+    if use_ignore_files and os.path.isfile(ignore_path):
         rules, errors = ignore.load(ignore_path)
         for message in errors:
             logger.warning("%s: %s", path, message)
@@ -150,3 +154,32 @@ def _filter_options(name: str, options: Mapping[str, Any]) -> dict[str, Any]:
         for param in collect_params(SCANS[name])
         if param.name in options
     }
+
+
+def find_repositories(parent_dir: str) -> list[str]:
+    """Find the git repositories in `parent_dir`."""
+    found: list[str] = []
+    for directory, subdirectories, _ in os.walk(parent_dir):
+        # os.walk only goes into the directories left in `subdirectories`. A worktree
+        # or submodule has a .git file rather than a directory.
+        if os.path.exists(os.path.join(directory, ".git")):
+            found.append(directory)
+            # a repository inside this one (a submodule, say) stays part of it
+            subdirectories.clear()
+        elif _is_bare_repository(directory):
+            # skip bare repositories
+            subdirectories.clear()
+        else:
+            subdirectories[:] = sorted(
+                name for name in subdirectories if not name.startswith(".")
+            )
+    return found
+
+
+def _is_bare_repository(directory: str) -> bool:
+    """Check whether `directory` is a bare git repository."""
+    return (
+        os.path.isfile(os.path.join(directory, "HEAD"))
+        and os.path.isdir(os.path.join(directory, "objects"))
+        and os.path.isdir(os.path.join(directory, "refs"))
+    )

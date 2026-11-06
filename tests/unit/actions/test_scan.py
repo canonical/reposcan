@@ -13,6 +13,7 @@ import os
 import tempfile
 from collections.abc import Sequence
 from contextlib import redirect_stdout
+from unittest.mock import MagicMock
 
 import reposcan.actions.scan as scan_cmd
 from reposcan import __version__
@@ -21,6 +22,7 @@ from reposcan.db import read as db_read
 from reposcan.output import Format
 from reposcan.result import Err, Result
 from reposcan.scans import sarif
+from reposcan.scans.analysis import Analysis, ScanRecord
 from reposcan.scans.registry import SCANS
 from reposcan.scans.repo import PROPERTY_SCHEMA
 from tests.unit.actions.helpers import (
@@ -196,3 +198,82 @@ def test_scan_command_aggregates_scan_options_with_requires() -> None:
             owners = requires["scans"]
             owners = owners if isinstance(owners, tuple) else (owners,)
             assert scan_name in owners
+
+
+def test_output_cant_be_used_with_recursive() -> None:
+    """-o with -r is a usage error."""
+    scan_repositories = MagicMock(return_value={})
+
+    saved = (scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories)
+    scan_cmd.bulk.find_repositories = MagicMock(return_value=["/a"])
+    scan_cmd.bulk.scan_repositories = scan_repositories
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            action = scan_cmd.ScanCommand(
+                scans=["secrets"], path=tmp, recursive=True, db="x.db", output="r.json"
+            )
+            code = action.run()
+    finally:
+        scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories = saved
+
+    assert code == 2
+    scan_repositories.assert_not_called()
+
+
+def test_recursive_requires_a_database() -> None:
+    """-r without --db is a usage error."""
+    scan_repositories = MagicMock(return_value={})
+
+    saved = (scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories)
+    scan_cmd.bulk.find_repositories = MagicMock(return_value=["/a"])
+    scan_cmd.bulk.scan_repositories = scan_repositories
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            action = scan_cmd.ScanCommand(scans=["secrets"], path=tmp, recursive=True)
+            code = action.run()
+    finally:
+        scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories = saved
+
+    assert code == 2
+    scan_repositories.assert_not_called()
+
+
+def test_recursive_exits_three_for_a_finding_in_any_repository() -> None:
+    """-r exits 3 if any repository has a finding."""
+    clean = Analysis.begin(FAKE_REPOSITORY)
+    clean.add(ScanRecord.from_artifact("secrets", build_sarif_run(0), started_at=""))
+    found = Analysis.begin(FAKE_REPOSITORY)
+    found.add(ScanRecord.from_artifact("secrets", build_sarif_run(1), started_at=""))
+
+    saved = (scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories)
+    scan_cmd.bulk.find_repositories = MagicMock(return_value=["/a", "/b"])
+    scan_cmd.bulk.scan_repositories = MagicMock(return_value={"/a": clean, "/b": found})
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            action = scan_cmd.ScanCommand(
+                scans=["secrets"], path=tmp, recursive=True, db="x.db"
+            )
+            code = action.run()
+    finally:
+        scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories = saved
+
+    assert code == 3
+
+
+def test_recursive_passes_the_scan_options_to_the_bulk_scan() -> None:
+    """With -r, an option like --depth is passed to the bulk scan."""
+    scan_repositories = MagicMock(return_value={})
+
+    saved = (scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories)
+    scan_cmd.bulk.find_repositories = MagicMock(return_value=["/a"])
+    scan_cmd.bulk.scan_repositories = scan_repositories
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            action = scan_cmd.ScanCommand(
+                scans=["secrets"], path=tmp, recursive=True, db="x.db", depth=5
+            )
+            action.run()
+    finally:
+        scan_cmd.bulk.find_repositories, scan_cmd.bulk.scan_repositories = saved
+
+    assert scan_repositories.call_args.kwargs["options"]["depth"] == 5
