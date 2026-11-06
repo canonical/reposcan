@@ -1,18 +1,17 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""The `reposcan scan-repos` command: scan a workspace of repositories at once."""
+"""The `reposcan scan-repos` command: scan every repository under a directory."""
 
 import logging
 import os
 
 from reposcan.actions.base import Action
-from reposcan.cli_kit import option
+from reposcan.cli_kit import option, positional
 from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.scans import bulk
 from reposcan.scans.analysis import Analysis
 from reposcan.scans.registry import SCANS, parse_scan_names
-from reposcan.scm.clone import WORKTREE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +20,10 @@ _DEFAULT_SCAN_THREADS = os.cpu_count() or 1
 
 
 class ScanRepos(Action):
-    """Scan every repository in a workspace, recording each in one database."""
+    """Find and scan every repository within a directory."""
 
     name = "scan-repos"
-    help = "Scan every repository in a workspace."
+    help = "Find and scan every git repository within a directory."
 
     scans: list[str] = option(
         convert=parse_scan_names,
@@ -32,10 +31,7 @@ class ScanRepos(Action):
         help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
     )
-    workspace: str = option(
-        required=True,
-        help="Directory holding the worktrees to scan, as `gh clone-repos` writes.",
-    )
+    path: str = positional(help="Directory to search for git repositories.")
     db: str = option(
         required=True,
         help="Record every analysis in the database at FILE, creating it if absent.",
@@ -47,16 +43,16 @@ class ScanRepos(Action):
     )
 
     def run(self) -> int:
-        """Scan each repository in the workspace.
+        """Find and scan each repository in a directory.
 
         Exit codes:
             0 when every repository was scanned
             1 when any repository or scan failed
-            2 when the workspace holds no repositories
+            2 when no repositories were found
         """
-        repositories = find_worktrees(self.workspace)
+        repositories = find_repositories(self.path)
         if not repositories:
-            logger.error("no repositories under %s", self.workspace)
+            logger.error("no repositories under %s", self.path)
             return 2
         logger.info("scanning %d repositories", len(repositories))
 
@@ -84,18 +80,30 @@ class ScanRepos(Action):
         return 0 if len(complete) == len(results) else 1
 
 
-def find_worktrees(workspace: str) -> list[str]:
-    """Find the worktrees under `workspace`, as `gh clone-repos` lays them out."""
-    root = os.path.join(workspace, WORKTREE_DIR)
+def find_repositories(parent_dir: str) -> list[str]:
+    """Find the git repositories in `parent_dir`."""
     found: list[str] = []
-    for owner in sorted(os.listdir(root)) if os.path.isdir(root) else []:
-        owned = os.path.join(root, owner)
-        if not os.path.isdir(owned):
-            continue
-        found.extend(
-            os.path.join(owned, name)
-            for name in sorted(os.listdir(owned))
-            if os.path.isdir(os.path.join(owned, name, ".git"))
-            or os.path.isfile(os.path.join(owned, name, ".git"))
-        )
+    for directory, subdirectories, _ in os.walk(parent_dir):
+        # os.walk only goes into the directories left in `subdirectories`
+        if os.path.exists(os.path.join(directory, ".git")):
+            # a worktree or submodule has a .git file rather than a directory
+            found.append(directory)
+            # a repository inside this one (a submodule, say) stays part of it
+            subdirectories.clear()
+        elif _is_bare_repository(directory):
+            # skip bare repositories
+            subdirectories.clear()
+        else:
+            subdirectories[:] = sorted(
+                name for name in subdirectories if not name.startswith(".")
+            )
     return found
+
+
+def _is_bare_repository(directory: str) -> bool:
+    """Check whether `directory` is a bare git repository."""
+    return (
+        os.path.isfile(os.path.join(directory, "HEAD"))
+        and os.path.isdir(os.path.join(directory, "objects"))
+        and os.path.isdir(os.path.join(directory, "refs"))
+    )

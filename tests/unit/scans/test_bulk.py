@@ -3,9 +3,7 @@
 
 """Tests for the bulk scan driver (reposcan.scans.bulk)."""
 
-import os
 import signal
-import tempfile
 import threading
 import time
 from collections.abc import Iterator, Sequence
@@ -15,7 +13,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from reposcan.actions.scan_repos import find_worktrees
 from reposcan.db import write as db_write
 from reposcan.result import Err, Result, is_err
 from reposcan.scans import bulk
@@ -132,14 +129,3 @@ def test_a_cancelled_analysis_is_not_recorded() -> None:
 
     assert is_err(result)
     write_analysis.assert_not_called()
-
-
-def test_a_worktree_layout_is_discovered_and_anything_else_ignored() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        for owner, name, is_repo in (("acme", "one", True), ("acme", "two", False)):
-            path = os.path.join(tmp, "worktrees", owner, name)
-            os.makedirs(path)
-            if is_repo:
-                os.makedirs(os.path.join(path, ".git"))
-        assert find_worktrees(tmp) == [os.path.join(tmp, "worktrees/acme/one")]
-        assert find_worktrees(os.path.join(tmp, "nothing-here")) == []

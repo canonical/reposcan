@@ -178,10 +178,10 @@ Disabled repositories are never included.
 selected repository under `DIR`. Each repository is cloned as a bare mirror in
 `DIR/mirrors` and its default branch is checked out as a worktree in
 `DIR/worktrees/`. An empty repository (one with no commits) is mirrored but
-skipped: it has nothing to check out or scan, and it is not counted as a failure.
-An existing mirror with no commits, for a repository GitHub reports as having
-content, is left over from a clone that was cut off (e.g. by a power loss): it is
-deleted and cloned again. Options:
+skipped: it has nothing to check out or scan, and it is not counted as a
+failure. An existing mirror with no commits, for a repository GitHub reports as
+having content, is left over from a clone that was cut off (e.g. by a power
+loss): it is deleted and cloned again. Options:
 
 - `--workspace <DIR>`: the directory holding the mirrors and worktrees. Env var:
   `REPOSCAN_WORKSPACE`.
@@ -196,11 +196,13 @@ deleted and cloned again. Options:
 
 ### scan-repos
 
-`reposcan scan-repos --workspace <DIR> --db <FILE>` scans every repository in a
-workspace (as produced by `reposcan gh clone-repos`) and records each analysis
-in one database. Options:
+`reposcan scan-repos <path> --db <FILE>` finds and scans every git repository
+under `<path>` (a directory), and records each analysis into the database
+indicated by `db`. A nested repository, such as a submodule, is scanned as part
+of the outer directory. Hidden directories and bare repositories are skipped. To
+scan the repositories cloned by `reposcan gh clone-repos`, set `<path>` to the
+same directory as the `workspace` used for `clone-repos`. Options:
 
-- `--workspace <DIR>`: the workspace to scan. Env var: `REPOSCAN_WORKSPACE`.
 - `--db <FILE>`: the database to record every analysis in. Env var:
   `REPOSCAN_DB`.
 - `--scans <types>`: comma-separated scan types, as for [`scan`](#scan). Every
@@ -211,7 +213,7 @@ A repository that cannot be scanned is reported without crashing the overall
 scan.
 
 Exit codes: `0` when every repository and scan succeeded, `1` when any failed,
-`2` when the workspace holds no repositories.
+`2` when no repositories were found.
 
 ## Tools and images
 
