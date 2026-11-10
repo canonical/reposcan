@@ -11,6 +11,7 @@ import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -64,29 +65,43 @@ def is_sqlite(data: bytes) -> bool:
     return data[:16] == _MAGIC
 
 
-def connect(path: str, *, write: bool = False) -> "Result[Session]":
+class SessionMode(Enum):
+    """What a session may do to its database."""
+
+    READ = "r"
+    READ_AND_WRITE = "rw"
+
+
+def connect(path: str, mode: SessionMode) -> "Result[Session]":
     """Open a session on the database at `path`.
 
-    Creates the file when it is absent. Returns an error rather than raising.
+    A READ_AND_WRITE session creates the file when it is absent; a READ session
+    refuses to. Returns an error rather than raising.
 
     sqlite serializes writers. Write-ahead logging lets readers work while a write is in
-    flight. A session opened to `write` takes the write lock as it begins, so the busy
+    flight. A READ_AND_WRITE session takes the write lock as it begins, so the busy
     timeout makes a second writer wait for it rather than fail.
     """
     try:
         # isolation_level=None turns off sqlite3's implicit transaction handling, so
         # the session's own BEGIN/COMMIT are the only transaction boundaries.
-        connection = sqlite3.connect(
-            path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
-        )
-        # Not available on every filesystem (notably NFS); sqlite reports the mode it
-        # settled on, and the rollback journal it falls back to is still correct.
-        (mode,) = connection.execute("PRAGMA journal_mode = WAL").fetchone()
-        if str(mode).lower() != "wal":
-            logger.debug("%s is journalled as %s, not wal", path, mode)
+        if mode is SessionMode.READ:
+            connection = sqlite3.connect(
+                Path(path).resolve().as_uri() + "?mode=ro",
+                uri=True,
+                isolation_level=None,
+                timeout=BUSY_TIMEOUT_SECONDS,
+            )
+        else:
+            connection = sqlite3.connect(
+                path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
+            )
+            (journal,) = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+            if str(journal).lower() != "wal":
+                logger.debug("%s is journalled as %s, not wal", path, journal)
     except sqlite3.Error as exc:
         return Err(f"could not open {path}: {exc}")
-    return Session(connection, immediate=write)
+    return Session(connection, mode)
 
 
 def read_version(path: str) -> int | None:
@@ -116,11 +131,9 @@ class Session:
     supplied by the caller.
     """
 
-    def __init__(
-        self, connection: sqlite3.Connection, *, immediate: bool = False
-    ) -> None:
+    def __init__(self, connection: sqlite3.Connection, mode: SessionMode) -> None:
         self._connection = connection
-        self._immediate = immediate
+        self._mode = mode
 
     def __enter__(self) -> "Session":
         # Foreign keys are per-connection, off by default, and silently ignored inside
@@ -128,7 +141,10 @@ class Session:
         self._connection.execute("PRAGMA foreign_keys = ON")
         # A transaction that reads before it writes can never take the write lock once
         # another writer has committed (SQLITE_BUSY_SNAPSHOT), however long it waits.
-        self._connection.execute("BEGIN IMMEDIATE" if self._immediate else "BEGIN")
+        if self._mode is SessionMode.READ_AND_WRITE:
+            self._connection.execute("BEGIN IMMEDIATE")
+        else:
+            self._connection.execute("BEGIN")
         return self
 
     def __exit__(

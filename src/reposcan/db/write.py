@@ -43,7 +43,7 @@ def write_analysis(path: str, record: Analysis) -> Result[None]:
     """
     if is_err(err := schema.confirm_usable(path)):
         return err
-    session = sqlite.connect(path, write=True)
+    session = sqlite.connect(path, sqlite.SessionMode.READ_AND_WRITE)
     if is_err(session):
         return session
     with session:
