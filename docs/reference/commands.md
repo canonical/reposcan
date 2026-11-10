@@ -231,9 +231,9 @@ rules that match a new scan's findings to known issues. `SOURCE` is only read.
 See [Import a database](../how-to/import-a-database.md). Options:
 
 - `--db <FILE>`: the receiving database. Env var: `REPOSCAN_DB`.
-- `--produced-by <LABEL>`: who produced the analyses `SOURCE` ran itself, such
-  as a machine or CI job, recorded with each of them. Analyses that `SOURCE`
-  imported from elsewhere keep the label they carry. Env var:
+- `--produced-by <LABEL>`: a name for where `SOURCE`'s analyses came from, such
+  as the machine or CI job that ran them, recorded on each of them. Analyses
+  that `SOURCE` imported from elsewhere keep the label they carry. Env var:
   `REPOSCAN_PRODUCED_BY`.
 - `--retain-secrets`: keep the raw secret values that `SOURCE`'s findings
   retained (see [secrets](scans.md#secrets)). Off by default: they are dropped,

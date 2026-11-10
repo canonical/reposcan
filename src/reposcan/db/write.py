@@ -134,13 +134,7 @@ def _list_importable_analyses(
             for analysis_id, uuid in session.query(schema.SELECT_ANALYSIS_IDS_AND_UUIDS)
         ]
     except read.MALFORMED_ROW_ERRORS as exc:
-        hint = ""
-        if "readonly" in str(exc):
-            hint = (
-                "; copy it to a writable directory first, because sqlite creates a "
-                "file beside a database to read it"
-            )
-        return Err(f"could not read {source}: {exc}{hint}")
+        return Err(f"could not read {source}: {exc}")
 
 
 def resolve_project(session: Session, identity: ProjectIdentity) -> int:

@@ -483,23 +483,33 @@ def confirm_usable(path: str, *, must_be_current: bool = False) -> Result[None]:
     Returns:
         None when `path` is usable, or an Err saying why it is not.
     """
-    if is_current(path):
-        if not must_be_current:
-            return None
+    if must_be_current:
         session = connect(path, SessionMode.READ)
         if is_err(session):
             return session
+        # The version is read on this session rather than with is_current, which
+        # reports any failure to read as "not current" and would hide why.
         try:
             with session:
+                if session.read_version() != SCHEMA_VERSION:
+                    return Err(
+                        f"{path} is not a version {SCHEMA_VERSION} reposcan database"
+                    )
                 # A view standing in for a table could compute rows without end.
                 for table in TABLES:
                     if not session.has_table(table.name):
                         return Err(f"{path} has no {table.name} table")
         except sqlite3.Error as exc:
-            return Err(f"could not read {path}: {exc}")
+            hint = ""
+            if "readonly" in str(exc):
+                hint = (
+                    "; copy it to a writable directory first, because sqlite "
+                    "creates a file beside a database to read it"
+                )
+            return Err(f"could not read {path}: {exc}{hint}")
         return None
-    if must_be_current:
-        return Err(f"{path} is not a version {SCHEMA_VERSION} reposcan database")
+    if is_current(path):
+        return None
     version = read_version(path)
     if version is None:
         return Err(f"{path} is not a sqlite database") if Path(path).exists() else None

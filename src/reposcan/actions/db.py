@@ -26,8 +26,9 @@ class DbImport(Action):
     )
     produced_by: str = option(
         required=True,
-        help="Who produced the analyses SOURCE ran itself, such as the machine or "
-        "CI job; recorded with each of them.",
+        help="A name for where SOURCE's analyses came from, such as the machine or "
+        "CI job that ran them. Recorded on each analysis SOURCE has not already "
+        "labelled.",
     )
     retain_secrets: bool = flag(
         help="Keep the raw secret values that SOURCE's findings retained. Off by "
@@ -43,7 +44,7 @@ class DbImport(Action):
             2 when --produced-by is blank, or SOURCE is not a file or is the --db file
         """
         if not self.produced_by.strip():
-            logger.error("--produced-by must name who produced the analyses")
+            logger.error("--produced-by must name where the analyses came from")
             return 2
         if not os.path.isfile(self.source):
             logger.error("not a file: %s", self.source)

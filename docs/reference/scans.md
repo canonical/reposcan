@@ -26,8 +26,7 @@ Leaked credentials, via trufflehog. Emits SARIF. Options:
   all).
 - `--retain-secrets`: keep the raw secret value in each finding's properties
   (`reposcan:secret`). Off by default; enabling it puts live credentials in the
-  report. [`db import`](../how-to/import-a-database.md) drops the value unless
-  it is given `--retain-secrets` too.
+  report.
 
 ## sast
 
