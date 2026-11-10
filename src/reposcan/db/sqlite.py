@@ -75,12 +75,32 @@ class SessionMode(Enum):
 def connect(path: str, mode: SessionMode) -> "Result[Session]":
     """Open a session on the database at `path`.
 
-    A READ_AND_WRITE session creates the file when it is absent; a READ session
-    refuses to. Returns an error rather than raising.
+    sqlite lets any number of connections read a database at the same time, but only
+    one connection can write to it at a time. To write, a connection takes the
+    database's write lock, and holds it until its transaction commits or rolls back.
 
-    sqlite serializes writers. Write-ahead logging lets readers work while a write is in
-    flight. A READ_AND_WRITE session takes the write lock as it begins, so the busy
-    timeout makes a second writer wait for it rather than fail.
+    A READ_AND_WRITE session switches the database to write-ahead logging (WAL). In
+    that mode a writer adds its changes to a log file beside the database instead of
+    changing the database file directly. Readers keep seeing the last committed state
+    while a write is in progress, so readers and the writer don't wait for each
+    other. The mode is stored in the database file, so it outlasts the session.
+
+    Writers still take turns. When a session asks for the write lock while another
+    holds it, sqlite retries for up to `BUSY_TIMEOUT_SECONDS` instead of failing at
+    once, so two writers, in separate threads or processes, can record analyses into
+    one database at the same time. The retrying only helps a session that asks for
+    the lock before it reads anything, which is why a READ_AND_WRITE session takes
+    the lock as soon as it begins.
+
+    Args:
+        path: The database file.
+        mode: READ opens an existing database that the session can read but not
+            change, and never creates the file. READ_AND_WRITE creates the file when
+            it is absent, and takes the write lock as the session begins.
+
+    Returns:
+        A session to use in a `with` block, or an Err when the database cannot be
+        opened, such as a READ session on a file that does not exist.
     """
     try:
         # isolation_level=None turns off sqlite3's implicit transaction handling, so
