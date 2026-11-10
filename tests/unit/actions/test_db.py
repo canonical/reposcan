@@ -6,18 +6,20 @@
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import reposcan.actions.db as db_cmd
 from reposcan.app import main
-from reposcan.db import read, write
+from reposcan.db import write
+from reposcan.db.model import ImportCounts
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind
 from tests.unit.actions.helpers import FAKE_REPOSITORY, build_sarif_run
 
 
 def _write_source(path: str) -> None:
-    """Record one analysis with one secrets finding, its raw value retained."""
+    """Record one analysis with one secrets finding."""
     run = build_sarif_run(1)
-    run.results[0].set_secret("RAWSECRETEXAMPLE")
     run.set_automation_id("reposcan/secrets/")
     analysis = Analysis(
         uuid="u1",
@@ -39,19 +41,24 @@ def _write_source(path: str) -> None:
     assert write.write_analysis(path, analysis) is None
 
 
-def test_retain_secrets_decides_whether_raw_secrets_are_imported() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        source = os.path.join(directory, "source.db")
-        _write_source(source)
-        imported_secrets = []
-        for flags in ([], ["--retain-secrets"]):
-            destination = os.path.join(directory, f"destination-{len(flags)}.db")
+def test_retain_secrets_is_passed_to_the_import() -> None:
+    import_database = MagicMock(return_value=ImportCounts(imported=0, skipped=0))
+    saved = db_cmd.db_write.import_database
+    db_cmd.db_write.import_database = import_database
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "source.db")
+            Path(source).touch()
+            destination = os.path.join(directory, "destination.db")
             argv = ["db", "import", source, "--db", destination, "--produced-by", "ci"]
-            assert main([*argv, *flags]) == 0
-            (artifact,) = read.list_artifacts(destination)
-            (imported,) = artifact.to_dict()["runs"][0]["results"]
-            imported_secrets.append(imported["properties"].get("reposcan:secret"))
-    assert imported_secrets == [None, "RAWSECRETEXAMPLE"]
+            for flags in ([], ["--retain-secrets"]):
+                assert main([*argv, *flags]) == 0
+    finally:
+        db_cmd.db_write.import_database = saved
+    retained = [
+        call.kwargs["retain_secrets"] for call in import_database.call_args_list
+    ]
+    assert retained == [False, True]
 
 
 def test_import_exits_2_for_a_wrong_command_and_1_for_an_unusable_database() -> None:

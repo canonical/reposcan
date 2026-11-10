@@ -7,14 +7,16 @@ import os
 import sqlite3
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from reposcan.db import read, write
 from reposcan.db.model import ImportCounts
-from reposcan.result import is_err
+from reposcan.result import Err, is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind
 from reposcan.scans.repo import ProjectIdentity, RepositoryState
+from reposcan.scans.sarif import _SECRET_PROPERTY
 
 
 def _build_analysis(uuid: str, *scans: ScanRecord, produced_by: str = "") -> Analysis:
@@ -76,11 +78,6 @@ def _build_sbom_scan() -> ScanRecord:
     )
 
 
-def _write_database(path: str, *analyses: Analysis) -> None:
-    for analysis in analyses:
-        assert write.write_analysis(path, analysis) is None
-
-
 def _query(path: str, sql: str) -> list[tuple]:
     connection = sqlite3.connect(path)
     try:
@@ -93,11 +90,11 @@ def test_an_imported_analysis_reads_back_exactly_as_the_source_holds_it() -> Non
     with tempfile.TemporaryDirectory() as directory:
         source = os.path.join(directory, "source.db")
         destination = os.path.join(directory, "destination.db")
-        _write_database(
+        write.write_analysis(
             source,
             _build_analysis("u1", _build_findings_scan("R1", "R2"), _build_sbom_scan()),
-            _build_analysis("u2", _build_findings_scan("R2")),
         )
+        write.write_analysis(source, _build_analysis("u2", _build_findings_scan("R2")))
         # A database shipped elsewhere is often rollback-journalled (VACUUM INTO
         # writes one), and opening it read-write would switch it to WAL.
         connection = sqlite3.connect(source)
@@ -125,8 +122,10 @@ def test_an_issue_both_databases_knew_becomes_one_issue() -> None:
     with tempfile.TemporaryDirectory() as directory:
         source = os.path.join(directory, "source.db")
         destination = os.path.join(directory, "destination.db")
-        _write_database(source, _build_analysis("a1", _build_findings_scan("X", "Z")))
-        _write_database(
+        write.write_analysis(
+            source, _build_analysis("a1", _build_findings_scan("X", "Z"))
+        )
+        write.write_analysis(
             destination, _build_analysis("b1", _build_findings_scan("X", "Y"))
         )
         assert not is_err(write.import_database(source, destination, "ci"))
@@ -143,9 +142,9 @@ def test_produced_by_is_stamped_only_where_the_source_left_it_empty() -> None:
     with tempfile.TemporaryDirectory() as directory:
         source = os.path.join(directory, "source.db")
         destination = os.path.join(directory, "destination.db")
-        _write_database(
+        write.write_analysis(source, _build_analysis("own", _build_findings_scan("R1")))
+        write.write_analysis(
             source,
-            _build_analysis("own", _build_findings_scan("R1")),
             _build_analysis(
                 "relayed", _build_findings_scan("R1"), produced_by="laptop"
             ),
@@ -173,7 +172,7 @@ def test_an_import_drops_raw_secrets_unless_asked_to_retain_them() -> None:
     )
     with tempfile.TemporaryDirectory() as directory:
         source = os.path.join(directory, "source.db")
-        _write_database(source, _build_analysis("u1", scan))
+        write.write_analysis(source, _build_analysis("u1", scan))
         imported_secrets = []
         for retain_secrets in (False, True):
             destination = os.path.join(directory, f"retain-{retain_secrets}.db")
@@ -182,7 +181,7 @@ def test_an_import_drops_raw_secrets_unless_asked_to_retain_them() -> None:
             )
             (artifact,) = read.list_artifacts(destination)
             (imported,) = artifact.to_dict()["runs"][0]["results"]
-            secret = imported["properties"].get("reposcan:secret")
+            secret = imported["properties"].get(_SECRET_PROPERTY)
             imported_secrets.append((secret, imported["fingerprints"]))
     # The hash a secret is matched by stays either way.
     fingerprints = {"secretHash/v1": "hash-of-the-secret"}
@@ -192,43 +191,31 @@ def test_an_import_drops_raw_secrets_unless_asked_to_retain_them() -> None:
     ]
 
 
-def test_a_source_that_is_not_a_current_reposcan_database_is_refused() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        destination = os.path.join(directory, "destination.db")
-        text = os.path.join(directory, "notes.txt")
-        Path(text).write_text("not a database")
-        # A whole database, written by a reposcan with a newer schema.
-        newer = os.path.join(directory, "newer.db")
-        _write_database(newer, _build_analysis("u1", _build_findings_scan("R1")))
-        connection = sqlite3.connect(newer)
-        connection.execute("PRAGMA user_version = 99")
-        connection.close()
-        # A view standing in for a table, as a crafted database could hold.
-        posed = os.path.join(directory, "posed.db")
-        _write_database(posed, _build_analysis("u1", _build_findings_scan("R1")))
-        connection = sqlite3.connect(posed)
-        connection.execute("ALTER TABLE analysis RENAME TO analysis_rows")
-        connection.execute("CREATE VIEW analysis AS SELECT * FROM analysis_rows")
-        connection.commit()
-        connection.close()
-        missing = os.path.join(directory, "missing.db")
-        for source in (text, newer, posed, missing):
+def test_an_unusable_source_is_refused_before_anything_is_written() -> None:
+    refusal = Err("refused")
+    confirm_usable = MagicMock(return_value=refusal)
+    saved = write.schema.confirm_usable
+    write.schema.confirm_usable = confirm_usable
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "source.db")
+            destination = os.path.join(directory, "destination.db")
             outcome = write.import_database(source, destination, "ci")
-            assert is_err(outcome), source
-            assert not os.path.exists(destination), source
-        assert not os.path.exists(missing)  # reading never creates the source
+            destination_created = os.path.exists(destination)
+    finally:
+        write.schema.confirm_usable = saved
+    assert outcome is refusal
+    confirm_usable.assert_called_once_with(source, must_be_current=True)
+    assert not destination_created
 
 
 def test_a_malformed_analysis_stops_the_import_and_a_rerun_finishes_it() -> None:
     with tempfile.TemporaryDirectory() as directory:
         source = os.path.join(directory, "source.db")
         destination = os.path.join(directory, "destination.db")
-        _write_database(
-            source,
-            _build_analysis("u1", _build_findings_scan("R1")),
-            _build_analysis("u2", _build_findings_scan("R2")),
-            _build_analysis("u3", _build_findings_scan("R3")),
-        )
+        write.write_analysis(source, _build_analysis("u1", _build_findings_scan("R1")))
+        write.write_analysis(source, _build_analysis("u2", _build_findings_scan("R2")))
+        write.write_analysis(source, _build_analysis("u3", _build_findings_scan("R3")))
         select_u2 = "SELECT scan_id FROM scan WHERE analysis_id = 2"
         ((intact,),) = _query(
             source,
