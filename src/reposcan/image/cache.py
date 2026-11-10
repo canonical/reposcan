@@ -10,9 +10,8 @@ the image currently present is the one we built before trusting and running it.
 
 Stored as a JSON map of reference -> identity at $XDG_DATA_HOME/reposcan/images.json.
 Reads take a shared flock and writes take an exclusive one held across the whole
-read-modify-write, so two reposcan processes touching the cache at once (a manual
-`image build` alongside a `scan-repos --image build`, say) cannot lose one process's
-write to the other's.
+read-modify-write, so two reposcan processes touching the cache at once cannot lose one
+process's write to the other's.
 """
 
 import fcntl

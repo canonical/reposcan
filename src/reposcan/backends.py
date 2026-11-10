@@ -12,7 +12,9 @@ from reposcan import paths
 from reposcan.execution.context import (
     RESOLUTION_WORKDIR,
     ExecutionContext,
+    Mount,
     RunUser,
+    find_git_mounts,
     locate_mounted_target,
 )
 from reposcan.execution.docker import DockerContext
@@ -135,7 +137,7 @@ def _provision_image(backend: Backend, image: str | None) -> Result[str]:
     # Unset and the `canonical` shorthand both mean the pinned published image.
     ref = CANONICAL_REF if not image or image == CANONICAL_SHORTHAND else image
     pulled = backend.puller(ref)
-    if isinstance(pulled, Err) and image is None:
+    if is_err(pulled) and image is None:
         return Err(
             f"could not pull the image {ref}: {pulled.msg}. "
             f"Pass --image build to build the reposcan image locally."
@@ -183,7 +185,7 @@ def ensure_image(requested_backend: str | None, image: str | None) -> Result[Non
         error that prevented it.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Err):
+    if is_err(backend):
         return backend
     if not backend.containerized:
         return None
@@ -219,25 +221,29 @@ def start_session(
         env: Variables to add to every command.
     """
     backend = select_backend(requested_backend)
-    if isinstance(backend, Err):
+    if is_err(backend):
         logger.error(backend.msg)
         yield Session(None, "", 2)
         return
     if backend.context is not None:
         provisioned = _provision_image(backend, image)
-        if isinstance(provisioned, Err):
+        if is_err(provisioned):
             logger.error(provisioned.msg)
             yield Session(None, "", 1)
             return
+        # A container mounts the source under MOUNT_PARENT, keeping host paths (and
+        # usernames) out of every report.
+        target: str | None = None
+        mounts: list[Mount] = []
+        if mount_source is not None:
+            target = locate_mounted_target(mount_source)
+            # a linked worktree's git data lives outside it, so mount that too
+            mounts = [
+                Mount(mount_source, target),
+                *find_git_mounts(mount_source, target),
+            ]
         ctx = backend.context(
-            provisioned or BASE_IMAGE,
-            mount_source=mount_source,
-            user=user,
-            env=env,
-        )
-        # A container mounts the source under MOUNT_PARENT.
-        target = (
-            locate_mounted_target(mount_source) if mount_source is not None else None
+            provisioned or BASE_IMAGE, mounts=mounts, user=user, env=env
         )
     else:
         # Local runs on the host: no image, no identity, no mount -- the source path

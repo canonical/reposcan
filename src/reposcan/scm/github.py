@@ -60,8 +60,8 @@ _RATE_LIMIT_STATUSES = (HTTPStatus.FORBIDDEN, HTTPStatus.TOO_MANY_REQUESTS)
 
 
 @dataclass(frozen=True)
-class Repository:
-    """A repository as GitHub describes it."""
+class GithubRepository:
+    """Metadata for a GitHub repository."""
 
     full_name: str  # "canonical/reposcan"
     clone_url: str  # https, must never includes credentials
@@ -69,14 +69,16 @@ class Repository:
     archived: bool = False
     fork: bool = False
     disabled: bool = False
+    size: int = 0
 
     @classmethod
-    def from_dict(cls, dict: Mapping[str, Any]) -> "Repository | None":
+    def from_dict(cls, dict: Mapping[str, Any]) -> "GithubRepository | None":
         """Parse repository metadata from `dict`."""
         full_name = str(dict.get("full_name") or "")
         clone_url = str(dict.get("clone_url") or "")
         if not full_name or not clone_url:
             return None
+        size = dict.get("size")
         return cls(
             full_name=full_name,
             clone_url=clone_url,
@@ -84,23 +86,24 @@ class Repository:
             archived=bool(dict.get("archived")),
             fork=bool(dict.get("fork")),
             disabled=bool(dict.get("disabled")),
+            size=size if isinstance(size, int) else 0,
         )
 
 
 def filter_repositories(
-    repositories: Sequence[Repository],
+    repositories: Sequence[GithubRepository],
     *,
     include_archived: bool = False,
     include_forks: bool = True,
     exclude: Sequence[str] = (),
-) -> list[Repository]:
+) -> list[GithubRepository]:
     """Filter repositories based on provided criteria.
 
     A disabled repository is never scanned: it cannot be cloned. An archived one is
     skipped unless asked for; a fork is kept unless excluded. `exclude` holds globs
     matched against the full name.
     """
-    selected: list[Repository] = []
+    selected: list[GithubRepository] = []
     for repository in repositories:
         if repository.disabled:
             continue
@@ -116,7 +119,7 @@ def filter_repositories(
 
 def list_repositories(
     *, org: str | None = None, enterprise: str | None = None, token: str = ""
-) -> Result[list[Repository]]:
+) -> Result[list[GithubRepository]]:
     """List the repositories in `org`, `enterprise`, or both.
 
     Args:
@@ -135,24 +138,26 @@ def list_repositories(
         if enterprise:
             logger.info("resolving the organizations in %s", enterprise)
             found = get_enterprise_organizations(session, headers, enterprise)
-            if isinstance(found, Err):
+            if is_err(found):
                 return found
             orgs.extend(found)
         if org:
             orgs.append(org)
 
-        repositories: dict[str, Repository] = {}
+        repositories: dict[str, GithubRepository] = {}
         for found_org in dict.fromkeys(orgs):  # an org may be named twice
             logger.info("listing repositories in %s", found_org)
             listed = get_org_repositories(session, headers, found_org)
-            if isinstance(listed, Err):
+            if is_err(listed):
                 return listed
             for repository in listed:
                 repositories.setdefault(repository.full_name, repository)
     return list(repositories.values())
 
 
-def get_repositories(names: Sequence[str], token: str = "") -> Result[list[Repository]]:
+def fetch_named_repositories(
+    names: Sequence[str], token: str = ""
+) -> Result[list[GithubRepository]]:
     """Fetch each repository named `owner/name`.
 
     Args:
@@ -163,11 +168,11 @@ def get_repositories(names: Sequence[str], token: str = "") -> Result[list[Repos
         The repositories, or an Err  on first fetch failure.
     """
     headers = _build_headers(token)
-    repositories: dict[str, Repository] = {}
+    repositories: dict[str, GithubRepository] = {}
     with _open_session() as session:
         for full_name in dict.fromkeys(names):
             found = get_repository(session, headers, full_name)
-            if isinstance(found, Err):
+            if is_err(found):
                 return found
             repositories.setdefault(found.full_name, found)
     return list(repositories.values())
@@ -206,10 +211,10 @@ def _open_session() -> "requests.Session":
 
 def get_repository(
     session: "requests.Session", headers: dict[str, str], full_name: str
-) -> Result[Repository]:
+) -> Result[GithubRepository]:
     """Fetch `owner/name`."""
     response = _request(session, "GET", f"{_GITHUB_API}/repos/{full_name}", headers)
-    if isinstance(response, Err):
+    if is_err(response):
         return response
     if response.status_code == HTTPStatus.NOT_FOUND:
         return Err(f"no such repository: {full_name}")
@@ -219,7 +224,7 @@ def get_repository(
         payload = response.json()
     except ValueError as exc:
         return Err(f"{full_name} did not return JSON: {exc}")
-    repository = Repository.from_dict(payload)
+    repository = GithubRepository.from_dict(payload)
     if repository is None:
         return Err(f"{full_name} named no clone url")
     return repository
@@ -227,16 +232,16 @@ def get_repository(
 
 def get_org_repositories(
     session: "requests.Session", headers: dict[str, str], org: str
-) -> Result[list[Repository]]:
+) -> Result[list[GithubRepository]]:
     """Fetch every repository in `org`.
 
     Stops after `_MAX_PAGES` pages, warning that the listing is incomplete.
     """
-    repositories: list[Repository] = []
+    repositories: list[GithubRepository] = []
     url = f"{_GITHUB_API}/orgs/{org}/repos?per_page={_PER_PAGE}"
     for _ in range(_MAX_PAGES):
         response = _request(session, "GET", url, headers)
-        if isinstance(response, Err):
+        if is_err(response):
             return response
         if response.status_code == HTTPStatus.NOT_FOUND:
             return Err(f"no such organization: {org}")
@@ -249,7 +254,7 @@ def get_org_repositories(
         if not isinstance(payloads, list):
             return Err(f"{url} did not return a list of repositories")
         for payload in payloads:
-            repository = Repository.from_dict(payload)
+            repository = GithubRepository.from_dict(payload)
             if repository is not None:
                 repositories.append(repository)
         next_url = _find_next_page(response.headers.get("Link", ""))
@@ -286,7 +291,7 @@ def get_enterprise_organizations(
             "variables": {"slug": enterprise, "after": cursor},
         }
         response = _request(session, "POST", _GITHUB_GRAPHQL, headers, body)
-        if isinstance(response, Err):
+        if is_err(response):
             return response
         if response.status_code == HTTPStatus.NOT_FOUND:
             return Err(f"no such enterprise: {enterprise}")

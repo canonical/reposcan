@@ -3,10 +3,6 @@
 
 """The `reposcan scan` command.
 
-`reposcan scan <types> <path>` runs each requested scan type against a repository in
-one backend session, then consolidates their findings into a single SARIF report.
-`<types>` is one scan type or several, comma-separated -- or `all` for every type.
-
 Each scan's own options (secrets' `--mode`/`--depth`, sca's
 `--include-dev-dependencies`/`--allow-code-execution`) are declared on the scan classes
 and aggregated onto this command via `extra_options`.
@@ -15,6 +11,7 @@ and aggregated onto this command via `extra_options`.
 import copy
 import logging
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from reposcan import output
@@ -25,7 +22,8 @@ from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
 from reposcan.result import is_err
-from reposcan.scans import ignore, sarif
+from reposcan.scans import bulk, ignore, sarif
+from reposcan.scans.analysis import Analysis
 from reposcan.scans.base import SecurityScan
 from reposcan.scans.registry import SCANS, parse_scan_names
 from reposcan.scans.run import run_analysis
@@ -41,6 +39,9 @@ FINDINGS_EXIT_CODE = 3
 # SARIF levels ranked for --fail-on's "at or above" threshold; a finding with no level
 # counts as warning, per SARIF. 'none' is absent (rank 0), so it never fails.
 _FAIL_RANK = {"note": 1, "warning": 2, "error": 3}
+
+# One repository per processor. Scans may be CPU-bound.
+_DEFAULT_SCAN_THREADS = os.cpu_count() or 1
 
 
 def _aggregate_scan_options(scans: dict[str, type[SecurityScan]]) -> tuple[Param, ...]:
@@ -78,7 +79,15 @@ class ScanCommand(Action):
         help="Scan type(s), comma-separated: secrets, sast, iac, workflow, sca, "
         "or all (e.g. sast,secrets).",
     )
-    path: str = positional(help="Path to the repository to scan.")
+    path: str = positional(
+        help="Path to the repository to scan, or with -r, the directory to search."
+    )
+    recursive: bool = flag("-r", help="Find and scan every git repository in PATH.")
+    threads: int = option(
+        default=_DEFAULT_SCAN_THREADS,
+        convert=int,
+        help="With -r, repositories to scan at once (default: one per processor).",
+    )
     output: str | None = option(
         "-o", help="Write the report to FILE instead of stdout."
     )
@@ -117,14 +126,21 @@ class ScanCommand(Action):
         Exit codes:
             0 when nothing at or above --fail-on was reported
             3 when a finding at or above --fail-on was reported
-            2 for a usage error, or when no backend could be selected
+            2 for a usage error, when no backend could be selected, or when no
+              repositories were found
             1 when a scan failed, or on a backend, database, or write failure
         """
-        names = self.scans
         path = os.path.abspath(self.path)
         if not os.path.isdir(path):
             logger.error("not a directory: %s", self.path)
             return 2
+        if self.recursive:
+            return self.scan_tree(path)
+        return self.scan_repository(path)
+
+    def scan_repository(self, path: str) -> int:
+        """Scan the repository at `path` and write the report."""
+        names = self.scans
         # Fail fast before the scan if the report file already exists. emit refuses to
         # overwrite as well, so a file appearing mid-scan is caught.
         if self.output is not None and Path(self.output).exists():
@@ -183,9 +199,68 @@ class ScanCommand(Action):
             logger.info("scan complete: %d finding(s)", report.count())
             if analysis.failed_scans:
                 return 1
-            threshold = _FAIL_RANK.get(self.fail_on, 0)  # 'none' -> 0, never fails
-            fails = bool(threshold) and any(
-                _FAIL_RANK.get(finding.level, 2) >= threshold
-                for finding in report.results
-            )
+            fails = _has_failing_finding(report.results, self.fail_on)
             return FINDINGS_EXIT_CODE if fails else 0
+
+    def scan_tree(self, path: str) -> int:
+        """Find and scan every repository in `path`."""
+        for option_name, given in (
+            ("-o", self.output is not None),
+            ("-f", self.format is not None),
+            ("-n", self.limit != DEFAULT_ROW_LIMIT),
+            ("--wrap", self.wrap != DEFAULT_WRAP_LINES),
+            ("--ignore-file", self.ignore_file is not None),
+        ):
+            if given:
+                logger.error("%s can't be used with -r", option_name)
+                return 2
+        if self.db is None:
+            logger.error("-r requires --db")
+            return 2
+
+        repositories = bulk.find_repositories(path)
+        if not repositories:
+            logger.error("no repositories under %s", self.path)
+            return 2
+        logger.info("scanning %d repositories", len(repositories))
+
+        user = get_host_user() if self.uid is None else RunUser(self.uid, self.uid, ())
+        results = bulk.scan_repositories(
+            repositories,
+            self.scans,
+            db=self.db,
+            backend=self.backend,
+            image=self.image,
+            user=user,
+            env=resolve_env(self.env),
+            threads=self.threads,
+            options={
+                param.name: getattr(self, param.name) for param in self.extra_options
+            },
+            use_ignore_files=not self.no_ignore_file,
+        )
+        analyses = [r for r in results.values() if isinstance(r, Analysis)]
+        complete = [a for a in analyses if not a.failed_scans]
+        findings: list[sarif.SarifResult] = []
+        for analysis in analyses:
+            for run in analysis.sarif_runs:
+                findings.extend(run.results)
+        logger.info(
+            "scanned %d of %d repositories; %d finding(s) recorded in %s",
+            len(complete),
+            len(results),
+            len(findings),
+            self.db,
+        )
+        if len(complete) != len(results):
+            return 1
+        fails = _has_failing_finding(findings, self.fail_on)
+        return FINDINGS_EXIT_CODE if fails else 0
+
+
+def _has_failing_finding(findings: Iterable[sarif.SarifResult], fail_on: str) -> bool:
+    """Check whether any of `findings` is at or above the `fail_on` level."""
+    threshold = _FAIL_RANK.get(fail_on, 0)
+    return bool(threshold) and any(
+        _FAIL_RANK.get(finding.level, 2) >= threshold for finding in findings
+    )

@@ -15,7 +15,7 @@ from reposcan.db.model import (
     Issue,
     ProjectSummary,
 )
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import ScanStatus
 from reposcan.scans.model import Artifact, ArtifactKind
@@ -200,7 +200,7 @@ def _open_session(path: str) -> sqlite.Session | None:
         )
         return None
     opened = sqlite.connect(path)
-    if isinstance(opened, Err):
+    if is_err(opened):
         logger.warning("%s", opened.msg)
         return None
     return opened

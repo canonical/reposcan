@@ -144,136 +144,19 @@ def is_error_handling(node: ast.Raise, path: str, owner: str) -> bool:
     return not (stub and klass)
 
 
-def find_weak_narrowings(tree: ast.Module) -> list[tuple[int, str]]:
-    """Find every `isinstance(x, Err)` that does not need both branches narrowed.
-
-    `isinstance` is the only form that narrows the success branch as well as the
-    failure one, so it is right when both halves are required. Otherwise, prefer:
-
-    - the value unused -> `is_err(x)`, which narrows the failure branch alone
-    - the error unused -> `get_value(x)`, which drops the error and yields `T | None`
-
-    A `not isinstance(...)` guard is examined too, with the branches swapped: what the
-    body proves is the value, and everything else proves the error. So is a subject
-    that is not a plain name, which cannot use a value it never bound.
-    """
+def find_isinstance_checks(tree: ast.Module) -> list[tuple[int, str]]:
+    """Find every `isinstance(x, Err)`, which `is_err(x)` narrows identically."""
     found: list[tuple[int, str]] = []
-    for owner in ast.walk(tree):
-        if not isinstance(owner, ast.FunctionDef | ast.AsyncFunctionDef):
+    for call in ast.walk(tree):
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
             continue
-        for statement in ast.walk(owner):
-            test = getattr(statement, "test", None)
-            body = getattr(statement, "body", None)
-            if test is None or body is None:
-                continue
-            statements = body if isinstance(body, list) else [body]
-            proven = {node for one in statements for node in ast.walk(one)}
-            for call in ast.walk(test):
-                if not isinstance(call, ast.Call):
-                    continue
-                subject = find_err_subject(call)
-                if subject is None:
-                    continue
-                shown = ast.unparse(subject)
-                uses_value, uses_error = classify_uses(
-                    owner, subject, proven, negated=is_negated(test, call)
-                )
-                if not uses_value:
-                    found.append(
-                        (
-                            call.lineno,
-                            f"isinstance({shown}, Err) never uses the value; "
-                            f"prefer is_err",
-                        )
-                    )
-                elif not uses_error:
-                    found.append(
-                        (
-                            call.lineno,
-                            f"isinstance({shown}, Err) never uses the error; "
-                            f"prefer get_value(...)",
-                        )
-                    )
+        if call.func.id != "isinstance" or len(call.args) != 2:
+            continue
+        subject, expected = call.args
+        if isinstance(expected, ast.Name) and expected.id == "Err":
+            shown = ast.unparse(subject)
+            found.append((call.lineno, f"isinstance({shown}, Err); use is_err"))
     return found
-
-
-def find_err_subject(node: object) -> ast.expr | None:
-    """Take the `x` of an `isinstance(x, Err)`, or None when that is not the shape."""
-    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
-        return None
-    if node.func.id != "isinstance" or len(node.args) != 2:
-        return None
-    subject, expected = node.args
-    if not (isinstance(expected, ast.Name) and expected.id == "Err"):
-        return None
-    return subject
-
-
-def is_negated(test: ast.expr, call: ast.AST) -> bool:
-    """Whether `call` sits under a `not`, which swaps what each branch proves."""
-    return any(
-        isinstance(node, ast.UnaryOp)
-        and isinstance(node.op, ast.Not)
-        and any(inner is call for inner in ast.walk(node.operand))
-        for node in ast.walk(test)
-    )
-
-
-def classify_uses(
-    owner: ast.AST, subject: ast.expr, proven: set[ast.AST], *, negated: bool
-) -> tuple[bool, bool]:
-    """Report whether the subject's value and its error are each used.
-
-    A subject that is not a plain name bound nothing, so neither half can be used.
-    Otherwise only the reads belonging to this binding count: a name reassigned further
-    down is a different value, and reads after that point say nothing about this one.
-
-    Returns:
-        (uses_value, uses_error).
-    """
-    if not isinstance(subject, ast.Name):
-        return (False, False)
-    uses_value = uses_error = False
-    for read in find_binding_reads(owner, subject):
-        proves_error = (read in proven) != negated
-        if proves_error or is_err_read(owner, read):
-            uses_error = True
-        else:
-            uses_value = True
-    return (uses_value, uses_error)
-
-
-def find_binding_reads(owner: ast.AST, subject: ast.Name) -> list[ast.Name]:
-    """Every read of `subject` belonging to the binding it was tested under.
-
-    Bounded by the assignments either side of it, so a name reused for a second call
-    does not lend its reads to the first.
-    """
-    named = [
-        node
-        for node in ast.walk(owner)
-        if isinstance(node, ast.Name) and node.id == subject.id
-    ]
-    stores = sorted(node.lineno for node in named if isinstance(node.ctx, ast.Store))
-    opens = max((line for line in stores if line <= subject.lineno), default=0)
-    closes = min((line for line in stores if line > subject.lineno), default=10**9)
-    return [
-        node
-        for node in named
-        if isinstance(node.ctx, ast.Load)
-        and node is not subject
-        and opens <= node.lineno < closes
-    ]
-
-
-def is_err_read(owner: ast.AST, read: ast.Name) -> bool:
-    """Whether this read reaches `.msg` or `.timed_out`, which only an Err carries."""
-    return any(
-        isinstance(node, ast.Attribute)
-        and node.value is read
-        and node.attr in ("msg", "timed_out")
-        for node in ast.walk(owner)
-    )
 
 
 def find_violations(path: Path) -> list[tuple[int, str]]:
@@ -318,8 +201,7 @@ def find_violations(path: Path) -> list[tuple[int, str]]:
                     f"caller's Result; return an Err instead",
                 )
             )
-    if "src" in path.parts:  # see find_weak_narrowings; tests express intent freely
-        found += find_weak_narrowings(tree)
+    found += find_isinstance_checks(tree)
     return sorted(found)
 
 
@@ -355,36 +237,6 @@ def narrows(x: int) -> int:
     if isinstance(got, Err):
         return 1
     return len(got)
-
-
-def weak(x: int) -> Result[str]:
-    done = void(x)
-    if isinstance(done, Err):
-        return done
-    return "ok"
-
-
-def weak_negated(x: int) -> Result[str]:
-    flipped = void(x)
-    if not isinstance(flipped, Err):
-        return "ok"
-    return flipped
-
-
-def weak_unnamed(x: int) -> Result[str]:
-    if isinstance(void(x), Err):
-        return Err("gave up")
-    return "ok"
-
-
-def weak_rebound(x: int) -> int:
-    twice = spelled(x)
-    if isinstance(twice, Err):
-        return 1
-    twice = spelled(x)
-    if isinstance(twice, Err):
-        return 2
-    return len(twice)
 """
 
 # expected self-test findings
@@ -393,12 +245,7 @@ _EXPECTED = {
     "pair",
     "raise:raises",  # an ordinary failure
     "raise:stub",  # NotImplementedError outside a class is not a subclass contract
-    "is_err:done",  # the plain form
-    "is_err:flipped",  # `not isinstance(...)`, which swaps the branches
-    "is_err:void(x)",  # a subject that never bound a name
-    "is_err:twice",  # the first of two bindings sharing one name
-    "get_value:twice",  # the second, whose value is used but whose error is not
-    "get_value:got",  # narrows both, but only ever uses the value
+    "is_err:got",  # `isinstance(x, Err)`
 }
 
 
@@ -410,10 +257,9 @@ def build_key(message: str) -> str:
     """
     if message.startswith("raise in "):
         return "raise:" + message[len("raise in ") : message.index(" routes")]
-    if not message.startswith("isinstance("):
-        return message.split()[0]
-    subject = message[len("isinstance(") : message.index(", Err)")]
-    return f"{'get_value' if 'get_value' in message else 'is_err'}:{subject}"
+    if message.startswith("isinstance("):
+        return "is_err:" + message[len("isinstance(") : message.index(", Err)")]
+    return message.split()[0]
 
 
 def verify_self() -> None:

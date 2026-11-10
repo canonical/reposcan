@@ -21,7 +21,7 @@ from reposcan.backends import Backend
 from reposcan.execution.context import ExecutionContext
 from reposcan.image.ensure import ensure_built
 from reposcan.image.spec import build_spec
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.tools.install import detect_platform
 from reposcan.tools.registry import TOOLS
 
@@ -53,23 +53,23 @@ def exercise_lifecycle(ctx: ExecutionContext) -> None:
     """
     # Runs in the ubuntu:26.04 image, not on the host.
     os_release = ctx.run(["cat", "/etc/os-release"])
-    assert not isinstance(os_release, Err)
+    assert not is_err(os_release)
     assert os_release.exit_code == 0
     assert 'VERSION_ID="26.04"' in os_release.stdout
 
     # The command's exit code is propagated.
     exit_code = ctx.run(["sh", "-c", "exit 7"])
-    assert not isinstance(exit_code, Err)
+    assert not is_err(exit_code)
     assert exit_code.exit_code == 7
 
     # Per-command env reaches the container.
     env = ctx.run(["sh", "-c", "echo $REPOSCAN_IT"], env={"REPOSCAN_IT": "present"})
-    assert not isinstance(env, Err)
+    assert not is_err(env)
     assert env.stdout.strip() == "present"
 
     # cwd is honored.
     cwd = ctx.run(["pwd"], cwd="/tmp")
-    assert not isinstance(cwd, Err)
+    assert not is_err(cwd)
     assert cwd.stdout.strip() == "/tmp"
 
 
@@ -105,9 +105,7 @@ def probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> Non
     tool invocation is logged at INFO, so the run's progress is visible.
     """
     available = backend.check_availability()
-    assert not isinstance(available, Err), (
-        f"{backend.name} unavailable: {available.msg}"
-    )
+    assert not is_err(available), f"{backend.name} unavailable: {available.msg}"
     assert set(_VERSION_PROBE) == set(TOOLS)  # probe table matches the tool set
 
     builder, open_context = backend.builder, backend.context
@@ -118,7 +116,7 @@ def probe_every_tool_in(backend: Backend, *, force_rebuild: bool = False) -> Non
         reference = ensure_built(
             builder, build_spec(detect_platform()), force=force_rebuild
         )
-        assert not isinstance(reference, Err)
+        assert not is_err(reference)
         logger.info("[%s] starting container from %s", backend.name, reference)
         ctx = open_context(reference)
         started = ctx.start()
