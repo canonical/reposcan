@@ -14,7 +14,7 @@ from reposcan.execution.process import ExecResult
 from reposcan.image.docker import DockerImageBuilder
 from reposcan.image.ensure import ensure_built, ensure_pulled
 from reposcan.image.spec import BuildSpec
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 _SPEC = BuildSpec("ubuntu:24.04", "/opt/reposcan", "#!/bin/sh\ntrue\n")
 
@@ -127,7 +127,7 @@ def test_a_tag_is_pinned_on_first_use_and_refused_once_it_moves() -> None:
         assert docker.pulls == 2
         docker.identity = "sha256:bbb"  # the tag now points at a different image
         moved = ensure_pulled(ref)
-        assert isinstance(moved, Err)
+        assert is_err(moved)
         assert "changed since first use" in moved.msg
 
 
@@ -151,10 +151,10 @@ def test_pull_failures_are_returned() -> None:
     )
     with _isolated_cache(), _docker(unreachable):
         failed = ensure_pulled(ref)
-        assert isinstance(failed, Err) and "no network" in failed.msg
+        assert is_err(failed) and "no network" in failed.msg
     # The pull "succeeds" but the image is still not inspectable: a Err, not a
     # fall-through to a stale local state.
     with _isolated_cache(), _docker(_FakeDocker(identity=None, present=False)):
         vanished = ensure_pulled(ref)
-        assert isinstance(vanished, Err)
+        assert is_err(vanished)
         assert "not present after pull" in vanished.msg

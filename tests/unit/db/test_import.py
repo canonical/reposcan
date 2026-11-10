@@ -10,7 +10,7 @@ from pathlib import Path
 
 from reposcan.db import read, write
 from reposcan.db.model import ImportCounts
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind
@@ -129,7 +129,7 @@ def test_an_issue_both_databases_knew_becomes_one_issue() -> None:
         _write_database(
             destination, _build_analysis("b1", _build_findings_scan("X", "Y"))
         )
-        assert not isinstance(write.import_database(source, destination, "ci"), Err)
+        assert not is_err(write.import_database(source, destination, "ci"))
         spans = {
             issue.rule: (issue.first_seen_analysis, issue.last_seen_analysis)
             for issue in read.list_issues(destination, project_id=1)
@@ -214,7 +214,7 @@ def test_a_source_that_is_not_a_current_reposcan_database_is_refused() -> None:
         missing = os.path.join(directory, "missing.db")
         for source in (text, newer, posed, missing):
             outcome = write.import_database(source, destination, "ci")
-            assert isinstance(outcome, Err), source
+            assert is_err(outcome), source
             assert not os.path.exists(destination), source
         assert not os.path.exists(missing)  # reading never creates the source
 
@@ -241,7 +241,7 @@ def test_a_malformed_analysis_stops_the_import_and_a_rerun_finishes_it() -> None
         connection.execute(update, ("{not json",))
         connection.commit()
         first_outcome = write.import_database(source, destination, "ci")
-        assert isinstance(first_outcome, Err)
+        assert is_err(first_outcome)
         assert "u2" in first_outcome.msg
         # Each analysis commits on its own: the one before the failure stays.
         assert _query(destination, "SELECT uuid FROM analysis") == [("u1",)]

@@ -24,7 +24,7 @@ from reposcan.backends import (
 from reposcan.execution.local import LocalContext
 from reposcan.execution.process import ExecResult
 from reposcan.image.spec import CANONICAL_REF
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 
 @contextmanager
@@ -55,7 +55,7 @@ def _availability(*, lxd_ok: bool, docker_ok: bool) -> Iterator[None]:
 
 def _pick_backend(requested: str | None) -> Backend:
     chosen = select_backend(requested)
-    assert not isinstance(chosen, Err), chosen.msg
+    assert not is_err(chosen), chosen.msg
     return chosen
 
 
@@ -81,10 +81,10 @@ def test_select_backend_honours_the_resolved_name_and_treats_none_as_auto() -> N
 
 
 def test_invalid_selections_are_failures() -> None:
-    assert isinstance(select_backend("bogus"), Err)  # unknown name
+    assert is_err(select_backend("bogus"))  # unknown name
     with _availability(lxd_ok=False, docker_ok=False):
         failure = select_backend("docker")  # explicit but unavailable
-    assert isinstance(failure, Err) and "docker" in failure.msg
+    assert is_err(failure) and "docker" in failure.msg
 
 
 def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> None:
@@ -103,7 +103,7 @@ def test_the_image_is_built_for_image_build_and_a_backend_that_cannot_pull() -> 
         # LXD cannot pull yet, so a configured image still builds locally.
         assert _provision_image(BACKENDS["lxd"], "canonical") == "reposcan:tools"
         backends.ensure_built = build_fail
-        assert isinstance(_provision_image(BACKENDS["docker"], "build"), Err)
+        assert is_err(_provision_image(BACKENDS["docker"], "build"))
     finally:
         backends.ensure_built = saved
 
@@ -122,7 +122,7 @@ def test_the_configured_or_canonical_image_is_pulled_when_the_backend_can() -> N
     assert _provision_image(docker, "canonical") == pinned
 
     result = _provision_image(replace(docker, puller=pull_fail), None)
-    assert isinstance(result, Err)
+    assert is_err(result)
     assert "--image build" in result.msg  # names the alternative
 
 

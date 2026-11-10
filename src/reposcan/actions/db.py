@@ -9,7 +9,7 @@ import os
 from reposcan.actions.base import Action
 from reposcan.cli_kit import Group, flag, option, positional
 from reposcan.db import write as db_write
-from reposcan.result import Err
+from reposcan.result import is_err
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class DbImport(Action):
         result = db_write.import_database(
             self.source, self.db, self.produced_by, retain_secrets=self.retain_secrets
         )
-        if isinstance(result, Err):
+        if is_err(result):
             logger.error("%s", result.msg)
             return 1
         logger.info(

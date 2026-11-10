@@ -6,23 +6,23 @@
 Uses the docker CLI (no SDK).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from reposcan.execution.context import (
+    Mount,
     RunUser,
-    locate_mounted_target,
     select_home,
     wrap_with_setpriv,
 )
 from reposcan.execution.process import ExecResult, run_process
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 
 
 class DockerContext:
     """Runs commands in an ephemeral container via `docker`, started from `image`.
 
-    When `mount_source` is given, that host directory is bind-mounted read-only at
-    `locate_mounted_target(mount_source)` so a scan can reach the repository.
+    Each of `mounts` is bind-mounted read-only at its target, so a scan can reach
+    the repository.
     """
 
     name = "docker"
@@ -30,24 +30,23 @@ class DockerContext:
     def __init__(
         self,
         image: str,
-        mount_source: str | None = None,
+        mounts: Collection[Mount] = (),
         user: RunUser | None = None,
         env: Mapping[str, str] | None = None,
     ) -> None:
         self._image = image
-        self._mount_source = mount_source
+        self._mounts = list(mounts)
         self._user = user  # the default identity for every run (None = root)
         self._env = dict(env or {})
         self._instance_name: str | None = None
 
     def start(self) -> Result[None]:
         argv = ["docker", "run", "-d", "--rm"]
-        if self._mount_source is not None:
-            src = self._mount_source
-            argv += ["-v", f"{src}:{locate_mounted_target(src)}:ro"]
+        for mount in self._mounts:
+            argv += ["-v", f"{mount.source}:{mount.target}:ro"]
         argv += [self._image, "sleep", "infinity"]
         result = run_process(argv)
-        if isinstance(result, Err):
+        if is_err(result):
             return result
         if result.exit_code != 0:
             return Err(result.stderr.strip() or "docker run failed")

@@ -44,8 +44,8 @@ def write_analysis(path: str, record: Analysis) -> Result[None]:
     """
     if is_err(err := schema.confirm_usable(path)):
         return err
-    session = sqlite.connect(path, write=True)
-    if isinstance(session, Err):
+    session = sqlite.connect(path, sqlite.SessionMode.READ_AND_WRITE)
+    if is_err(session):
         return session
     with session:
         schema.create_all(session)
@@ -80,20 +80,20 @@ def import_database(
     if schema.is_current(destination):
         known_uuids = {summary.uuid for summary in read.list_analyses(destination)}
     result = sqlite.connect_read_only(source)
-    if isinstance(result, Err):
+    if is_err(result):
         return result
     imported = 0
     skipped = 0
     with result as session:
         list_result = _list_importable_analyses(session, source)
-        if isinstance(list_result, Err):
+        if is_err(list_result):
             return list_result
         for analysis_id, uuid in list_result:
             if uuid in known_uuids:
                 skipped += 1
                 continue
             load_result = read.load_analysis(session, analysis_id)
-            if isinstance(load_result, Err):
+            if is_err(load_result):
                 return Err(
                     f"could not read analysis {uuid} of {source}: {load_result.msg}"
                 )

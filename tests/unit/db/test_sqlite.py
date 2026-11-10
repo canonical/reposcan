@@ -10,6 +10,7 @@ import tempfile
 import pytest
 
 from reposcan.db.sqlite import (
+    SessionMode,
     Table,
     TableSchema,
     connect,
@@ -17,7 +18,7 @@ from reposcan.db.sqlite import (
     is_sqlite,
     read_version,
 )
-from reposcan.result import Err, is_err
+from reposcan.result import is_err
 
 _ITEMS = TableSchema(
     name="items",
@@ -51,28 +52,28 @@ def test_a_session_commits_on_a_clean_exit_and_rolls_back_on_an_error() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "x.db")
 
-        session = connect(path)
-        assert not isinstance(session, Err)
+        session = connect(path, SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with session:
             session.create(_ITEMS)
             session.insert(Table(_ITEMS, [("1", "kept")]))
 
-        session = connect(path)
-        assert not isinstance(session, Err)
+        session = connect(path, SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with pytest.raises(RuntimeError), session:
             session.insert(Table(_ITEMS, [("2", "discarded")]))
             raise RuntimeError("the caller failed mid-transaction")
 
-        session = connect(path)
-        assert not isinstance(session, Err)
+        session = connect(path, SessionMode.READ)
+        assert not is_err(session)
         with session:
             assert session.query(_ITEMS.select or "") == [("1", "kept")]
 
 
 def test_a_session_binds_parameters_and_reports_the_inserted_row_id() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        session = connect(os.path.join(directory, "x.db"), SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with session:
             session.create(_ITEMS)
             first = session.insert_row(_ITEMS.insert, ("1", "a"))
@@ -84,8 +85,8 @@ def test_a_session_binds_parameters_and_reports_the_inserted_row_id() -> None:
 
 def test_has_table_reports_whether_a_table_is_there() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        session = connect(os.path.join(directory, "x.db"), SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with session:
             assert not session.has_table("items")
             session.create(_ITEMS)
@@ -94,8 +95,8 @@ def test_has_table_reports_whether_a_table_is_there() -> None:
 
 def test_a_session_enforces_foreign_keys() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        session = connect(os.path.join(directory, "x.db"))
-        assert not isinstance(session, Err)
+        session = connect(os.path.join(directory, "x.db"), SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with pytest.raises(sqlite3.IntegrityError), session:
             session.create(_PARENT)
             session.create(_CHILD)
@@ -105,8 +106,8 @@ def test_a_session_enforces_foreign_keys() -> None:
 def test_the_schema_version_round_trips_and_is_absent_for_a_non_database() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "x.db")
-        session = connect(path)
-        assert not isinstance(session, Err)
+        session = connect(path, SessionMode.READ_AND_WRITE)
+        assert not is_err(session)
         with session:
             assert session.read_version() == 0  # a new database starts at zero
             session.set_version(3)
@@ -123,7 +124,7 @@ def test_the_schema_version_round_trips_and_is_absent_for_a_non_database() -> No
 def test_connect_reports_a_failure_instead_of_raising() -> None:
     with tempfile.TemporaryDirectory() as directory:
         # A directory is not a file sqlite can open, so connect must explain itself.
-        opened = connect(directory)
+        opened = connect(directory, SessionMode.READ_AND_WRITE)
     assert is_err(opened) and directory in opened.msg
 
 
@@ -131,13 +132,13 @@ def test_a_read_only_session_reads_its_file_and_writes_nothing() -> None:
     with tempfile.TemporaryDirectory() as directory:
         # A name that would add URI parameters if it reached sqlite unescaped.
         path = os.path.join(directory, "items.db?mode=rwc#x")
-        writer_result = connect(path)
-        assert not isinstance(writer_result, Err)
+        writer_result = connect(path, SessionMode.READ_AND_WRITE)
+        assert not is_err(writer_result)
         with writer_result as writer:
             writer.create(_ITEMS)
             writer.set_version(7)
         reader_result = connect_read_only(path)
-        assert not isinstance(reader_result, Err)
+        assert not is_err(reader_result)
         with reader_result as reader:
             version = reader.read_version()
             with pytest.raises(sqlite3.OperationalError, match="readonly"):
@@ -146,3 +147,20 @@ def test_a_read_only_session_reads_its_file_and_writes_nothing() -> None:
         assert is_err(connect_read_only(missing))
         assert not os.path.exists(missing)
     assert version == 7  # the file named, not one that its "?" cut short
+
+
+def test_a_read_session_cannot_create_or_change_the_database() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "x.db")
+        assert is_err(connect(path, SessionMode.READ))
+        assert not os.path.exists(path)
+
+        writer = connect(path, SessionMode.READ_AND_WRITE)
+        assert not is_err(writer)
+        with writer:
+            writer.create(_ITEMS)
+
+        reader = connect(path, SessionMode.READ)
+        assert not is_err(reader)
+        with pytest.raises(sqlite3.OperationalError, match="readonly"), reader:
+            reader.insert(Table(_ITEMS, [("1", "x")]))

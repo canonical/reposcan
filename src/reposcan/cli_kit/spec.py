@@ -384,7 +384,7 @@ class Cli:
 
         args = list(sys.argv[1:] if argv is None else argv)
         parsed = parse(self.root, self.base, args, self.name)
-        if isinstance(parsed, Err):
+        if is_err(parsed):
             print(parsed.msg, file=sys.stderr)  # parse names the command path itself
             return 2
         if parsed.help:

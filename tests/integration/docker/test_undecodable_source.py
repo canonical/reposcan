@@ -16,7 +16,7 @@ from pathlib import Path
 
 from reposcan.backends import BACKENDS, start_session
 from reposcan.execution.context import get_host_user
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans.run import run_scan
 from reposcan.scans.secrets import SecretsScan
 
@@ -32,7 +32,7 @@ _SECRET = (
 
 def test_secret_in_a_gzip_file_gets_a_line_hash() -> None:
     available = BACKENDS["docker"].check_availability()
-    assert not isinstance(available, Err), "Docker is not available"
+    assert not is_err(available), "Docker is not available"
 
     with tempfile.TemporaryDirectory() as repo:
         Path(repo, "config.env.gz").write_bytes(gzip.compress(_SECRET, mtime=0))
@@ -51,7 +51,7 @@ def test_secret_in_a_gzip_file_gets_a_line_hash() -> None:
                 SecretsScan(), session.context, session.target, session.install_dir
             )
 
-    assert not isinstance(run, Err), run.msg
+    assert not is_err(run), run.msg
     gzipped = [r for r in run.results if r.uri.endswith("config.env.gz")]
     assert gzipped, f"no finding in config.env.gz: {[r.uri for r in run.results]}"
     fingerprints = gzipped[0].result.get("partialFingerprints", {})

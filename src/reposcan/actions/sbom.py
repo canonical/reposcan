@@ -14,7 +14,7 @@ from reposcan.cli_kit import flag, option, positional
 from reposcan.db import write as db_write
 from reposcan.execution.context import RunUser, get_host_user, resolve_env
 from reposcan.output import DEFAULT_ROW_LIMIT, Format
-from reposcan.result import Err, is_err
+from reposcan.result import is_err
 from reposcan.scans.analysis import Analysis, ScanRecord, utc_now
 from reposcan.scans.repo import read_repository_state
 from reposcan.scans.run import run_sbom_scan
@@ -104,7 +104,7 @@ class SbomCommand(Action):
                     resolution_workdir=session.resolution_workdir,
                     stream=True,
                 )
-                if isinstance(artifact, Err):
+                if is_err(artifact):
                     logger.error("sbom failed: %s", artifact.msg)
                     return 1
 

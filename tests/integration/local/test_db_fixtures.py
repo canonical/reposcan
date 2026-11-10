@@ -14,7 +14,7 @@ import os
 import tempfile
 
 from reposcan.db import read, write
-from reposcan.result import Err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import Artifact, ArtifactKind
@@ -144,7 +144,7 @@ def test_an_imported_database_reproduces_both_fixtures() -> None:
         source = os.path.join(directory, "source.db")
         destination = os.path.join(directory, "destination.db")
         assert write.write_analysis(source, analysis) is None
-        assert not isinstance(write.import_database(source, destination, "ci"), Err)
+        assert not is_err(write.import_database(source, destination, "ci"))
         imported = [artifact.to_dict() for artifact in read.list_artifacts(destination)]
         original = [artifact.to_dict() for artifact in read.list_artifacts(source)]
     assert imported == original

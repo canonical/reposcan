@@ -75,3 +75,16 @@ def write_table(
             len(rows),
         )
     sys.stdout.write(render_table(headers, shown, wrap=wrap))
+
+
+_UNIT_STEP = 1024  # KB in an MB, MB in a GB, ...
+
+
+def format_size(kilobytes: int) -> str:
+    """Render a size in KB for people: '512 KB', '3.5 MB', '2.5 GB'."""
+    size, unit = float(kilobytes), "KB"
+    for bigger in ("MB", "GB", "TB"):
+        if size < _UNIT_STEP:
+            break
+        size, unit = size / _UNIT_STEP, bigger
+    return f"{size:.0f} {unit}" if unit == "KB" else f"{size:.1f} {unit}"

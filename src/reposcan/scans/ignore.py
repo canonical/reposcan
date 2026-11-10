@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reposcan.execution.context import ExecutionContext
-from reposcan.result import Err, Result
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import sarif
 
 # The ignorefile reposcan looks for in a scanned repository by default.
@@ -70,7 +70,7 @@ def parse(text: str) -> tuple[list[IgnoreRule], list[str]]:
     errors: list[str] = []
     for number, raw in enumerate(text.splitlines(), start=1):
         fields = _split_fields(raw)
-        if isinstance(fields, Err):
+        if is_err(fields):
             errors.append(f"ignorefile line {number}: {fields.msg}")
             continue
         if not fields:  # blank or comment-only line

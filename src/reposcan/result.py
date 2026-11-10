@@ -7,15 +7,12 @@ A fallible call returns `Result[T]`, which is `T | Err`, so the caller cannot re
 value without first ruling out the error:
 
     reference = ensure_built(builder, spec)
-    if isinstance(reference, Err):
+    if is_err(reference):
         logger.error(reference.msg)
         return 1
     ctx = backend.context(reference)
 
-Use `isinstance(x, Err)` whenever both the value and the error must be type-narrowed.
-(`TypeIs` would also narrow both branches, but it needs Python 3.13.)
-
-When the value is not needed, use `is_err`:
+When the value is not needed, bind the error in the test:
 
     if is_err(e := write_json(document, path)):
         logger.error(e.msg)
@@ -32,8 +29,14 @@ When the value is not needed but the error must be kept, use `get_err`:
     # returns Err | None
 """
 
+import sys
 from dataclasses import dataclass
-from typing import TypeAlias, TypeGuard, TypeVar
+from typing import TypeAlias, TypeVar
+
+if sys.version_info >= (3, 13):
+    from typing import TypeIs
+else:
+    from typing_extensions import TypeIs
 
 T = TypeVar("T")
 
@@ -53,7 +56,7 @@ class Err:
 Result: TypeAlias = T | Err
 
 
-def is_err(result: Result[object]) -> TypeGuard[Err]:
+def is_err(result: Result[object]) -> TypeIs[Err]:
     """Report whether an object is an Err."""
     return isinstance(result, Err)
 
