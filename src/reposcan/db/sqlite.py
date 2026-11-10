@@ -11,6 +11,7 @@ import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -64,28 +65,63 @@ def is_sqlite(data: bytes) -> bool:
     return data[:16] == _MAGIC
 
 
-def connect(path: str) -> "Result[Session]":
+class SessionMode(Enum):
+    """What a session may do to its database."""
+
+    READ = "r"
+    READ_AND_WRITE = "rw"
+
+
+def connect(path: str, mode: SessionMode) -> "Result[Session]":
     """Open a session on the database at `path`.
 
-    Creates the file when it is absent. Returns an error rather than raising.
+    sqlite lets any number of connections read a database at the same time, but only
+    one connection can write to it at a time. To write, a connection takes the
+    database's write lock, and holds it until its transaction commits or rolls back.
 
-    sqlite serializes writers. Write-ahead logging lets readers work while a write is in
-    flight, and the busy timeout makes a second writer wait rather than fail.
+    A READ_AND_WRITE session switches the database to write-ahead logging (WAL). In
+    that mode a writer adds its changes to a log file beside the database instead of
+    changing the database file directly. Readers keep seeing the last committed state
+    while a write is in progress, so readers and the writer don't wait for each
+    other. The mode is stored in the database file, so it outlasts the session.
+
+    Writers still take turns. When a session asks for the write lock while another
+    holds it, sqlite retries for up to `BUSY_TIMEOUT_SECONDS` instead of failing at
+    once, so two writers, in separate threads or processes, can record analyses into
+    one database at the same time. The retrying only helps a session that asks for
+    the lock before it reads anything, which is why a READ_AND_WRITE session takes
+    the lock as soon as it begins.
+
+    Args:
+        path: The database file.
+        mode: READ opens an existing database that the session can read but not
+            change, and never creates the file. READ_AND_WRITE creates the file when
+            it is absent, and takes the write lock as the session begins.
+
+    Returns:
+        A session to use in a `with` block, or an Err when the database cannot be
+        opened, such as a READ session on a file that does not exist.
     """
     try:
         # isolation_level=None turns off sqlite3's implicit transaction handling, so
         # the session's own BEGIN/COMMIT are the only transaction boundaries.
-        connection = sqlite3.connect(
-            path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
-        )
-        # Not available on every filesystem (notably NFS); sqlite reports the mode it
-        # settled on, and the rollback journal it falls back to is still correct.
-        (mode,) = connection.execute("PRAGMA journal_mode = WAL").fetchone()
-        if str(mode).lower() != "wal":
-            logger.debug("%s is journalled as %s, not wal", path, mode)
+        if mode is SessionMode.READ:
+            connection = sqlite3.connect(
+                Path(path).resolve().as_uri() + "?mode=ro",
+                uri=True,
+                isolation_level=None,
+                timeout=BUSY_TIMEOUT_SECONDS,
+            )
+        else:
+            connection = sqlite3.connect(
+                path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
+            )
+            (journal,) = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+            if str(journal).lower() != "wal":
+                logger.debug("%s is journalled as %s, not wal", path, journal)
     except sqlite3.Error as exc:
         return Err(f"could not open {path}: {exc}")
-    return Session(connection)
+    return Session(connection, mode)
 
 
 def read_version(path: str) -> int | None:
@@ -115,14 +151,29 @@ class Session:
     supplied by the caller.
     """
 
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: sqlite3.Connection, mode: SessionMode) -> None:
         self._connection = connection
+        self._mode = mode
 
     def __enter__(self) -> "Session":
         # Foreign keys are per-connection, off by default, and silently ignored inside
         # a transaction, so this has to happen before the BEGIN.
         self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.execute("BEGIN")
+        # Under WAL, a transaction reads a snapshot: the database as it was when the
+        # transaction first read it. A plain BEGIN asks for the write lock only when
+        # the transaction first writes. If another writer committed in between, the
+        # snapshot is out of date, and sqlite refuses the lock at once with
+        # SQLITE_BUSY_SNAPSHOT ("database is locked"). Waiting can't fix an old
+        # snapshot, so the busy timeout doesn't help. Recording an analysis reads
+        # before it writes, so two recordings at once could fail this way.
+        #
+        # BEGIN IMMEDIATE takes the write lock before the first read. A second writer
+        # then waits until the first commits, and its snapshot includes those changes.
+        # A READ session never writes, so a plain BEGIN is enough for it.
+        if self._mode is SessionMode.READ_AND_WRITE:
+            self._connection.execute("BEGIN IMMEDIATE")
+        else:
+            self._connection.execute("BEGIN")
         return self
 
     def __exit__(

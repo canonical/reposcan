@@ -199,7 +199,7 @@ def _open_session(path: str) -> sqlite.Session | None:
             schema.SCHEMA_VERSION,
         )
         return None
-    opened = sqlite.connect(path)
+    opened = sqlite.connect(path, sqlite.SessionMode.READ)
     if is_err(opened):
         logger.warning("%s", opened.msg)
         return None
