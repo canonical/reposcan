@@ -74,12 +74,14 @@ def import_database(
         How many analyses were imported and skipped, or an Err when either database
         is unusable or an analysis fails to import.
     """
+    if is_err(err := schema.confirm_usable(source, must_be_current=True)):
+        return err
     if is_err(err := schema.confirm_usable(destination)):
         return err
     known_uuids: set[str] = set()
     if schema.is_current(destination):
         known_uuids = {summary.uuid for summary in read.list_analyses(destination)}
-    result = sqlite.connect_read_only(source)
+    result = sqlite.connect(source, sqlite.SessionMode.READ)
     if is_err(result):
         return result
     imported = 0
@@ -98,8 +100,7 @@ def import_database(
                     f"could not read analysis {uuid} of {source}: {load_result.msg}"
                 )
             analysis = load_result
-            if not analysis.produced_by:
-                analysis.produced_by = produced_by
+            analysis.produced_by = analysis.produced_by or produced_by
             # The rows came from elsewhere, and stripping and recording read them again.
             try:
                 if not retain_secrets:
@@ -124,20 +125,13 @@ def _list_importable_analyses(
     """List the id and uuid of every analysis in `source`, oldest-ingested first.
 
     Returns:
-        The list, or an Err when `source` is not a whole reposcan database of this
-        version.
+        An `(analysis_id, uuid)` pair for each analysis, or an Err when `source`'s
+        rows cannot be read.
     """
     try:
-        if session.read_version() != schema.SCHEMA_VERSION:
-            return Err(
-                f"{source} is not a version {schema.SCHEMA_VERSION} reposcan database"
-            )
-        # A view standing in for a table could compute rows without end.
-        for table in schema.TABLES:
-            if not session.has_table(table.name):
-                return Err(f"{source} has no {table.name} table")
         return [
-            (int(row[0]), str(row[2])) for row in session.query(schema.SELECT_ANALYSES)
+            (int(analysis_id), str(uuid))
+            for analysis_id, uuid in session.query(schema.SELECT_ANALYSIS_IDS_AND_UUIDS)
         ]
     except read.MALFORMED_ROW_ERRORS as exc:
         hint = ""

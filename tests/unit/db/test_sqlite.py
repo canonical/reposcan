@@ -4,6 +4,7 @@
 """Tests for the generic sqlite tabular store (reposcan.db.sqlite)."""
 
 import os
+import shutil
 import sqlite3
 import tempfile
 
@@ -14,7 +15,6 @@ from reposcan.db.sqlite import (
     Table,
     TableSchema,
     connect,
-    connect_read_only,
     is_sqlite,
     read_version,
 )
@@ -121,6 +121,33 @@ def test_the_schema_version_round_trips_and_is_absent_for_a_non_database() -> No
         assert read_version(not_a_db) is None
 
 
+def test_reading_the_version_never_changes_the_file() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        live = os.path.join(directory, "live.db")
+        # isolation_level=None commits each statement as soon as it runs.
+        writer = sqlite3.connect(live, isolation_level=None)
+        # Under WAL, a committed change goes into the "-wal" log beside the file, and
+        # reaches the file itself only when the log is folded in (a checkpoint).
+        writer.execute("PRAGMA journal_mode = WAL")
+        writer.execute("PRAGMA user_version = 3")
+        # Copied while the writer is still open, as a database taken from a running
+        # CI job could be: the copy's version 3 exists only in its log.
+        copy = os.path.join(directory, "copy.db")
+        shutil.copy(live, copy)
+        shutil.copy(live + "-wal", copy + "-wal")
+        # Closing checkpoints live.db's own log; the copy and its log are untouched.
+        writer.close()
+        with open(copy, "rb") as handle:
+            before = handle.read()
+
+        # The version can only have come from the copy's log. A read-write
+        # connection would also fold that log into the file as it closes, changing
+        # the file's bytes; a read-only one must leave them as they were.
+        assert read_version(copy) == 3
+        with open(copy, "rb") as handle:
+            assert handle.read() == before
+
+
 def test_connect_reports_a_failure_instead_of_raising() -> None:
     with tempfile.TemporaryDirectory() as directory:
         # A directory is not a file sqlite can open, so connect must explain itself.
@@ -128,39 +155,24 @@ def test_connect_reports_a_failure_instead_of_raising() -> None:
     assert is_err(opened) and directory in opened.msg
 
 
-def test_a_read_only_session_reads_its_file_and_writes_nothing() -> None:
+def test_a_read_session_reads_its_file_and_writes_nothing() -> None:
     with tempfile.TemporaryDirectory() as directory:
+        missing = os.path.join(directory, "missing.db")
+        assert is_err(connect(missing, SessionMode.READ))
+        assert not os.path.exists(missing)
+
         # A name that would add URI parameters if it reached sqlite unescaped.
         path = os.path.join(directory, "items.db?mode=rwc#x")
+        version = 7
         writer_result = connect(path, SessionMode.READ_AND_WRITE)
         assert not is_err(writer_result)
         with writer_result as writer:
             writer.create(_ITEMS)
-            writer.set_version(7)
-        reader_result = connect_read_only(path)
+            writer.set_version(version)
+        reader_result = connect(path, SessionMode.READ)
         assert not is_err(reader_result)
         with reader_result as reader:
-            version = reader.read_version()
+            # The file named, not one that its "?" cut short.
+            assert reader.read_version() == version
             with pytest.raises(sqlite3.OperationalError, match="readonly"):
                 reader.insert(Table(_ITEMS, [("1", "x")]))
-        missing = os.path.join(directory, "missing.db")
-        assert is_err(connect_read_only(missing))
-        assert not os.path.exists(missing)
-    assert version == 7  # the file named, not one that its "?" cut short
-
-
-def test_a_read_session_cannot_create_or_change_the_database() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, "x.db")
-        assert is_err(connect(path, SessionMode.READ))
-        assert not os.path.exists(path)
-
-        writer = connect(path, SessionMode.READ_AND_WRITE)
-        assert not is_err(writer)
-        with writer:
-            writer.create(_ITEMS)
-
-        reader = connect(path, SessionMode.READ)
-        assert not is_err(reader)
-        with pytest.raises(sqlite3.OperationalError, match="readonly"), reader:
-            reader.insert(Table(_ITEMS, [("1", "x")]))
