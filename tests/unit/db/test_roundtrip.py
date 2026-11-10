@@ -10,7 +10,7 @@ import threading
 
 from reposcan.db import read, write
 from reposcan.db import sqlite as db_sqlite
-from reposcan.result import Result, is_err
+from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
 from reposcan.scans.model import ArtifactKind, ToolInvocationRecord
@@ -216,22 +216,16 @@ def test_a_second_analysis_appends_and_the_same_one_twice_does_not() -> None:
         assert len(read.list_artifacts(path)) == 1
 
 
-def _record(path: str, uuid: str, outcomes: dict[str, object]) -> None:
-    try:
-        outcome: Result[None] | sqlite3.Error = write.write_analysis(
-            path, _add_scans(_build_analysis(uuid), _build_findings_scan())
-        )
-    except sqlite3.Error as exc:
-        outcome = exc
-    outcomes[uuid] = outcome
-
-
 def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
-        _record(path, "u0", {})
-        outcomes: dict[str, object] = {}
-        second = threading.Thread(target=_record, args=(path, "u2", outcomes))
+        write.write_analysis(
+            path, _add_scans(_build_analysis("u0"), _build_findings_scan())
+        )
+        second = threading.Thread(
+            target=write.write_analysis,
+            args=(path, _add_scans(_build_analysis("u2"), _build_findings_scan())),
+        )
         original = db_sqlite.Session.set_version
 
         # set_version is the first write of a recording, after its first read: the
@@ -248,7 +242,9 @@ def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
 
         db_sqlite.Session.set_version = set_version_once_another_writer_ran
         try:
-            _record(path, "u1", outcomes)
+            write.write_analysis(
+                path, _add_scans(_build_analysis("u1"), _build_findings_scan())
+            )
         finally:
             db_sqlite.Session.set_version = original
         second.join()
@@ -259,7 +255,6 @@ def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
             ).fetchone()
         finally:
             connection.close()
-    assert outcomes == {"u1": None, "u2": None}
     assert analysis_count == 3
 
 
