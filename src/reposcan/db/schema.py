@@ -6,10 +6,11 @@
 Each CREATE includes `IF NOT EXISTS` for idempotency.
 """
 
+import sqlite3
 from pathlib import Path
 
-from reposcan.db.sqlite import Session, TableSchema, read_version
-from reposcan.result import Err, Result
+from reposcan.db.sqlite import Session, SessionMode, TableSchema, connect, read_version
+from reposcan.result import Err, Result, is_err
 
 SCHEMA_VERSION = 1
 
@@ -346,6 +347,12 @@ SELECT analysis_id, project_id, uuid, started_at, status, produced_by,
  ORDER BY analysis_id
 """
 
+SELECT_ANALYSIS_IDS_AND_UUIDS = """
+SELECT analysis_id, uuid
+  FROM analysis
+ ORDER BY analysis_id
+"""
+
 SELECT_CATEGORIES_FOR_ANALYSIS = """
 SELECT category
   FROM scan
@@ -355,6 +362,24 @@ SELECT category
 
 SELECT_SCANS_FOR_ANALYSIS = """
 SELECT scan_id, category, artifact_kind, artifact_shell
+  FROM scan
+ WHERE analysis_id = ?
+ ORDER BY scan_id
+"""
+
+SELECT_ANALYSIS_WITH_PROJECT = """
+SELECT a.uuid, a.produced_by, a.started_at, a.finished_at, a.reposcan_version,
+       a.target_name, a.branch, a.commit_sha, a.dirty, a.shallow, a.status,
+       p.root_commit, p.origin, p.label
+  FROM analysis a
+  JOIN project p
+    ON p.project_id = a.project_id
+ WHERE a.analysis_id = ?
+"""
+
+SELECT_SCAN_RECORDS_FOR_ANALYSIS = """
+SELECT scan_id, category, artifact_kind, started_at, finished_at, status,
+       artifact_shell
   FROM scan
  WHERE analysis_id = ?
  ORDER BY scan_id
@@ -443,17 +468,52 @@ def is_current(path: str) -> bool:
     return read_version(path) == SCHEMA_VERSION
 
 
-def confirm_usable(path: str) -> Result[None]:
-    """Verify `path` can be written to as a reposcan database.
+def confirm_usable(path: str, *, must_be_current: bool = False) -> Result[None]:
+    """Verify `path` can be used as a reposcan database.
 
-    A path that does not exist, or an empty file a caller has reserved, is usable: it
-    becomes a new database. Anything else has to already be a database of this
-    version, because versions are checked rather than migrated.
+    A database to write to may also be a path that does not exist, or an empty file a
+    caller has reserved: it becomes a new database. Anything else has to already be a
+    database of this version, because versions are checked rather than migrated.
+
+    Args:
+        path: The database file.
+        must_be_current: Accept only an existing database of this version that holds
+            every reposcan table as a real table, as a database to read from has to.
+
+    Returns:
+        None when `path` is usable, or an Err saying why it is not.
     """
+    if must_be_current:
+        session = connect(path, SessionMode.READ)
+        if is_err(session):
+            return session
+        # The version is read on this session rather than with is_current, which
+        # reports any failure to read as "not current" and would hide why.
+        try:
+            with session:
+                if session.read_version() != SCHEMA_VERSION:
+                    return Err(
+                        f"{path} is not a version {SCHEMA_VERSION} reposcan database"
+                    )
+                # A view standing in for a table could compute rows without end.
+                for table in TABLES:
+                    if not session.has_table(table.name):
+                        return Err(f"{path} has no {table.name} table")
+        except sqlite3.Error as exc:
+            hint = ""
+            if "readonly" in str(exc):
+                hint = (
+                    "; copy it to a writable directory first, because sqlite "
+                    "creates a file beside a database to read it"
+                )
+            return Err(f"could not read {path}: {exc}{hint}")
+        return None
+    if is_current(path):
+        return None
     version = read_version(path)
     if version is None:
         return Err(f"{path} is not a sqlite database") if Path(path).exists() else None
-    if version in (0, SCHEMA_VERSION):
+    if version == 0:
         return None
     return Err(
         f"{path} is a version {version} reposcan database; "

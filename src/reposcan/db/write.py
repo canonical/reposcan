@@ -9,14 +9,15 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from reposcan.db import schema, sqlite
+from reposcan.db import read, schema, sqlite
 from reposcan.db.identity import (
     IssueAttributes,
     derive_component_key,
     is_same_issue,
 )
+from reposcan.db.model import ImportCounts
 from reposcan.db.sqlite import Session, Table
-from reposcan.result import Result, is_err
+from reposcan.result import Err, Result, is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanOutput, ScanRecord
 from reposcan.scans.model import ToolInvocationRecord
@@ -56,6 +57,84 @@ def write_analysis(path: str, record: Analysis) -> Result[None]:
         for scan in record.successful_scans:
             insert_scan(session, analysis_id, project_id, scan)
     return None
+
+
+def import_database(
+    source: str, destination: str, produced_by: str, *, retain_secrets: bool = False
+) -> Result[ImportCounts]:
+    """Record every analysis of the database at `source` into `destination`.
+
+    Args:
+        source: The database to import, which is only ever read.
+        destination: The receiving database, created when absent.
+        produced_by: Recorded on the analyses `source` left without a producer.
+        retain_secrets: Keep the raw secret values that `source`'s findings retained.
+
+    Returns:
+        How many analyses were imported and skipped, or an Err when either database
+        is unusable or an analysis fails to import.
+    """
+    if is_err(err := schema.confirm_usable(source, must_be_current=True)):
+        return err
+    if is_err(err := schema.confirm_usable(destination)):
+        return err
+    known_uuids: set[str] = set()
+    if schema.is_current(destination):
+        known_uuids = {summary.uuid for summary in read.list_analyses(destination)}
+    result = sqlite.connect(source, sqlite.SessionMode.READ)
+    if is_err(result):
+        return result
+    imported = 0
+    skipped = 0
+    with result as session:
+        list_result = _list_importable_analyses(session, source)
+        if is_err(list_result):
+            return list_result
+        for analysis_id, uuid in list_result:
+            if uuid in known_uuids:
+                skipped += 1
+                continue
+            load_result = read.load_analysis(session, analysis_id)
+            if is_err(load_result):
+                return Err(
+                    f"could not read analysis {uuid} of {source}: {load_result.msg}"
+                )
+            analysis = load_result
+            analysis.produced_by = analysis.produced_by or produced_by
+            # The rows came from elsewhere, and stripping and recording read them again.
+            try:
+                if not retain_secrets:
+                    for run in analysis.sarif_runs:
+                        run.remove_secrets()
+                err = write_analysis(destination, analysis)
+            except read.MALFORMED_ROW_ERRORS as exc:
+                return Err(
+                    f"could not record analysis {uuid} in {destination}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            if is_err(err):
+                return err
+            logger.debug("imported analysis %s", uuid)
+            imported += 1
+    return ImportCounts(imported=imported, skipped=skipped)
+
+
+def _list_importable_analyses(
+    session: Session, source: str
+) -> Result[list[tuple[int, str]]]:
+    """List the id and uuid of every analysis in `source`, oldest-ingested first.
+
+    Returns:
+        An `(analysis_id, uuid)` pair for each analysis, or an Err when `source`'s
+        rows cannot be read.
+    """
+    try:
+        return [
+            (int(analysis_id), str(uuid))
+            for analysis_id, uuid in session.query(schema.SELECT_ANALYSIS_IDS_AND_UUIDS)
+        ]
+    except read.MALFORMED_ROW_ERRORS as exc:
+        return Err(f"could not read {source}: {exc}")
 
 
 def resolve_project(session: Session, identity: ProjectIdentity) -> int:

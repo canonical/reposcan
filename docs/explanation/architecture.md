@@ -98,6 +98,15 @@ database, which is an accumulating history of a repository rather than a report:
 it tracks the issues and components a scan reported, which analysis first and
 last saw each of them, and every version a dependency has been pinned at.
 
+`reposcan db import` merges another database into one by recording each of its
+analyses in turn, exactly as `--db` records a new one, so an issue both know is
+matched onto one issue by the same rules. A database orders analyses by when it
+recorded them rather than when they ran, so an imported analysis counts as more
+recent than everything already there, however old the scan is. Unless asked to
+keep them, an import drops the raw secret values a scan retained, so a database
+that collects many imports does not collect live credentials with them; each
+finding keeps its location and the hash that matches it to an issue.
+
 Every report carries metadata about the analysis that produced it: which
 repository, commit, and branch were scanned, and the associated reposcan
 version. Each format's own fields are used when available -- SARIF's

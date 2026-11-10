@@ -26,6 +26,7 @@ Task-oriented recipes for a specific goal.
 - [Scan with GitHub Actions](how-to/scan-with-github-actions.md)
 - [Scan with Launchpad CI](how-to/scan-with-launchpad-ci.md)
 - [Ignore false positives](how-to/ignore-findings.md)
+- [Import a database](how-to/import-a-database.md)
 
 ## Reference
 

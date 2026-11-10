@@ -112,6 +112,9 @@ def connect(path: str, mode: SessionMode) -> "Result[Session]":
                 isolation_level=None,
                 timeout=BUSY_TIMEOUT_SECONDS,
             )
+            # A database from elsewhere may define views and triggers; let them call
+            # only the functions sqlite marks innocuous.
+            connection.execute("PRAGMA trusted_schema = OFF")
         else:
             connection = sqlite3.connect(
                 path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS
@@ -133,7 +136,9 @@ def read_version(path: str) -> int | None:
     """
     if not Path(path).is_file():
         return None
-    connection = sqlite3.connect(path)
+    # A read-write connection folds a copied write-ahead log into the file as it
+    # closes, which would change a database that is only meant to be read.
+    connection = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
     try:
         (version,) = connection.execute("PRAGMA user_version").fetchone()
         return int(version)
