@@ -159,8 +159,17 @@ class Session:
         # Foreign keys are per-connection, off by default, and silently ignored inside
         # a transaction, so this has to happen before the BEGIN.
         self._connection.execute("PRAGMA foreign_keys = ON")
-        # A transaction that reads before it writes can never take the write lock once
-        # another writer has committed (SQLITE_BUSY_SNAPSHOT), however long it waits.
+        # Under WAL, a transaction reads a snapshot: the database as it was when the
+        # transaction first read it. A plain BEGIN asks for the write lock only when
+        # the transaction first writes. If another writer committed in between, the
+        # snapshot is out of date, and sqlite refuses the lock at once with
+        # SQLITE_BUSY_SNAPSHOT ("database is locked"). Waiting can't fix an old
+        # snapshot, so the busy timeout doesn't help. Recording an analysis reads
+        # before it writes, so two recordings at once could fail this way.
+        #
+        # BEGIN IMMEDIATE takes the write lock before the first read. A second writer
+        # then waits until the first commits, and its snapshot includes those changes.
+        # A READ session never writes, so a plain BEGIN is enough for it.
         if self._mode is SessionMode.READ_AND_WRITE:
             self._connection.execute("BEGIN IMMEDIATE")
         else:
