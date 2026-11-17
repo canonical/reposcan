@@ -66,7 +66,7 @@ def is_sqlite(data: bytes) -> bool:
 
 
 class SessionMode(Enum):
-    """What a session may do to its database."""
+    """Access permissions for a database session."""
 
     READ = "r"
     READ_AND_WRITE = "rw"
@@ -159,16 +159,14 @@ class Session:
         # Foreign keys are per-connection, off by default, and silently ignored inside
         # a transaction, so this has to happen before the BEGIN.
         self._connection.execute("PRAGMA foreign_keys = ON")
-        # Under WAL, a transaction reads a snapshot: the database as it was when the
-        # transaction first read it. A plain BEGIN asks for the write lock only when
-        # the transaction first writes. If another writer committed in between, the
-        # snapshot is out of date, and sqlite refuses the lock at once with
-        # SQLITE_BUSY_SNAPSHOT ("database is locked"). Waiting can't fix an old
-        # snapshot, so the busy timeout doesn't help. Recording an analysis reads
-        # before it writes, so two recordings at once could fail this way.
-        #
-        # BEGIN IMMEDIATE takes the write lock before the first read. A second writer
-        # then waits until the first commits, and its snapshot includes those changes.
+        # A READ_AND_WRITE session takes the write lock here, before its first read.
+        # A plain BEGIN takes the lock at the first write instead. Under WAL, if
+        # another writer commits between a transaction's first read and its first
+        # write, the transaction holds a stale snapshot. sqlite then fails the write
+        # at once with SQLITE_BUSY_SNAPSHOT ("database is locked"), and the busy
+        # timeout does not retry it. Recording an analysis reads before it writes, so
+        # two concurrent recordings could fail this way. With BEGIN IMMEDIATE, the
+        # second writer waits for the first to commit, then reads the new state.
         # A READ session never writes, so a plain BEGIN is enough for it.
         if self._mode is SessionMode.READ_AND_WRITE:
             self._connection.execute("BEGIN IMMEDIATE")

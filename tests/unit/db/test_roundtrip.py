@@ -219,41 +219,28 @@ def test_a_second_analysis_appends_and_the_same_one_twice_does_not() -> None:
 def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "history.db")
-        # Once the tables exist, a recording's first write is set_version, which
-        # comes after its first read: the order that exposes the bug.
         write.write_analysis(
             path, _add_scans(_build_analysis("existing"), _build_findings_scan())
         )
+        first_writer = db_sqlite.connect(path, db_sqlite.SessionMode.READ_AND_WRITE)
+        assert not is_err(first_writer)
         second_writer = threading.Thread(
             target=write.write_analysis,
             args=(path, _add_scans(_build_analysis("second"), _build_findings_scan())),
         )
-        real_set_version = db_sqlite.Session.set_version
 
-        # Stands in for set_version in the first writer, to pause it between its
-        # first read and its first write while the second writer runs. Without the
-        # fix, the second writer commits during the pause, and the first writer's
-        # write then fails with "database is locked". With the fix, the second
-        # writer is still waiting for the first writer's lock when the pause ends.
-        def run_second_writer_then_set_version(
-            self: db_sqlite.Session, version: int
-        ) -> None:
-            # Restored first, so the second writer calls the real set_version.
-            db_sqlite.Session.set_version = real_set_version
+        # Entering a READ_AND_WRITE session takes the write lock, so the second
+        # writer cannot finish while the first session is open. If entering took no
+        # lock, the second writer would finish within the timeout.
+        with first_writer:
             second_writer.start()
             second_writer.join(timeout=0.5)
-            real_set_version(self, version)
+            second_writer_is_waiting = second_writer.is_alive()
 
-        db_sqlite.Session.set_version = run_second_writer_then_set_version
-        try:
-            write.write_analysis(
-                path, _add_scans(_build_analysis("first"), _build_findings_scan())
-            )
-        finally:
-            db_sqlite.Session.set_version = real_set_version
         second_writer.join()
-        analyses = read.list_analyses(path)
-    assert len(analyses) == 3
+        uuids = [summary.uuid for summary in read.list_analyses(path)]
+    assert second_writer_is_waiting
+    assert uuids == ["existing", "second"]
 
 
 def test_a_different_repository_becomes_a_second_project() -> None:
