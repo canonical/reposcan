@@ -6,8 +6,10 @@
 import os
 import sqlite3
 import tempfile
+import threading
 
 from reposcan.db import read, write
+from reposcan.db import sqlite as db_sqlite
 from reposcan.result import is_err
 from reposcan.scans import cyclonedx, sarif
 from reposcan.scans.analysis import Analysis, ScanRecord, ScanStatus
@@ -212,6 +214,33 @@ def test_a_second_analysis_appends_and_the_same_one_twice_does_not() -> None:
         assert len(read.list_projects(path)) == 1
         # read_artifacts defaults to the most recent scan.
         assert len(read.list_artifacts(path)) == 1
+
+
+def test_a_writer_waits_for_another_writer_instead_of_failing() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "history.db")
+        write.write_analysis(
+            path, _add_scans(_build_analysis("existing"), _build_findings_scan())
+        )
+        first_writer = db_sqlite.connect(path, db_sqlite.SessionMode.READ_AND_WRITE)
+        assert not is_err(first_writer)
+        second_writer = threading.Thread(
+            target=write.write_analysis,
+            args=(path, _add_scans(_build_analysis("second"), _build_findings_scan())),
+        )
+
+        # Entering a READ_AND_WRITE session takes the write lock, so the second
+        # writer cannot finish while the first session is open. If entering took no
+        # lock, the second writer would finish within the timeout.
+        with first_writer:
+            second_writer.start()
+            second_writer.join(timeout=0.5)
+            second_writer_is_waiting = second_writer.is_alive()
+
+        second_writer.join()
+        uuids = [summary.uuid for summary in read.list_analyses(path)]
+    assert second_writer_is_waiting
+    assert uuids == ["existing", "second"]
 
 
 def test_a_different_repository_becomes_a_second_project() -> None:
